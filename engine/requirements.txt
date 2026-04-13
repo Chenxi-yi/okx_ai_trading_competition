@@ -1,0 +1,26 @@
+# Core data science
+numpy>=1.24
+pandas>=2.0
+scipy>=1.11
+
+# Machine learning
+scikit-learn>=1.3
+xgboost>=2.0
+
+# Deep learning (optional — DNN ensemble falls back gracefully without it)
+torch>=2.0
+
+# Exchange connectivity
+ccxt>=4.2
+
+# Data fallback
+yfinance>=0.2
+
+# Visualisation
+matplotlib>=3.7
+
+# Utilities
+python-dotenv>=1.0
+python-dateutil>=2.8
+pyarrow>=14.0        # Parquet cache support
+tqdm>=4.66           # Progress bars (optional)

@@ -1,0 +1,52 @@
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Credentials & secrets ────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.toml          # catches ~/.okx/config.toml if ever copied into project
+*.pem
+*.key
+*secret*
+*credential*
+*private*
+
+# ── Claude Code local settings (machine-specific permissions) ────────────────
+.claude/settings.local.json
+engine/.claude/settings.local.json
+**/settings.local.json
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# ── Jupyter ──────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Engine runtime state (regenerated on start) ──────────────────────────────
+engine/data/engine_state*.json
+engine/data/cache/
+
+# ── Engine logs (large, transient) ───────────────────────────────────────────
+engine/logs/
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

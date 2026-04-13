@@ -1,0 +1,23 @@
+[Unit]
+Description=OKX Quant Trading Engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trader
+WorkingDirectory=/opt/quant_trade_competition/engine
+# Session daemon manages all active sessions from logs/sessions.json
+# Create sessions: python3 main.py session create -s elite_flow
+ExecStart=/opt/quant_venv/bin/python3 main.py session daemon --foreground
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/trading/engine.log
+StandardError=append:/var/log/trading/engine.log
+
+# Safety: kill cleanly on stop
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

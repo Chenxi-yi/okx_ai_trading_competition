@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLO Momentum Dashboard</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #c9d1d9; --muted: #8b949e;
+  --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff; --purple: #bc8cff;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+a { color: var(--blue); text-decoration: none; }
+.container { max-width: 1280px; margin: 0 auto; padding: 16px; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+header h1 { font-size: 18px; font-weight: 600; }
+header .nav { font-size: 13px; color: var(--muted); }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.stat-card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge-blue { background: rgba(88,166,255,0.15); color: var(--blue); }
+.badge-muted { background: rgba(139,148,158,0.15); color: var(--muted); }
+.slot-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.slot-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.slot-header h3 { font-size: 15px; font-weight: 600; }
+.slot-meta { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px; }
+.slot-meta .item { color: var(--muted); }
+.slot-meta .item b { color: var(--text); }
+.chart-box { height: 250px; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th { text-align: left; padding: 6px 8px; color: var(--muted); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: rgba(88,166,255,0.04); }
+.section-title { font-size: 13px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.pos-long { color: var(--green); }
+.pos-short { color: var(--red); }
+.pnl-pos { color: var(--green); }
+.pnl-neg { color: var(--red); }
+.empty-msg { color: var(--muted); font-size: 13px; font-style: italic; padding: 12px 0; }
+#last-update { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1 id="page-title">YOLO Momentum Dashboard</h1>
+    <div class="nav"><a href="/">Main Dashboard</a> | <span id="last-update">Loading...</span></div>
+  </header>
+
+  <div id="stats" class="stat-grid"></div>
+  <div id="slots"></div>
+</div>
+
+<script>
+const SGT = 'Asia/Singapore';
+function toSGT(iso) {
+  if (!iso) return '-';
+  try { return new Date(iso).toLocaleString('en-GB', {timeZone: SGT, hour12: false}); }
+  catch { return iso; }
+}
+function toBeijing(iso) {
+  if (!iso) return iso;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return new Date(d.getTime() + 8 * 3600_000).toISOString().replace('Z', '');
+}
+function pnlClass(v) { return v >= 0 ? 'pnl-pos' : 'pnl-neg'; }
+function pnlStr(v) { return (v >= 0 ? '+' : '') + v.toFixed(2); }
+function statusBadge(s) {
+  const m = {succeeded:'badge-green', drained:'badge-red', running:'badge-blue', pending:'badge-muted', recharge_required:'badge-yellow'};
+  return `<span class="badge ${m[s]||'badge-muted'}">${s.toUpperCase()}</span>`;
+}
+
+let data = null;
+
+async function load() {
+  try {
+    const [yoloRes, liveRes] = await Promise.all([fetch('/api/yolo'), fetch('/api/live')]);
+    data = await yoloRes.json();
+    const live = await liveRes.json();
+    // Inject margin/fees from summary into running slots
+    const summary = live?.summary?.portfolios?.yolo_momentum || {};
+    const runningSlots = (data.slots || []).filter(s => s.status === 'running');
+    if (runningSlots.length && summary.current_margin) {
+      runningSlots[runningSlots.length - 1]._margin = summary.current_margin || 0;
+      runningSlots[runningSlots.length - 1]._fees = summary.total_fees || 0;
+    }
+    render();
+  } catch(e) { console.error('Fetch error:', e); }
+}
+
+function render() {
+  if (!data) return;
+  const stamp = data.exchange_sync?.updated_at || data.updated_at;
+  const profile = (data.profile || '').toUpperCase();
+  const strategy = data.strategy === 'yolo_momentum' ? 'YOLO Momentum' : 'YOLO Dashboard';
+  document.getElementById('page-title').textContent = profile ? `${strategy} ${profile}` : strategy;
+  document.getElementById('last-update').textContent = stamp ? `Synced ${toSGT(stamp)}` : 'No data';
+  renderStats();
+  renderSlots();
+}
+
+function renderStats() {
+  const d = data;
+  const finished = d.total_finished || 0;
+  const winRate = Number(d.win_rate_pct || 0);
+  const lossRate = Number(d.loss_rate_pct || 0);
+  const cards = [
+    {label:'Deployed', value:`${d.total_deployed} / ${d.total_deployed+d.total_pending}`, sub:`${d.total_pending} pending`},
+    {label:'Succeeded', value:d.total_succeeded, sub:`${finished ? winRate.toFixed(0) : 0}% win rate (${finished} finished)`, cls:'pnl-pos'},
+    {label:'Drained', value:d.total_drained, sub:`${finished ? lossRate.toFixed(0) : 0}% loss rate (${finished} finished)`, cls:'pnl-neg'},
+    {label:'Running', value:d.total_running, cls:''},
+    {label:'Recharge', value:d.total_recharge_required || 0, sub:'paused for funding', cls:''},
+    {label:'Realized ROI', value:`${(d.realized_roi_pct||0).toFixed(2)}%`, sub:`$${pnlStr(d.realized_pnl||0)} on $${(d.realized_invested||0).toFixed(0)}`, cls:pnlClass(d.realized_roi_pct||0)},
+    {label:'Running ROI', value:`${(d.running_roi_pct||0).toFixed(2)}%`, sub:`$${pnlStr(d.running_total_pnl||0)} on $${(d.running_invested||0).toFixed(0)}`, cls:pnlClass(d.running_roi_pct||0)},
+    {label:'Total Invested', value:`$${(d.overall_invested||0).toFixed(0)}`, sub:`of $${d.total_budget||10000} budget`},
+  ];
+  document.getElementById('stats').innerHTML = cards.map(c =>
+    `<div class="stat-card">
+      <div class="label">${c.label}</div>
+      <div class="value ${c.cls||''}">${c.value}</div>
+      ${c.sub?`<div class="sub">${c.sub}</div>`:''}
+    </div>`
+  ).join('');
+}
+
+function renderSlots() {
+  const slots = data.slots || [];
+  if (!slots.length) {
+    document.getElementById('slots').innerHTML = '<div class="empty-msg">No slots deployed yet. Start the orchestrator to begin.</div>';
+    return;
+  }
+  document.getElementById('slots').innerHTML = slots.map(s => renderOneSlot(s)).join('');
+  // Render charts after DOM is ready
+  slots.forEach(s => {
+    if (s.nav_history && s.nav_history.length > 1) renderSlotChart(s);
+  });
+}
+
+function renderOneSlot(s) {
+  const trades = s.trades || [];
+  const pos = s.current_position;
+  return `
+  <div class="slot-card" id="slot-${s.id}">
+    <div class="slot-header">
+      <h3>Slot #${s.id} ${statusBadge(s.status)}</h3>
+      <span style="font-size:13px;color:var(--muted)">
+        ${s.started_at ? 'Started: '+toSGT(s.started_at) : 'Not started'}
+        ${s.finished_at ? ' | Finished: '+toSGT(s.finished_at) : ''}
+      </span>
+    </div>
+    <div class="slot-meta">
+      <div class="item">Round: <b>${s.round||0}/4</b></div>
+      <div class="item">Invested: <b>$${(s.cumulative_invested||0).toFixed(0)}</b></div>
+      <div class="item">PnL: <b class="${pnlClass(s.total_pnl||0)}">${pnlStr(s.total_pnl||0)}</b></div>
+      <div class="item">ROI: <b class="${pnlClass(s.roi_pct||0)}">${(s.roi_pct||0).toFixed(2)}%</b></div>
+      <div class="item">Unrealized: <b class="${pnlClass(s.unrealized_pnl||0)}">${pnlStr(s.unrealized_pnl||0)}</b></div>
+      ${s.state_source ? `<div class="item">State File: <b>${s.state_source}</b></div>` : ''}
+      ${s.live_sync_status ? `<div class="item">Exchange Sync: <b>${s.live_sync_status}</b></div>` : ''}
+    </div>
+    ${renderScanStatus(s)}
+    <div class="chart-box" id="chart-${s.id}"></div>
+    ${pos ? renderPosition(pos, s) : '<div class="section-title">No Open Position</div>'}
+    ${renderExchangeBills(s)}
+    ${trades.length ? renderTrades(trades) : '<div class="empty-msg">No trades yet</div>'}
+  </div>`;
+}
+
+function renderScanStatus(slot) {
+  const wrap = slot.scan_status || {};
+  const scan = wrap.scan_status || {};
+  const top = scan.top_candidates || [];
+  const selected = scan.selected_candidate;
+  const blocked = wrap.last_block_reason || scan.blocked_reason || '';
+  const universeSize = scan.universe_size || 0;
+  const scanned = scan.scanned_count || 0;
+  const failed = (scan.failed_symbols || []).length;
+  const current = scan.current_symbol || '-';
+  const stage = scan.stage || wrap.strategy_status || 'idle';
+  const started = scan.started_at ? toSGT(scan.started_at) : '-';
+  const completed = scan.completed_at ? toSGT(scan.completed_at) : '-';
+  const selectionReason = scan.selection_reason || '';
+
+  if (!universeSize && !selected && !blocked) {
+    return `<div class="section-title">Scan Status</div><div class="empty-msg">No scan snapshot yet</div>`;
+  }
+
+  return `
+  <div class="section-title">Scan Status</div>
+  <div class="slot-meta">
+    <div class="item">Stage: <b>${stage}</b></div>
+    <div class="item">Universe: <b>${universeSize}</b></div>
+    <div class="item">Scanned: <b>${scanned}</b></div>
+    <div class="item">Current: <b>${current}</b></div>
+    <div class="item">Failures: <b>${failed}</b></div>
+    <div class="item">Started: <b>${started}</b></div>
+    <div class="item">Completed: <b>${completed}</b></div>
+  </div>
+  ${selected ? `<div style="font-size:13px; margin-bottom:8px">Selected: <b>${selected.inst_id}</b> ${(selected.direction || '-').toUpperCase()} score=${Number(selected.score || 0).toFixed(1)}</div>` : ''}
+  ${selectionReason ? `<div style="font-size:12px; color:var(--muted); margin-bottom:8px">${selectionReason}</div>` : ''}
+  ${blocked ? `<div style="font-size:12px; color:var(--yellow); margin-bottom:8px">Blocked: ${blocked}</div>` : ''}
+  ${top.length ? `
+  <table>
+    <tr><th>Candidate</th><th>Dir</th><th>Score</th><th>ADX</th><th>Vol</th><th>ATR%</th><th>Max Lev</th><th>Eff Lev</th></tr>
+    ${top.map(c => `<tr>
+      <td>${c.inst_id}</td>
+      <td class="${c.direction==='long'?'pos-long':'pos-short'}">${c.direction.toUpperCase()}</td>
+      <td>${Number(c.score || 0).toFixed(1)}</td>
+      <td>${Number(c.adx || 0).toFixed(1)}</td>
+      <td>${Number(c.volume_ratio || 0).toFixed(2)}x</td>
+      <td>${Number(c.atr_pct || 0).toFixed(2)}</td>
+      <td>${c.max_allowed_leverage ? `${Number(c.max_allowed_leverage).toFixed(0)}x` : '-'}</td>
+      <td>${c.effective_leverage ? `${Number(c.effective_leverage).toFixed(0)}x` : '-'}</td>
+    </tr>`).join('')}
+  </table>` : ''}
+  `;
+}
+
+function renderPosition(pos, slot) {
+  const sideClass = pos.side === 'long' ? 'pos-long' : 'pos-short';
+  const actualLev = Number(pos.actual_leverage || pos.leverage || 0);
+  const plannedLev = Number(pos.planned_leverage || 0);
+  const maxAllowedLev = Number(pos.max_allowed_leverage || 0);
+  const notionalUsd = Number(pos.notional_usd || 0);
+  const margin = notionalUsd > 0 && actualLev > 0 ? (notionalUsd / actualLev) : (slot._margin || 0);
+  const fees = Number(slot.fees_paid || slot._fees || 0);
+  const leverageText = actualLev > 0
+    ? `${actualLev}x${plannedLev && plannedLev !== actualLev ? ` (planned ${plannedLev}x)` : ''}`
+    : `${plannedLev || '-'}x`;
+  return `
+  <div class="section-title">Open Position</div>
+  <table>
+    <tr><th>Instrument</th><th>Side</th><th>Entry</th><th>Mark</th><th>Contracts</th><th>Leverage</th><th>Max Lev</th><th>Margin Locked</th><th>Fees</th><th>Unrealized PnL</th></tr>
+    <tr>
+      <td>${pos.inst_id||'-'}</td>
+      <td class="${sideClass}">${(pos.side||'').toUpperCase()}</td>
+      <td>${Number(pos.entry_price||0).toFixed(5)}</td>
+      <td>${Number(pos.mark_price||0).toFixed(5)}</td>
+      <td>${Number(pos.contracts||0).toFixed(0)}</td>
+      <td>${leverageText}</td>
+      <td>${maxAllowedLev > 0 ? `${maxAllowedLev.toFixed(0)}x` : '-'}</td>
+      <td>$${margin.toFixed(2)}</td>
+      <td style="color:var(--red)">$${fees.toFixed(4)}</td>
+      <td class="${pnlClass(pos.unrealized_pnl||0)}">${pnlStr(pos.unrealized_pnl||0)}</td>
+    </tr>
+  </table>`;
+}
+
+function renderExchangeBills(slot) {
+  const bills = slot.exchange_bills || [];
+  if (!bills.length) return '';
+  return `
+  <div class="section-title">Recent Exchange Bills</div>
+  <table>
+    <tr><th>Time</th><th>Instrument</th><th>Side</th><th>Size</th><th>Price</th><th>Fee</th><th>Order</th></tr>
+    ${bills.map(b => `<tr>
+      <td>${toSGT(b.ts)}</td>
+      <td>${b.inst_id || '-'}</td>
+      <td class="${b.side==='long'?'pos-long':'pos-short'}">${(b.side||'-').toUpperCase()}</td>
+      <td>${Number(b.capital_deployed || 0).toFixed(0)}</td>
+      <td>${Number(b.entry_price || 0).toFixed(5)}</td>
+      <td style="color:var(--red)">$${Number(b.fee_est || 0).toFixed(4)}</td>
+      <td>${b.ord_id || '-'}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderTrades(trades) {
+  const rows = trades.slice().reverse().map(t => {
+    const pnl = t.pnl || 0;
+    const margin = t.margin || 0;
+    const fee = t.fee_est || 0;
+    const leverage = t.leverage || '?';
+    const reasonBadge = {
+      TARGET_HIT: 'badge-green', HARD_STOP: 'badge-red', LIQUIDATED: 'badge-red',
+      TRAILING_STOP: 'badge-yellow', TIME_DECAY: 'badge-muted', REVERSAL: 'badge-yellow',
+    };
+    const badge = reasonBadge[t.reason] || 'badge-muted';
+    const roi = margin > 0 ? (pnl / margin * 100).toFixed(1) : '-';
+    return `<tr>
+      <td>${toSGT(t.ts)}</td>
+      <td>${t.inst_id||'-'}</td>
+      <td class="${t.side==='long'?'pos-long':'pos-short'}">${(t.side||'').toUpperCase()}</td>
+      <td>R${t.round||'?'}</td>
+      <td>${leverage}x</td>
+      <td>$${margin.toFixed(2)}</td>
+      <td style="color:var(--red)">$${fee.toFixed(4)}</td>
+      <td class="${pnlClass(pnl)}">${pnlStr(pnl)}</td>
+      <td class="${pnlClass(pnl)}">${roi}%</td>
+      <td><span class="badge ${badge}">${t.reason||'-'}</span></td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="section-title">Trade History</div>
+  <table>
+    <tr><th>Time</th><th>Instrument</th><th>Side</th><th>Round</th><th>Lev</th><th>Margin</th><th>Fees</th><th>PnL</th><th>ROI</th><th>Reason</th></tr>
+    ${rows}
+  </table>`;
+}
+
+function renderSlotChart(s) {
+  const el = document.getElementById(`chart-${s.id}`);
+  if (!el) return;
+  const hist = s.nav_history || [];
+  if (hist.length < 2) { el.innerHTML = '<div class="empty-msg">Collecting data...</div>'; return; }
+
+  const xs = hist.map(h => toBeijing(h.ts));
+  const ys = hist.map(h => h.nav);
+  const trades = s.trades || [];
+  const pos = s.current_position;
+
+  // Collect all events: capital deploy per round, entries, exits
+  const events = [];
+  const roundMargins = [50, 100, 200, 400];
+
+  // Round 1: capital at slot start + entry inferred
+  if (s.started_at) {
+    events.push({
+      ts: toBeijing(s.started_at),
+      label: `+$${roundMargins[0]}`,
+      color: '#58a6ff',
+    });
+  }
+
+  // Helper: find the NAV timestamp where a jump occurs after a given time
+  function findNavJump(afterTs, threshold, positiveOnly) {
+    const afterBeijing = toBeijing(afterTs);
+    for (let i = 1; i < xs.length; i++) {
+      if (xs[i] < afterBeijing) continue;
+      const delta = ys[i] - ys[i-1];
+      if (positiveOnly && delta >= threshold) return xs[i];
+      if (!positiveOnly && Math.abs(delta) >= threshold) return xs[i];
+    }
+    return toBeijing(afterTs);
+  }
+
+  // Process close trades → infer entry before each, exit at close, top-up for next round
+  const closeTrades = trades.filter(t => t.action === 'close');
+  closeTrades.forEach(t => {
+    const inst = (t.inst_id||'').replace('-USDT-SWAP','');
+    const side = (t.side||'?').toUpperCase();
+    const rd = t.round || 1;
+
+    // Entry: at slot start (round 1) or at NAV jump after previous close
+    let entryTs;
+    if (rd === 1) {
+      entryTs = toBeijing(s.started_at);
+    } else {
+      const prevClose = closeTrades.filter(pt => (pt.round||1) < rd).pop();
+      entryTs = prevClose ? findNavJump(prevClose.ts, 10, true) : toBeijing(s.started_at);
+    }
+    events.push({
+      ts: entryTs,
+      label: `ENTER ${side} ${inst}`,
+      color: side === 'LONG' ? '#3fb950' : '#f85149',
+    });
+
+    // Exit at trade time
+    const pnl = t.pnl||0;
+    const pnlLabel = pnl >= 0 ? `+$${pnl.toFixed(1)}` : `-$${Math.abs(pnl).toFixed(1)}`;
+    events.push({
+      ts: toBeijing(t.ts),
+      label: `EXIT ${inst} ${pnlLabel} ${t.reason||''}`,
+      color: pnl >= 0 ? '#3fb950' : '#f85149',
+    });
+
+    // Capital top-up for next round — align to where NAV actually jumps
+    const nextRd = rd;
+    if (nextRd < roundMargins.length && nextRd < (s.round||1)) {
+      const jumpTs = findNavJump(t.ts, roundMargins[nextRd] * 0.5, true);
+      events.push({
+        ts: jumpTs,
+        label: `TOP-UP +$${roundMargins[nextRd]}`,
+        color: '#58a6ff',
+      });
+    }
+  });
+
+  // Current open position (no close trade yet) — align to NAV jump after last close
+  if (pos && pos.inst_id) {
+    const inst = pos.inst_id.replace('-USDT-SWAP','');
+    const side = (pos.side||'?').toUpperCase();
+    let entryTs;
+    const lastClose = closeTrades[closeTrades.length - 1];
+    if (lastClose) {
+      entryTs = findNavJump(lastClose.ts, 10, true);
+    } else {
+      entryTs = toBeijing(s.started_at);
+    }
+    events.push({
+      ts: entryTs,
+      label: `ENTER ${side} ${inst} ${pos.leverage||'?'}x`,
+      color: side === 'LONG' ? '#3fb950' : '#f85149',
+    });
+  }
+
+  // Group events by timestamp to avoid overlaps
+  const grouped = {};
+  events.forEach(e => {
+    if (!grouped[e.ts]) grouped[e.ts] = [];
+    grouped[e.ts].push(e);
+  });
+  const uniqueTs = Object.keys(grouped).sort();
+
+  // One vertical line per unique timestamp
+  const shapes = uniqueTs.map(ts => ({
+    type: 'line',
+    x0: ts, x1: ts, y0: 0, y1: 1,
+    xref: 'x', yref: 'paper',
+    line: { color: grouped[ts][0].color, width: 1, dash: 'dot' },
+  }));
+
+  // One merged label per unique timestamp, staggered by group index
+  const annotations = uniqueTs.map((ts, gi) => {
+    const items = grouped[ts];
+    const merged = items.map(e => e.label).join(' → ');
+    return {
+      x: ts,
+      y: -0.08 - (gi % 3) * 0.09,
+      xref: 'x', yref: 'paper',
+      text: `<b>${merged}</b>`,
+      showarrow: false,
+      font: { size: 9, color: items[0].color },
+      textangle: -30,
+    };
+  });
+
+  Plotly.react(el, [{
+    x: xs, y: ys, type: 'scatter', mode: 'lines',
+    line: {color: s.status==='succeeded'?'#3fb950':s.status==='drained'?'#f85149':'#58a6ff', width: 1.5},
+    fill: 'tozeroy', fillcolor: s.status==='succeeded'?'rgba(63,185,80,0.05)':s.status==='drained'?'rgba(248,81,73,0.05)':'rgba(88,166,255,0.05)',
+    hovertemplate: 'NAV: $%{y:.2f}<br>%{x}<extra></extra>',
+  }], {
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    margin: {l:45, r:10, t:10, b:70},
+    xaxis: {title: {text:'Beijing Time (UTC+8)', font:{size:10, color:'#8b949e'}}, gridcolor:'#21262d', tickfont:{size:10, color:'#8b949e'}},
+    yaxis: {gridcolor:'#21262d', tickfont:{size:10, color:'#8b949e'}, title:{text:'NAV ($)', font:{size:11, color:'#8b949e'}}},
+    shapes, annotations,
+    hovermode: 'x unified',
+    showlegend: false,
+  }, {displayModeBar: false, responsive: true});
+}
+
+// Initial load + auto-refresh
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

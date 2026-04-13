@@ -1,0 +1,62 @@
+{
+  "baseline": {
+    "params": {
+      "rsi_long_low": 55,
+      "rsi_long_high": 75,
+      "rsi_short_low": 25,
+      "rsi_short_high": 45,
+      "volume_mult_threshold": 1.2,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 30,
+    "success_rate_pct": 83.33,
+    "mean_roi_pct": 24.63,
+    "median_roi_pct": 21.81,
+    "mean_invested": 243.33,
+    "mean_trades": 2.37,
+    "mean_rounds": 2.03,
+    "mean_max_dd_pct": -76.81,
+    "roi_std_pct": 80.03,
+    "objective": 0.587069
+  },
+  "balanced_v2": {
+    "params": {
+      "rsi_long_low": 53,
+      "rsi_long_high": 78,
+      "rsi_short_low": 22,
+      "rsi_short_high": 47,
+      "volume_mult_threshold": 1.1,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 30,
+    "success_rate_pct": 83.33,
+    "mean_roi_pct": 15.94,
+    "median_roi_pct": 20.69,
+    "mean_invested": 240.0,
+    "mean_trades": 2.23,
+    "mean_rounds": 2.0,
+    "mean_max_dd_pct": -69.89,
+    "roi_std_pct": 72.27,
+    "objective": 0.569433
+  },
+  "aggressive_v1": {
+    "params": {
+      "rsi_long_low": 52,
+      "rsi_long_high": 80,
+      "rsi_short_low": 20,
+      "rsi_short_high": 48,
+      "volume_mult_threshold": 1.0,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 30,
+    "success_rate_pct": 86.67,
+    "mean_roi_pct": 15.82,
+    "median_roi_pct": 16.57,
+    "mean_invested": 213.33,
+    "mean_trades": 2.17,
+    "mean_rounds": 1.93,
+    "mean_max_dd_pct": -82.41,
+    "roi_std_pct": 67.57,
+    "objective": 0.587185
+  }
+}

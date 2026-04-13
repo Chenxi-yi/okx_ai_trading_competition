@@ -1,0 +1,12 @@
+==================================================
+TRADING ENGINE STARTED
+==================================================
+PID: 94814
+Mode: futures (sandbox)
+Portfolios: 2
+
+  [daily_combined] strategy=combined_portfolio profile=daily capital=$5,000.00 rebalance_every=86400s
+  [hourly_combined] strategy=combined_portfolio profile=hourly capital=$5,000.00 rebalance_every=14400s
+
+Daemon running. Use 'main.py status' to check progress.
+==================================================

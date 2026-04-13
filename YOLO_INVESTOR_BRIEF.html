@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO Strategy Investor Brief</title>
+  <style>
+    :root {
+      --bg: #f4eee4;
+      --paper: rgba(255, 252, 247, 0.96);
+      --paper-strong: #fffefb;
+      --ink: #172126;
+      --muted: #5a6770;
+      --line: #d9cdbd;
+      --accent: #a84a24;
+      --accent-2: #1d5f73;
+      --accent-3: #6d7c2f;
+      --good: #216f4f;
+      --warn: #99611f;
+      --bad: #9a3d3d;
+      --shadow: 0 18px 48px rgba(73, 49, 19, 0.10);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(202, 157, 112, 0.30), transparent 26%),
+        radial-gradient(circle at top right, rgba(29, 95, 115, 0.10), transparent 28%),
+        linear-gradient(180deg, #f8f2e8 0%, #ebdecb 100%);
+      font-family: Georgia, "PingFang SC", "Hiragino Sans GB", serif;
+      line-height: 1.7;
+    }
+    .wrap {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px 18px 72px;
+    }
+    .hero,
+    .grid-2,
+    .grid-3,
+    .stats,
+    .pillars,
+    .cards,
+    .risk-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .hero { grid-template-columns: 1.15fr 0.85fr; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .pillars { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .risk-grid { grid-template-columns: 0.95fr 1.05fr; }
+    .panel,
+    .card,
+    .stat,
+    .mini {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 24px; margin-top: 18px; }
+    .hero .panel { margin-top: 0; }
+    .card,
+    .stat,
+    .mini { padding: 16px; background: var(--paper-strong); }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 11px;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1, h2, h3, h4 { margin: 0 0 12px; line-height: 1.08; }
+    h1 { font-size: 50px; letter-spacing: -0.04em; }
+    h2 { font-size: 30px; letter-spacing: -0.03em; }
+    h3 { font-size: 19px; }
+    h4 { font-size: 15px; }
+    p { margin: 0 0 12px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 9px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .muted { color: var(--muted); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .pill {
+      display: inline-block;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.82);
+    }
+    .stat .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 7px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .stat .v {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
+    }
+    .callout {
+      border-left: 4px solid var(--accent-2);
+      background: rgba(29, 95, 115, 0.06);
+      padding: 14px 16px;
+      border-radius: 14px;
+      margin-top: 14px;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.94em;
+    }
+    .diagram {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #faf6f0 0%, #f0e7da 100%);
+    }
+    svg { display: block; width: 100%; height: auto; }
+    @media (max-width: 1100px) {
+      .hero,
+      .grid-2,
+      .grid-3,
+      .stats,
+      .risk-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="panel">
+        <div class="eyebrow">Investor Brief</div>
+        <h1>YOLO 策略说明页</h1>
+        <p>YOLO 不是一个“看到信号就冲”的粗糙高杠杆系统，而是一条完整的 <strong>先筛选、再打分、再确认、再执行、再保护、再退出</strong> 的交易链路。它的目标不是做长期低波动资产配置，而是在比赛窗口里，抓住最强的短中周期动量段，快速兑现收益。</p>
+        <p>这套策略适合向投资者解释的核心，不是“它会下很多单”，而是“它只在市场里挑最强的少数机会，而且每一个动作都有明确的量化门槛”。</p>
+        <div style="margin-top: 14px;">
+          <span class="pill">用途：短窗口比赛策略</span>
+          <span class="pill">风格：高选择性动量追踪</span>
+          <span class="pill">执行：先 kit 下单，再做仓位保护</span>
+          <span class="pill">当前实盘：isolated + 硬止损单</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="eyebrow">One Sentence</div>
+        <h2>一句话卖点</h2>
+        <p>YOLO 的本质是：在全市场永续合约里，持续寻找<strong>方向一致、动量够强、成交量确认、资金费率有帮助</strong>的最强标的，只在最强标的满足入场确认时才动手，并用明确的止损、反转检测、时间退出和跟踪止盈来管理仓位。</p>
+        <div class="callout">
+          对投资者最重要的表述是：<strong>YOLO 不是盲目高杠杆，它是高筛选强度下的高效率执行。</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Why It Exists</div>
+      <h2>为什么需要 YOLO</h2>
+      <div class="pillars">
+        <div class="card">
+          <h3>比赛窗口短</h3>
+          <p>两周级别的比赛，不适合慢慢攒年化。策略必须优先抓短期最强的收益段。</p>
+        </div>
+        <div class="card">
+          <h3>市场机会分布不均匀</h3>
+          <p>大部分时刻大部分币没有好机会，所以核心不是“经常交易”，而是“把最强机会挑出来”。</p>
+        </div>
+        <div class="card">
+          <h3>执行效率决定上限</h3>
+          <p>如果识别到了机会，但杠杆、张数、止损、保证金模式没处理好，收益会直接被执行层吞掉。</p>
+        </div>
+        <div class="card">
+          <h3>风险必须可编程</h3>
+          <p>YOLO 允许激进，但不能允许模糊。什么时候进、什么时候退、最多亏多少，都必须能落到参数和状态机里。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Framework</div>
+      <h2>策略总流程</h2>
+      <div class="diagram">
+        <svg viewBox="0 0 1240 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="YOLO Strategy Flow">
+          <rect x="24" y="42" width="170" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+          <rect x="218" y="42" width="170" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+          <rect x="412" y="42" width="170" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+          <rect x="606" y="42" width="170" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+          <rect x="800" y="42" width="170" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+          <rect x="994" y="42" width="220" height="88" rx="20" fill="#fffdf8" stroke="#d9cdbd"/>
+
+          <text x="109" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">扫描全市场</text>
+          <text x="109" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">动态 universe</text>
+
+          <text x="303" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">给每个币打分</text>
+          <text x="303" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">趋势 + 动量 + 量能</text>
+
+          <text x="497" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">选最强候选</text>
+          <text x="497" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">只选 top 1</text>
+
+          <text x="691" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">过 3 个 Gate</text>
+          <text x="691" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">趋势 / 动量 / 成交量</text>
+
+          <text x="885" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">执行交易</text>
+          <text x="885" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">杠杆 / 张数 / 止损</text>
+
+          <text x="1104" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">持续监控并退出</text>
+          <text x="1104" y="101" text-anchor="middle" font-size="13" fill="#5f6b72">target / stop / reversal / time</text>
+
+          <path d="M194 86h24M388 86h24M582 86h24M776 86h24M970 86h24" stroke="#1d5f73" stroke-width="3" stroke-linecap="round"/>
+          <path d="M210 86l-8 -6v12zM404 86l-8 -6v12zM598 86l-8 -6v12zM792 86l-8 -6v12zM986 86l-8 -6v12z" fill="#1d5f73"/>
+
+          <rect x="186" y="184" width="868" height="102" rx="24" fill="#f4efe7" stroke="#d9cdbd"/>
+          <text x="620" y="214" text-anchor="middle" font-size="18" font-weight="700" fill="#182126">真正的 edge 不在单一指标，而在“分层过滤”</text>
+          <text x="620" y="242" text-anchor="middle" font-size="14" fill="#5f6b72">先筛出最强，再做入场确认，再做执行保护，避免把所有机会都当机会。</text>
+          <text x="620" y="267" text-anchor="middle" font-size="14" fill="#5f6b72">这能减少低质量交易，把火力集中到少数高把握度机会。</text>
+        </svg>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Scoring</div>
+      <h2>第一步：先给全市场打分</h2>
+      <p>YOLO 不是先看 gate。它的第一步，是先把动态 universe 里的所有永续合约都打一遍分，再只挑出最强的一个候选。也就是说，<strong>gate 是最后确认，不是第一层筛选。</strong></p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>评分在看什么</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>因子</th>
+                <th>权重</th>
+                <th>意义</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>ADX</td>
+                <td>35%</td>
+                <td>趋势强不强。没有趋势强度，动量往往走不远。</td>
+              </tr>
+              <tr>
+                <td>EMA Alignment</td>
+                <td>25%</td>
+                <td>短中周期均线是否朝同一方向排列。</td>
+              </tr>
+              <tr>
+                <td>Volume Ratio</td>
+                <td>20%</td>
+                <td>当前量能是否超过平时，判断是不是“真动”。</td>
+              </tr>
+              <tr>
+                <td>Funding Edge</td>
+                <td>10%</td>
+                <td>资金费率是否给当前方向带来额外帮助。</td>
+              </tr>
+              <tr>
+                <td>ATR Sweet Spot</td>
+                <td>10%</td>
+                <td>波动是不是在一个既能赚钱、又没过于失控的区间。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>为什么先打分，再过 gate</h3>
+          <ul>
+            <li>如果先对所有币直接套 gate，会把市场当成“符合 / 不符合”的二元世界，丢失强弱排序。</li>
+            <li>YOLO 的关键是“即使有多个都能做，也只做最强的那个”。</li>
+            <li>这样做能把注意力集中到分数最高、结构最完整的合约，而不是同时开很多平庸单子。</li>
+            <li>对投资者来说，这说明策略的核心不是频率，而是排序能力。</li>
+          </ul>
+          <div class="callout">
+            对外解释时可以直接说：<strong>YOLO 先做全市场 ranking，再做交易确认；不是任何出现信号的币都去碰。</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Gates</div>
+      <h2>第二步：选出最强后，再过 3 个 Gate</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Gate 1: Trend Gate</h3>
+          <p><strong>目的：</strong>确认方向一致，而不是逆趋势硬冲。</p>
+          <p><strong>当前口径：</strong><span class="mono">EMA alignment >= 60%</span></p>
+          <p><strong>含义：</strong>如果要做多，就要求均线结构大体上支持多；如果要做空，就要求均线结构大体上支持空。</p>
+        </div>
+        <div class="card">
+          <h3>Gate 2: Momentum Gate</h3>
+          <p><strong>目的：</strong>确认这不是“看起来有方向，但实际上动能已经衰减”的假机会。</p>
+          <p><strong>当前口径：</strong></p>
+          <ul>
+            <li>多头 RSI：<span class="mono">53 - 78</span></li>
+            <li>空头 RSI：<span class="mono">22 - 47</span></li>
+            <li>同时要求 MACD histogram 不能明显反向</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Gate 3: Volume Gate</h3>
+          <p><strong>目的：</strong>确认市场真的在参与，不是没人交易时的假突破。</p>
+          <p><strong>当前口径：</strong><span class="mono">volume_ratio >= 1.1</span></p>
+          <p><strong>含义：</strong>当前成交量至少要比自己的平均水平高 10% 以上。</p>
+        </div>
+      </div>
+      <div class="callout">
+        对投资者最容易理解的一句话是：<strong>分数告诉我们“谁最强”，3 个 gate 告诉我们“现在能不能做”。</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Leverage</div>
+      <h2>第三步：杠杆不是固定值，而是按波动决定</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>先按 ATR 决定目标杠杆</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>ATR%</th>
+                <th>目标杠杆</th>
+                <th>解释</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="mono">&lt; 1%</span></td>
+                <td>75x</td>
+                <td>波动相对低，可以给更高效率。</td>
+              </tr>
+              <tr>
+                <td><span class="mono">1% - 3%</span></td>
+                <td>50x</td>
+                <td>中等波动，对应默认主档。</td>
+              </tr>
+              <tr>
+                <td><span class="mono">&gt; 3%</span></td>
+                <td>30x</td>
+                <td>波动太大，主动降杠杆。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>但真正执行前还要再裁两刀</h3>
+          <ul>
+            <li>先看交易所该合约允许的 <strong>最大杠杆</strong>。</li>
+            <li>再看账户在当前保证金模式下允许的 <strong>最大可下张数</strong>。</li>
+            <li>所以最终执行的不是“理想杠杆”，而是 <strong>effective leverage</strong>。</li>
+          </ul>
+          <p>这也是为什么页面里现在会同时显示 <span class="mono">Max Lev</span> 和 <span class="mono">Eff Lev</span>。策略不是死板地按 50x 下，而是先服从交易所和账户约束。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Entry</div>
+      <h2>什么时候真正开仓</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="k">步骤 1</div>
+          <div class="v">选出 Top 1</div>
+          <div class="muted">全市场分数最高</div>
+        </div>
+        <div class="stat">
+          <div class="k">步骤 2</div>
+          <div class="v">过 3 Gate</div>
+          <div class="muted">趋势、动量、量能同时通过</div>
+        </div>
+        <div class="stat">
+          <div class="k">步骤 3</div>
+          <div class="v">算杠杆和张数</div>
+          <div class="muted">ATR 决定，交易所再裁剪</div>
+        </div>
+        <div class="stat">
+          <div class="k">步骤 4</div>
+          <div class="v">真正下单</div>
+          <div class="muted">kit 开仓 + 止损 + 逐仓保护</div>
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top: 16px;">
+        <div class="card">
+          <h3>执行层现在做了什么</h3>
+          <ul>
+            <li>用 kit 下开仓单，满足比赛要求。</li>
+            <li>默认使用 <span class="mono">isolated</span>，不再把整池 USDT 作为同一个 cross 风险池。</li>
+            <li>开仓时直接附带硬止损单。</li>
+            <li>开仓成功后，再通过原生 API 给该 isolated 仓位补保证金。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>为什么这很重要</h3>
+          <ul>
+            <li>投资者最怕的不是波动，而是“看起来只下 50U，实际上把 300U 都拖进风险池”。</li>
+            <li>逐仓 + 附带止损 + 补保证金，把风险从“账户级联动”收缩成“单仓位风险桶”。</li>
+            <li>这让 YOLO 虽然激进，但不是无边界激进。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Exit</div>
+      <h2>什么时候关仓</h2>
+      <div class="cards">
+        <div class="card">
+          <h3>Target Hit</h3>
+          <p>达到本轮目标利润，直接兑现。这是最理想的退出。</p>
+        </div>
+        <div class="card">
+          <h3>Hard Stop</h3>
+          <p>达到本轮硬止损阈值时退出。现在同时有本地逻辑和交易所附带止损单两层保护。</p>
+        </div>
+        <div class="card">
+          <h3>Trailing Stop</h3>
+          <p>一旦盈利形成，就启动跟踪止盈，把“浮盈”变成“落袋”。</p>
+        </div>
+        <div class="card">
+          <h3>Reversal Detection</h3>
+          <p>如果原先支持交易的动量结构开始反转，策略会主动收紧，严重时直接离场。</p>
+        </div>
+        <div class="card">
+          <h3>Time Decay</h3>
+          <p>如果仓位拖太久却没有走出来，说明原本的短周期优势已经衰减，应该退出。</p>
+        </div>
+        <div class="card">
+          <h3>Position Safety</h3>
+          <p>如果交易所仓位状态与本地状态不一致，系统会优先以交易所真实仓位为准，避免幽灵单。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Capital Model</div>
+      <h2>资金管理：YOLO 不是一次性全押，而是轮次推进</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>轮次结构</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Round</th>
+                <th>计划保证金</th>
+                <th>当前 reserve 口径</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>50U</td>
+                <td>50U</td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>100U</td>
+                <td>100U</td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>200U</td>
+                <td>200U</td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td>400U</td>
+                <td>400U</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>这套结构要怎么向投资者解释</h3>
+          <ul>
+            <li>YOLO 不是从第一笔就把所有资金打进去，而是按轮次推进。</li>
+            <li>第一笔只是最小试探资金桶。</li>
+            <li>只有在前一轮失败并确认要进入下一轮时，才会提升资金占用。</li>
+            <li>如果账户可用资金不足以支持下一轮，策略直接进入 <span class="mono">RECHARGE_REQUIRED</span>，不会盲开。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Risk</div>
+      <h2>投资者最关心的风险怎么回答</h2>
+      <div class="risk-grid">
+        <div class="card">
+          <h3>主要风险</h3>
+          <ul>
+            <li>YOLO 本质上仍然是高波动、高效率的比赛策略，不适合被包装成低回撤稳健配置。</li>
+            <li>极端跳空、流动性真空、异常插针，仍然可能让止损成交价格劣于理想值。</li>
+            <li>这条策略的收益分布，不会像低频套利一样平滑，而是依赖少数高质量动量单。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>但我们已经补了哪些保护</h3>
+          <ul>
+            <li>从 <span class="mono">cross</span> 改成 <span class="mono">isolated</span>。</li>
+            <li>开仓同时附带硬止损单。</li>
+            <li>开仓后自动补逐仓保证金。</li>
+            <li>杠杆先按 ATR 选，再按交易所上限和账户 max-size 裁剪。</li>
+            <li>资金不够支持下一轮时，不再继续交易，而是停机等补资金。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">
+        适合对外说的版本是：<strong>YOLO 不是“无脑高杠杆”，而是“在严格过滤后的高效率出击，并且执行层已经内置隔离和保护”。</strong>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Pitch</div>
+      <h2>一段可以直接拿去讲的投资者版本</h2>
+      <div class="mini">
+        <p>YOLO 的核心不是交易频率，而是排序能力。它会先在全市场永续合约里持续打分，只选出当前最强的那一个候选；然后再要求这个候选同时满足趋势、动量和成交量三层确认。只有在“最强”且“确认成立”时，策略才会进入执行环节。</p>
+        <p>执行时，YOLO 不会盲目使用固定杠杆，而是先根据波动率决定目标杠杆，再根据交易所实际允许的杠杆和账户当前可下张数做裁剪。开仓后，系统同时做逐仓隔离、附带硬止损、补逐仓保证金和动态退出管理，确保它不是裸奔式高杠杆，而是一套有明确风险边界的比赛型高效率策略。</p>
+        <p>所以这套系统的 edge，不是一个神奇指标，而是：<strong>全市场排名 + 多层 gate 确认 + 真实可执行的风险控制</strong>。</p>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

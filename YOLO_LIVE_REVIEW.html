@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO Live 复盘</title>
+  <style>
+    :root {
+      --bg: #f3ede3;
+      --paper: rgba(255, 252, 247, 0.96);
+      --paper-strong: #fffefb;
+      --ink: #182126;
+      --muted: #5d6870;
+      --line: #d9cdbd;
+      --accent: #a84a24;
+      --accent-2: #1d5f73;
+      --good: #216f4f;
+      --warn: #99611f;
+      --bad: #9a3d3d;
+      --shadow: 0 18px 48px rgba(73, 49, 19, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(202, 157, 112, 0.28), transparent 24%),
+        radial-gradient(circle at top right, rgba(29, 95, 115, 0.10), transparent 28%),
+        linear-gradient(180deg, #f8f2e9 0%, #ece0cf 100%);
+      font-family: Georgia, "PingFang SC", "Hiragino Sans GB", serif;
+      line-height: 1.7;
+    }
+    .wrap {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 26px 18px 72px;
+    }
+    .hero,
+    .stats,
+    .two-col,
+    .note-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .hero { grid-template-columns: 1.2fr 0.8fr; }
+    .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .two-col { grid-template-columns: 1fr 1fr; }
+    .note-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .panel,
+    .stat,
+    .mini {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 24px; margin-top: 18px; }
+    .hero .panel { margin-top: 0; }
+    .stat,
+    .mini { padding: 16px; background: var(--paper-strong); }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 11px;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1, h2, h3 { margin: 0 0 12px; line-height: 1.08; }
+    h1 { font-size: 48px; letter-spacing: -0.04em; }
+    h2 { font-size: 28px; letter-spacing: -0.03em; }
+    h3 { font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 6px 0; }
+    .muted { color: var(--muted); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .stat .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .stat .v {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .pill {
+      display: inline-block;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.82);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 9px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    .callout {
+      border-left: 4px solid var(--accent-2);
+      background: rgba(29, 95, 115, 0.06);
+      padding: 14px 16px;
+      border-radius: 14px;
+      margin-top: 12px;
+    }
+    .small {
+      font-size: 13px;
+    }
+    @media (max-width: 1100px) {
+      .hero,
+      .stats,
+      .two-col,
+      .note-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="panel">
+        <div class="eyebrow">Live Review</div>
+        <h1>YOLO 策略实盘复盘</h1>
+        <p>这页只统计已经跑通后的 <span class="mono">live YOLO</span> 交易，不包含 <span class="mono">2026-04-08</span> 到 <span class="mono">2026-04-09</span> 那 6 笔早期未跑通阶段的记录。</p>
+        <p>净值计算也不使用当前钱包余额，因为同一账户还有别的操作。这里全部按 <span class="mono">YOLO</span> 自己的已实现收益和手续费来还原。</p>
+        <div style="margin-top: 14px;">
+          <span class="pill">统计区间：2026-04-11 ~ 2026-04-12</span>
+          <span class="pill">策略：yolo_orchestrator / yolo_momentum live</span>
+          <span class="pill">起始本金口径：50U</span>
+          <span class="pill">早期 6 笔旧记录已剔除</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="eyebrow">Method</div>
+        <h2>口径说明</h2>
+        <ul>
+          <li>主统计基于可完整还原的 <strong>13 笔</strong> live 交易。</li>
+          <li>另有 <strong>2 笔</strong> 真实成交过，但因早期重启恢复 bug，退出元数据不完整，单独列在后面。</li>
+          <li>这版复盘统一按 <strong>逐笔已还原 PnL 累加</strong> 计算：
+            <span class="mono">总收益 = Σ 每笔交易收益</span>；
+            <span class="mono">总收益率 = 110.13 / 50 - 1</span>。</li>
+          <li>最大亏损百分比这里按 <strong>单笔亏损占 50U 起始本金</strong> 计算。</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Summary</div>
+      <h2>汇总</h2>
+      <div class="stats">
+        <div class="stat">
+          <div class="k">完整开仓笔数</div>
+          <div class="v">13</div>
+        </div>
+        <div class="stat">
+          <div class="k">盈利笔数</div>
+          <div class="v good">10</div>
+        </div>
+        <div class="stat">
+          <div class="k">亏损笔数</div>
+          <div class="v bad">3</div>
+        </div>
+        <div class="stat">
+          <div class="k">胜率</div>
+          <div class="v">76.9%</div>
+        </div>
+        <div class="stat">
+          <div class="k">亏损比例</div>
+          <div class="v">23.1%</div>
+        </div>
+        <div class="stat">
+          <div class="k">累计收益率</div>
+          <div class="v good">+120.3%</div>
+        </div>
+      </div>
+
+      <div class="stats" style="margin-top: 16px;">
+        <div class="stat">
+          <div class="k">净值变化</div>
+          <div class="v">50.00 → 110.13</div>
+        </div>
+        <div class="stat">
+          <div class="k">累计收益</div>
+          <div class="v good">+60.13</div>
+        </div>
+        <div class="stat">
+          <div class="k">平均盈利</div>
+          <div class="v">+13.36%</div>
+          <div class="muted small">(+6.68U)</div>
+        </div>
+        <div class="stat">
+          <div class="k">平均亏损</div>
+          <div class="v bad">-4.45%</div>
+          <div class="muted small">(-2.23U)</div>
+        </div>
+        <div class="stat">
+          <div class="k">盈亏因子</div>
+          <div class="v">10.00</div>
+        </div>
+        <div class="stat">
+          <div class="k">最大单笔亏损</div>
+          <div class="v bad">-7.76%</div>
+        </div>
+      </div>
+
+      <div class="callout small">
+        解释：这里统一按你说的口径来算，也就是每一笔交易的收益直接累加，不再混用之前 slot 级别的 fee/summary 口径。于是总收益就是 <span class="mono">ΣPnL = +60.13</span>，净值就是 <span class="mono">50 + 60.13 = 110.13</span>。<span class="mono">-7.76%</span> 对应单笔最差交易 <span class="mono">ZETA -3.8801</span> 占 50U 的比例。
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">NAV</div>
+      <h2>净值轨迹</h2>
+      <div class="two-col">
+        <div class="mini">
+          <h3>策略净值</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>阶段</th>
+                <th>数值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>起始本金</td><td>50.00</td></tr>
+              <tr><td>累计收益</td><td class="good">+60.13</td></tr>
+              <tr><td>理论净值</td><td>110.13</td></tr>
+              <tr><td>累计收益率</td><td class="good">+120.27%</td></tr>
+              <tr><td>最大回撤（按逐笔累计）</td><td class="bad">-4.93%</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mini">
+          <h3>统计解释</h3>
+          <ul>
+            <li>现在的净值路径就是 <span class="mono">50 + 每笔交易收益累加</span>。</li>
+            <li>这更符合你这次要的复盘口径，因为每笔都按 50U 作为投入基准来比较。</li>
+            <li>因为账户有其他人操作，所以这里不用账户余额做终值。</li>
+            <li>那 2 笔元数据不完整的成交单，不进入主统计胜率，但会单独列出来说明。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Details</div>
+      <h2>逐笔明细</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>入场时间</th>
+            <th>币种 / 方向</th>
+            <th>入场原因</th>
+            <th>出场原因</th>
+            <th>PnL / 50U</th>
+            <th>净值</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>2026-04-11 10:16</td>
+            <td>RAVE / LONG</td>
+            <td>Score 高；趋势门通过 <span class="mono">align=100%</span>；动量门通过 <span class="mono">RSI≈60.8</span>、<span class="mono">MACD_hist&gt;0</span>；成交量门通过 <span class="mono">vol_ratio≈1.35</span></td>
+            <td>TARGET_HIT</td>
+            <td class="good">+42.13% <span class="muted">(+21.07U)</span></td>
+            <td>71.07</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>2026-04-11 13:23</td>
+            <td>SPK / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=60.8</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=1.35</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+8.40% <span class="muted">(+4.20U)</span></td>
+            <td>75.27</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>2026-04-11 13:45</td>
+            <td>SPK / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=61.3</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=2.05</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+6.83% <span class="muted">(+3.42U)</span></td>
+            <td>78.69</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>2026-04-11 15:42</td>
+            <td>ZETA / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=68.3</span>；<span class="mono">MACD_hist=0.0001</span>；<span class="mono">vol_ratio=7.13</span></td>
+            <td>TIME_DECAY</td>
+            <td class="bad">-7.76% <span class="muted">(-3.88U)</span></td>
+            <td>74.81</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>2026-04-11 20:24</td>
+            <td>ZETA / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=64.1</span>；<span class="mono">MACD_hist=0.0001</span>；<span class="mono">vol_ratio=1.32</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+9.82% <span class="muted">(+4.91U)</span></td>
+            <td>79.72</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>2026-04-12 00:28</td>
+            <td>ENJ / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=77.2</span>；<span class="mono">MACD_hist=0.0003</span>；<span class="mono">vol_ratio=1.86</span></td>
+            <td>TARGET_HIT</td>
+            <td class="good">+22.36% <span class="muted">(+11.18U)</span></td>
+            <td>90.90</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>2026-04-11 22:01</td>
+            <td>ZETA / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=55.0</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=1.10</span>，刚好踩到放宽后的门槛</td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+0.35% <span class="muted">(+0.17U)</span></td>
+            <td>91.07</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>2026-04-12 01:27</td>
+            <td>FARTCOIN / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=53.8</span>；<span class="mono">MACD_hist=0.0001</span>；<span class="mono">vol_ratio=2.24</span></td>
+            <td>TARGET_HIT</td>
+            <td class="good">+24.84% <span class="muted">(+12.42U)</span></td>
+            <td>103.49</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>2026-04-12 02:50</td>
+            <td>F / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=60.3</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=1.35</span></td>
+            <td>TIME_DECAY</td>
+            <td class="bad">-0.60% <span class="muted">(-0.30U)</span></td>
+            <td>103.19</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>2026-04-12 07:28</td>
+            <td>SOON / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=63.8</span>；<span class="mono">MACD_hist=0.0003</span>；<span class="mono">vol_ratio=1.95</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+3.31% <span class="muted">(+1.65U)</span></td>
+            <td>104.84</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td>2026-04-12 08:07</td>
+            <td>COAI / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=54.0</span>；<span class="mono">MACD_hist=-0.0009</span> 但未到显著反向阈值；<span class="mono">vol_ratio=1.72</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+9.74% <span class="muted">(+4.87U)</span></td>
+            <td>109.71</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td>2026-04-12 09:38</td>
+            <td>COAI / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=63.4</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=1.26</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="good">+5.85% <span class="muted">(+2.93U)</span></td>
+            <td>112.64</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td>2026-04-12 12:17</td>
+            <td>ENJ / LONG</td>
+            <td>趋势门通过；<span class="mono">RSI=55.8</span>；<span class="mono">MACD_hist≈0</span>；<span class="mono">vol_ratio=2.01</span></td>
+            <td>TRAILING_STOP</td>
+            <td class="bad">-5.01% <span class="muted">(-2.50U)</span></td>
+            <td>110.13</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Partial Recovery</div>
+      <h2>已确认成交但元数据不完整</h2>
+      <div class="note-grid">
+        <div class="mini">
+          <h3>SENT-USDT-SWAP</h3>
+          <p>这笔在交易所账单里可以确认真实成交过。本地还保住了入场侧信息：</p>
+          <ul>
+            <li><span class="mono">LONG</span></li>
+            <li><span class="mono">score≈79.5</span></li>
+            <li><span class="mono">align=100%</span></li>
+            <li><span class="mono">vol_ratio=1.91</span></li>
+            <li><span class="mono">RSI=59.1</span></li>
+            <li><span class="mono">MACD_hist≈0</span></li>
+          </ul>
+          <p class="small">交易所账单显示最后是小亏平出，<span class="mono">pnl≈-0.384</span>，但本地没有保住明确的退出信号类型。</p>
+        </div>
+        <div class="mini">
+          <h3>WLD-USDT-SWAP</h3>
+          <p>这笔就是之前那次“幽灵单”问题的来源。交易所确认它真实存在过，但当时 slot 恢复链路有 bug，本地退出记录被覆盖。</p>
+          <p class="small">因此这笔单我只把它标记为“已执行过”，不把它并进上面的主胜率和主明细表，避免把不完整数据当成完整结论。</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

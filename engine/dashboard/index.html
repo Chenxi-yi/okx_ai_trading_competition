@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OKX Elite Flow Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+</head>
+<body>
+  <div id="main">
+    <div class="header">
+      <div>
+        <div class="eyebrow">OKX AI Skill Challenge</div>
+        <div class="header-title">Elite Flow Runtime Board</div>
+        <div class="header-subtitle">PnL, live positions, decision triggers, fills, and leverage in one place</div>
+      </div>
+      <div class="engine-badge">
+        <span class="dot" id="dot"></span>
+        <span id="engine-label">checking...</span>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="top-stats"></div>
+
+    <div class="tab-bar" id="strategy-tabs"></div>
+
+    <div class="panel-grid">
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">NAV Curve</div>
+          <div class="card-kicker" id="nav-chart-title">Live strategy equity</div>
+        </div>
+        <div class="chart-wrap" id="chart-nav"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">Runtime Snapshot</div>
+          <div class="card-kicker" id="snapshot-updated">--</div>
+        </div>
+        <div class="snapshot-grid" id="signal-grid"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-title-row">
+        <div class="card-title">Decision Journal</div>
+        <div class="card-kicker">Why the strategy bought or sold</div>
+      </div>
+      <div class="table-wrap tall">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Event</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Leverage</th>
+              <th>State / PnL</th>
+              <th>Trigger Detail</th>
+            </tr>
+          </thead>
+          <tbody id="decision-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="panel-grid">
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">Trade Stats</div>
+          <div class="card-kicker">Closed-trade quality and cost overview</div>
+        </div>
+        <div class="stat-grid" id="trade-stats"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">Recent Trade Cards</div>
+          <div class="card-kicker">Entry trigger to exit result</div>
+        </div>
+        <div class="snapshot-grid" id="trade-cards"></div>
+      </section>
+    </div>
+
+    <div class="panel-grid">
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">Open Positions</div>
+          <div class="card-kicker">From OKX demo account when available</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Instrument</th>
+                <th>Side</th>
+                <th>Contracts</th>
+                <th>Entry</th>
+                <th>Mark</th>
+                <th>Leverage</th>
+                <th>uPnL</th>
+              </tr>
+            </thead>
+            <tbody id="pos-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title-row">
+          <div class="card-title">Recent Fills</div>
+          <div class="card-kicker">Executed orders and realized trade data</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Instrument</th>
+                <th>Side</th>
+                <th>Size</th>
+                <th>Fill Px</th>
+                <th>Notional</th>
+                <th>Fee</th>
+                <th>PnL</th>
+              </tr>
+            </thead>
+            <tbody id="bills-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

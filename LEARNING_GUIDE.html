@@ -1,0 +1,1532 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OKX AI Skill Challenge 项目导览</title>
+  <style>
+    :root {
+      --bg: #efe7db;
+      --paper: rgba(255, 251, 245, 0.96);
+      --paper-strong: #fffdf8;
+      --ink: #182126;
+      --muted: #5f6b72;
+      --line: #d9cdbd;
+      --accent: #a84a24;
+      --accent-2: #1d5f73;
+      --accent-3: #6b7f34;
+      --good: #216f4f;
+      --warn: #99611f;
+      --bad: #9a3d3d;
+      --shadow: 0 18px 48px rgba(73, 49, 19, 0.10);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(202, 157, 112, 0.34), transparent 28%),
+        radial-gradient(circle at top right, rgba(29, 95, 115, 0.12), transparent 24%),
+        linear-gradient(180deg, #f7f1e8 0%, #eadfce 100%);
+      font-family: Georgia, "PingFang SC", "Hiragino Sans GB", serif;
+      line-height: 1.72;
+    }
+    a { color: inherit; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.93em;
+      background: rgba(29, 95, 115, 0.08);
+      border: 1px solid rgba(29, 95, 115, 0.14);
+      border-radius: 8px;
+      padding: 1px 6px;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #1d252b;
+      color: #edf5f8;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+      line-height: 1.55;
+      overflow: auto;
+    }
+    .wrap {
+      max-width: 1380px;
+      margin: 0 auto;
+      padding: 24px 18px 72px;
+    }
+    .hero,
+    .grid-2,
+    .grid-3,
+    .stats,
+    .cards,
+    .path-grid,
+    .pillars,
+    .data-cards,
+    .strategy-cards,
+    .system-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .hero { grid-template-columns: 1.25fr 0.75fr; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .path-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pillars { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .data-cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .strategy-cards { grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+    .system-grid { grid-template-columns: 0.95fr 1.05fr; }
+    .panel,
+    .card,
+    .step,
+    .data-card,
+    .strategy-card,
+    .stat,
+    .mini-panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .panel {
+      padding: 24px;
+      margin-top: 18px;
+    }
+    .card,
+    .step,
+    .data-card,
+    .strategy-card,
+    .stat,
+    .mini-panel {
+      padding: 16px;
+      background: var(--paper-strong);
+    }
+    .hero .panel { margin-top: 0; }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 11px;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1, h2, h3, h4 { margin: 0 0 12px; line-height: 1.08; }
+    h1 { font-size: 48px; letter-spacing: -0.04em; }
+    h2 { font-size: 30px; letter-spacing: -0.03em; }
+    h3 { font-size: 19px; }
+    h4 { font-size: 16px; }
+    p { margin: 0 0 12px; }
+    ul { margin: 0; padding-left: 19px; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 9px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .muted { color: var(--muted); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .section-lead {
+      font-size: 18px;
+      color: #2f3a40;
+      max-width: 980px;
+    }
+    .pill {
+      display: inline-block;
+      margin-right: 7px;
+      margin-bottom: 8px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.78);
+    }
+    .stat .k,
+    .card .k,
+    .data-card .k,
+    .strategy-card .k {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 7px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .stat .v {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 6px;
+    }
+    .toc {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .toc a {
+      text-decoration: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: #fffdf8;
+    }
+    .toc a span:last-child {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .diagram-wrap {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #f9f6f0 0%, #f0e8dc 100%);
+    }
+    svg { display: block; width: 100%; height: auto; }
+    .step-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .step {
+      border-left: 5px solid var(--accent-2);
+      box-shadow: none;
+    }
+    .step strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .callout {
+      border: 1px solid rgba(29, 95, 115, 0.18);
+      background: rgba(29, 95, 115, 0.06);
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .triple {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 12px;
+    }
+    .triple .mini-panel { box-shadow: none; }
+    .mono-block {
+      margin-top: 14px;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    .data-card,
+    .strategy-card {
+      box-shadow: none;
+    }
+    .data-card h3,
+    .strategy-card h3 {
+      margin-bottom: 6px;
+    }
+    .flow-note {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 1100px) {
+      .hero,
+      .grid-2,
+      .grid-3,
+      .stats,
+      .path-grid,
+      .system-grid,
+      .triple {
+        grid-template-columns: 1fr;
+      }
+      h1 { font-size: 38px; }
+      h2 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="panel">
+        <div class="eyebrow">Beginner Guide</div>
+        <h1>OKX AI Skill Challenge
+          <br />从大到小讲清楚这个项目</h1>
+        <p class="section-lead">这不是一个“单策略脚本仓库”，而是一套带比赛包装的量化交易系统。它同时包含三条路线：标准化的多组合交易引擎、以 <code>elite_flow</code> 为代表的微观结构自定义策略，以及以 <code>yolo_momentum / yolo_orchestrator</code> 为代表的高杠杆实验路线。目前最稳定可运行的是 <code>elite_flow + dashboard</code>。</p>
+        <div>
+          <span class="pill">入口：<code>engine/main.py</code></span>
+          <span class="pill">主运行路径：<code>competition demo-start --strategy elite_flow</code></span>
+          <span class="pill">监控：<code>engine/dashboard.py</code></span>
+          <span class="pill">状态文件：<code>engine/logs/summary.json</code></span>
+        </div>
+        <div class="callout">
+          先用一句话理解全局：
+          <strong>CLI 负责启动，TradingEngine 负责调度，TradingAlgorithm 负责把“市场数据”变成“目标仓位”，Broker 负责下单，Portfolio 负责记账，StructuredLogger 负责把一切写给 dashboard。</strong>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="eyebrow">How To Read</div>
+        <h2>阅读顺序</h2>
+        <div class="toc">
+          <a href="#overview"><span>1. 项目总览</span><span>先建立脑图</span></a>
+          <a href="#architecture"><span>2. 架构图</span><span>看两条主路径</span></a>
+          <a href="#modules"><span>3. 模块拆解</span><span>是什么 / 为什么 / 怎么做</span></a>
+          <a href="#data-elements"><span>4. 数据元总表</span><span>字段从哪来、到哪去</span></a>
+          <a href="#strategies"><span>5. 策略总表</span><span>现在有哪些策略</span></a>
+          <a href="#yolo-routes"><span>6. YOLO 路线</span><span>两条 YOLO 路线怎么分工</span></a>
+          <a href="#elite-flow"><span>7. Elite Flow 细解</span><span>当前主跑策略</span></a>
+          <a href="#core-system"><span>8. 核心交易系统</span><span>最详细的部分</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="overview">
+      <div class="eyebrow">Project Overview</div>
+      <h2>项目总览：它到底是在做什么</h2>
+      <p class="section-lead">这个项目的目标不是只回测，也不是只做前端看板，而是把“量化策略研发、比赛配置、交易执行、运行监控”串成一个完整闭环。你可以把它拆成 4 个层次来理解。</p>
+      <div class="stats">
+        <div class="stat">
+          <div class="k">第 1 层</div>
+          <div class="v">启动层</div>
+          <div>用 <code>engine/main.py</code> 管理命令、策略列表、比赛模式和守护进程。</div>
+        </div>
+        <div class="stat">
+          <div class="k">第 2 层</div>
+          <div class="v">决策层</div>
+          <div>把行情变成信号，再把信号变成目标仓位，再过风险过滤。</div>
+        </div>
+        <div class="stat">
+          <div class="k">第 3 层</div>
+          <div class="v">交易层</div>
+          <div>通过 OKX CLI 下单，内部用 <code>Portfolio</code> 单独记账，不直接等于交易所余额。</div>
+        </div>
+        <div class="stat">
+          <div class="k">第 4 层</div>
+          <div class="v">观测层</div>
+          <div>把运行状态写到 <code>summary.json</code>、JSONL、CSV，再由 dashboard 读取展示。</div>
+        </div>
+      </div>
+      <div class="cards" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">通用主线</div>
+          <h3>标准化引擎路线</h3>
+          <p>适合组合策略、回测、定时调仓。核心是 <code>TradingEngine</code> + <code>TradingAlgorithm</code>，路径比较工程化，也更容易扩展。</p>
+        </div>
+        <div class="card">
+          <div class="k">比赛主线</div>
+          <h3>自定义策略路线</h3>
+          <p>适合像 <code>elite_flow</code>、<code>yolo_momentum</code> 这种需要自己维护事件循环、盘口流、状态机的比赛策略。它们绕开通用调仓引擎，直接自己交易。</p>
+        </div>
+        <div class="card">
+          <div class="k">为什么要两条线</div>
+          <h3>同一仓库，兼顾复用与速度</h3>
+          <p>通用引擎适合做体系化量化框架；自定义策略适合快速比赛迭代。这个仓库的设计本质上是在平衡“框架一致性”和“比赛执行力”。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="architecture">
+      <div class="eyebrow">Architecture</div>
+      <h2>整体架构图</h2>
+      <p class="section-lead">下面这张图把仓库分成三条运行路径。左边是标准化引擎，中间是当前最关键的比赛路径 <code>elite_flow</code>，右边是 YOLO 系列的实验与编排路径。</p>
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 1280 760" role="img" aria-label="OKX AI Skill Challenge architecture diagram">
+          <rect x="0" y="0" width="1280" height="760" fill="url(#bg)" />
+          <defs>
+            <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="#f8f4ec" />
+              <stop offset="100%" stop-color="#eee4d6" />
+            </linearGradient>
+          </defs>
+
+          <rect x="70" y="48" rx="24" ry="24" width="1140" height="82" fill="#fffdf8" stroke="#d9cdbd" stroke-width="2" />
+          <text x="98" y="84" font-size="18" fill="#a84a24" font-family="Georgia, serif">统一入口</text>
+          <text x="98" y="112" font-size="28" fill="#182126" font-family="Georgia, serif">engine/main.py</text>
+          <text x="390" y="111" font-size="15" fill="#5f6b72" font-family="Georgia, serif">list-strategies / start / status / stop / competition demo-start</text>
+
+          <rect x="70" y="178" rx="28" ry="28" width="520" height="504" fill="#fffaf3" stroke="#cdbda7" stroke-width="2.2" />
+          <text x="100" y="216" font-size="18" fill="#1d5f73" font-family="Georgia, serif">路径 A</text>
+          <text x="100" y="248" font-size="30" fill="#182126" font-family="Georgia, serif">标准化引擎路线</text>
+
+          <rect x="102" y="286" rx="18" ry="18" width="456" height="66" fill="#f6fbfc" stroke="#b9d2da" />
+          <text x="126" y="314" font-size="15" fill="#1d5f73" font-family="Georgia, serif">调度层</text>
+          <text x="126" y="337" font-size="24" fill="#182126" font-family="Georgia, serif">TradingEngine.run_loop()</text>
+
+          <rect x="102" y="382" rx="18" ry="18" width="456" height="88" fill="#fcf8f3" stroke="#d9cdbd" />
+          <text x="126" y="410" font-size="15" fill="#a84a24" font-family="Georgia, serif">算法层</text>
+          <text x="126" y="433" font-size="24" fill="#182126" font-family="Georgia, serif">TradingAlgorithm</text>
+          <text x="126" y="456" font-size="14" fill="#5f6b72" font-family="Georgia, serif">Alpha → PortfolioConstruction → Risk → Execution</text>
+
+          <rect x="102" y="500" rx="18" ry="18" width="214" height="110" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="122" y="528" font-size="15" fill="#6b7f34" font-family="Georgia, serif">状态层</text>
+          <text x="122" y="552" font-size="22" fill="#182126" font-family="Georgia, serif">Portfolio</text>
+          <text x="122" y="574" font-size="14" fill="#5f6b72" font-family="Georgia, serif">positions</text>
+          <text x="122" y="594" font-size="14" fill="#5f6b72" font-family="Georgia, serif">cash / pnl / fees</text>
+
+          <rect x="344" y="500" rx="18" ry="18" width="214" height="110" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="364" y="528" font-size="15" fill="#6b7f34" font-family="Georgia, serif">执行层</text>
+          <text x="364" y="552" font-size="22" fill="#182126" font-family="Georgia, serif">Broker</text>
+          <text x="364" y="574" font-size="14" fill="#5f6b72" font-family="Georgia, serif">ccxt 读行情</text>
+          <text x="364" y="594" font-size="14" fill="#5f6b72" font-family="Georgia, serif">okx CLI 下单</text>
+
+          <rect x="690" y="178" rx="28" ry="28" width="520" height="504" fill="#fdf8f4" stroke="#cdbda7" stroke-width="2.2" />
+          <text x="720" y="216" font-size="18" fill="#a84a24" font-family="Georgia, serif">路径 B</text>
+          <text x="720" y="248" font-size="30" fill="#182126" font-family="Georgia, serif">比赛自定义策略路线</text>
+
+          <rect x="722" y="286" rx="18" ry="18" width="456" height="66" fill="#fff4ec" stroke="#dfc1af" />
+          <text x="746" y="314" font-size="15" fill="#a84a24" font-family="Georgia, serif">分发层</text>
+          <text x="746" y="337" font-size="24" fill="#182126" font-family="Georgia, serif">_run_custom_strategy()</text>
+
+          <rect x="722" y="382" rx="18" ry="18" width="456" height="102" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="746" y="410" font-size="15" fill="#1d5f73" font-family="Georgia, serif">策略执行器</text>
+          <text x="746" y="434" font-size="24" fill="#182126" font-family="Georgia, serif">competition/strategies/elite_flow.py</text>
+          <text x="746" y="458" font-size="14" fill="#5f6b72" font-family="Georgia, serif">WebSocket 深度 / trade / 1m K 线 + REST crowding 指标</text>
+
+          <rect x="722" y="516" rx="18" ry="18" width="214" height="110" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="742" y="544" font-size="15" fill="#6b7f34" font-family="Georgia, serif">信号层</text>
+          <text x="742" y="568" font-size="22" fill="#182126" font-family="Georgia, serif">OFI + Crowding</text>
+          <text x="742" y="590" font-size="14" fill="#5f6b72" font-family="Georgia, serif">Regime Gate</text>
+
+          <rect x="964" y="516" rx="18" ry="18" width="214" height="110" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="984" y="544" font-size="15" fill="#6b7f34" font-family="Georgia, serif">执行层</text>
+          <text x="984" y="568" font-size="22" fill="#182126" font-family="Georgia, serif">ATK / OKX CLI</text>
+          <text x="984" y="590" font-size="14" fill="#5f6b72" font-family="Georgia, serif">15s reconcile</text>
+
+          <rect x="308" y="706" rx="22" ry="22" width="664" height="34" fill="#fffdf8" stroke="#d9cdbd" />
+          <text x="334" y="729" font-size="15" fill="#5f6b72" font-family="Georgia, serif">两条路径最后都会把结果写到 logs，再由 dashboard 和 status 命令读取。</text>
+
+          <path d="M640 130 L640 686" stroke="#bda98f" stroke-width="2" stroke-dasharray="8 8" />
+          <path d="M330 352 L330 382" stroke="#8bb5c2" stroke-width="3" />
+          <path d="M330 470 L330 500" stroke="#8bb5c2" stroke-width="3" />
+          <path d="M450 470 L450 500" stroke="#8bb5c2" stroke-width="3" />
+          <path d="M950 352 L950 382" stroke="#d59f84" stroke-width="3" />
+          <path d="M830 484 L830 516" stroke="#d59f84" stroke-width="3" />
+          <path d="M1070 484 L1070 516" stroke="#d59f84" stroke-width="3" />
+        </svg>
+      </div>
+      <div class="path-grid" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">路径 A 的价值</div>
+          <h3>适合可复用、可回测、可多组合扩展</h3>
+          <p>如果你想新增一个规范策略，最好接入 <code>core/alpha.py</code> 和 <code>strategies/</code>，这样自动享受组合构建、风控、执行和日志体系。</p>
+        </div>
+        <div class="card">
+          <div class="k">路径 B 的价值</div>
+          <h3>适合盘口驱动、状态机驱动、比赛速度优先</h3>
+          <p>如果策略依赖订单簿微观结构、分钟级状态切换、主动管理杠杆和持有期，自定义执行循环会更直接。<code>elite_flow</code> 就是这样。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="modules">
+      <div class="eyebrow">Modules</div>
+      <h2>从大到小拆模块：是什么、为什么、怎么做</h2>
+      <div class="pillars">
+        <div class="card">
+          <div class="k">1. 命令入口</div>
+          <h3><code>engine/main.py</code></h3>
+          <p><strong>是什么：</strong>整个项目的总入口。</p>
+          <p><strong>为什么：</strong>统一管理启动、停止、状态查询、比赛命令，避免每个脚本各自为政。</p>
+          <p><strong>怎么做：</strong>解析命令后，分流到标准守护进程或自定义比赛策略；如果是 <code>competition demo-start</code>，会先查注册表，再决定走通用引擎还是自定义策略模块。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">2. 策略注册表</div>
+          <h3><code>competition/registry.py</code></h3>
+          <p><strong>是什么：</strong>比赛策略的配置中心。</p>
+          <p><strong>为什么：</strong>比赛里需要统一记录资金、标的、profile、备注和自定义参数，方便回测、比较、demo 运行共用。</p>
+          <p><strong>怎么做：</strong>读取 <code>engine/config/competition_strategies.json</code>，把 JSON 定义转换成引擎配置或自定义策略配置。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">3. 调度引擎</div>
+          <h3><code>engine/trading_engine.py</code></h3>
+          <p><strong>是什么：</strong>长期运行的交易守护进程。</p>
+          <p><strong>为什么：</strong>需要自动调仓、自动做风险检查、自动保存状态，不依赖 cron。</p>
+          <p><strong>怎么做：</strong>启动后恢复历史状态、启动 WebSocket 价格缓存、按 profile 周期做 rebalance，每 60 秒做 risk check。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">4. 核心算法管线</div>
+          <h3><code>core/algorithm.py</code></h3>
+          <p><strong>是什么：</strong>一套无状态调仓流程。</p>
+          <p><strong>为什么：</strong>把“信号”“组合”“风控”“执行”拆开，方便替换和测试。</p>
+          <p><strong>怎么做：</strong>固定按 <code>Alpha → PortfolioConstruction → Risk → Execution</code> 执行，并统一写日志。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">5. 数据层</div>
+          <h3><code>data/fetcher.py</code> 与 <code>data/feed_ws.py</code></h3>
+          <p><strong>是什么：</strong>历史数据与实时价格输入。</p>
+          <p><strong>为什么：</strong>策略需要历史 OHLCV，风控需要轻量实时价格，比赛路径还要盘口与成交流。</p>
+          <p><strong>怎么做：</strong>历史数据优先走 ccxt / OKX，缓存到 Parquet；实时价格用 ccxt.pro 维护内存缓存，减少 REST 调用。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">6. 策略层</div>
+          <h3><code>strategies/</code> 与 <code>competition/strategies/</code></h3>
+          <p><strong>是什么：</strong>一部分是标准组合 sleeve，一部分是比赛专用独立策略。</p>
+          <p><strong>为什么：</strong>组合框架和盘口策略的表达方式不一样，不能强行塞在一起。</p>
+          <p><strong>怎么做：</strong>标准策略输出目标权重矩阵；比赛策略则自己维护状态、持仓和下单节奏。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">7. 账本层</div>
+          <h3><code>portfolio/portfolio.py</code></h3>
+          <p><strong>是什么：</strong>内部资金与持仓账本。</p>
+          <p><strong>为什么：</strong>一个 OKX 账户里可能跑多个组合，不能直接拿交易所余额当单个策略净值。</p>
+          <p><strong>怎么做：</strong>内部记录 <code>cash</code>、<code>positions</code>、<code>realized_pnl_total</code>、<code>fees</code>，并能序列化到 <code>engine_state.json</code>。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">8. 执行层</div>
+          <h3><code>execution/broker.py</code></h3>
+          <p><strong>是什么：</strong>交易所桥接层。</p>
+          <p><strong>为什么：</strong>比赛要求订单通过 OKX Agent Trade Kit CLI 打标签，同时行情读取仍然希望保持 ccxt 的便利。</p>
+          <p><strong>怎么做：</strong><code>ccxt</code> 只做只读查询，真实下单通过 <code>okx swap place</code>，paper 模式返回 synthetic fill。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">9. 日志与可视化</div>
+          <h3><code>logging_/structured_logger.py</code> 与 <code>dashboard/</code></h3>
+          <p><strong>是什么：</strong>状态落盘和展示层。</p>
+          <p><strong>为什么：</strong>查看状态不应依赖 Python 内部对象，日志文件更稳定，也更适合 dashboard。</p>
+          <p><strong>怎么做：</strong>写 <code>summary.json</code>、每组合 JSONL、signals JSONL、performance.csv、trades.csv；dashboard 直接读取这些结果。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="eyebrow">Operational Flow</div>
+      <h2>项目真正是怎么跑起来的</h2>
+      <div class="step-list">
+        <div class="step">
+          <strong>第 1 步：启动</strong>
+          用户执行 <code>./start_local.sh</code>，脚本会启动 <code>elite_flow</code> 和本地 dashboard，并把 PID 写到 <code>engine/control/</code>。
+        </div>
+        <div class="step">
+          <strong>第 2 步：策略加载</strong>
+          <code>main.py</code> 检查比赛策略定义；如果 <code>base_profile = custom</code>，就直接加载自定义模块，比如 <code>competition/strategies/elite_flow.py</code>。
+        </div>
+        <div class="step">
+          <strong>第 3 步：市场输入</strong>
+          标准引擎拿历史 OHLCV；<code>elite_flow</code> 同时订阅 orderbook、trades、1m OHLCV，再轮询 funding / open interest / long-short ratio。
+        </div>
+        <div class="step">
+          <strong>第 4 步：信号与状态</strong>
+          标准引擎生成目标权重；<code>elite_flow</code> 则计算 <code>flow_score</code>、<code>crowd_score</code>、<code>regime_score</code>，合成 <code>conviction</code>，驱动状态机。
+        </div>
+        <div class="step">
+          <strong>第 5 步：执行与记账</strong>
+          下单通过 OKX CLI，内部组合或自定义策略再把成交、杠杆、PnL、持仓信息写回日志与状态文件。
+        </div>
+        <div class="step">
+          <strong>第 6 步：可视化</strong>
+          dashboard 读取 <code>summary.json</code>、<code>elite_flow.log</code>、bill / position 数据源，生成 NAV、持仓、决策流水和信号快照。
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="data-elements">
+      <div class="eyebrow">Data Elements</div>
+      <h2>数据元总表：每个数据字段是什么，被用在哪里</h2>
+      <p class="section-lead">你要求的“数据元”可以理解为：系统里真正被读取、计算、传递、记录和展示的字段。下面按来源分类，从输入到衍生到输出讲清楚。</p>
+
+      <div class="data-cards">
+        <div class="data-card">
+          <div class="k">A. 历史行情数据</div>
+          <h3>OHLCV</h3>
+          <p><strong>字段：</strong><code>open</code>、<code>high</code>、<code>low</code>、<code>close</code>、<code>volume</code>、<code>funding_rate</code></p>
+          <p><strong>来源：</strong><code>data/fetcher.py</code>，优先 ccxt/OKX，spot 失败时可回退 yfinance。</p>
+          <p><strong>用处：</strong>趋势、突破、横截面动量、carry、ATR 止损、相关性与回测。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">B. 动态标的池数据</div>
+          <h3>Universe</h3>
+          <p><strong>字段：</strong>symbol、24h volume、bid、ask、active 状态</p>
+          <p><strong>来源：</strong><code>fetch_tradable_futures_symbols()</code> 或 YOLO 路径里的 universe 发现逻辑。</p>
+          <p><strong>用处：</strong>过滤稳定币、指数币、TradFi perp、低流动性品种，控制策略可交易范围。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">C. 实时价格缓存</div>
+          <h3>Latest Ticker Price</h3>
+          <p><strong>字段：</strong>symbol → latest price</p>
+          <p><strong>来源：</strong><code>data/feed_ws.py</code> 的 <code>WebSocketPriceCache</code>。</p>
+          <p><strong>用处：</strong>60 秒风险检查、summary snapshot、当前 NAV 与持仓浮盈亏计算。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">D. 盘口数据</div>
+          <h3>Top-N Order Book</h3>
+          <p><strong>字段：</strong><code>bids[i][px, sz]</code>、<code>asks[i][px, sz]</code></p>
+          <p><strong>来源：</strong><code>elite_flow</code> WebSocket 深度流。</p>
+          <p><strong>用处：</strong>计算多层 <code>OFI</code>，也就是订单流失衡，衡量买卖盘主动推进方向。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">E. 实时成交流</div>
+          <h3>Taker Buys / Sells</h3>
+          <p><strong>字段：</strong>成交方向、成交量、时间戳</p>
+          <p><strong>来源：</strong><code>elite_flow</code> trade stream。</p>
+          <p><strong>用处：</strong>辅助判断主动买盘和主动卖盘强弱，配合 OFI 提高流向判断质量。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">F. 拥挤度数据</div>
+          <h3>Crowding Inputs</h3>
+          <p><strong>字段：</strong><code>open_interest</code>、<code>funding_rate</code>、<code>mark_price</code>、<code>index_price</code>、<code>long_short_ratio</code></p>
+          <p><strong>来源：</strong><code>elite_flow</code> 的 REST 轮询。</p>
+          <p><strong>用处：</strong>判断多头过拥挤还是空头过拥挤，用于 squeeze / flush 检测。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">G. Regime 输入</div>
+          <h3>1m Close Series</h3>
+          <p><strong>字段：</strong>最近 60 个一分钟 close</p>
+          <p><strong>来源：</strong><code>elite_flow</code> 的 1m OHLCV 流。</p>
+          <p><strong>用处：</strong>计算短期动量与波动率分位，判断当前是否处于可交易的趋势环境。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">H. 派生信号</div>
+          <h3>Signal Scores</h3>
+          <p><strong>字段：</strong><code>flow_score</code>、<code>crowd_score</code>、<code>regime_score</code>、<code>conviction</code></p>
+          <p><strong>来源：</strong>策略内部计算。</p>
+          <p><strong>用处：</strong>决定是否开仓、开多还是开空、加多少杠杆、是轻仓还是满仓。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">I. 组合账本</div>
+          <h3>Portfolio State</h3>
+          <p><strong>字段：</strong><code>cash</code>、<code>positions</code>、<code>realized_pnl_total</code>、<code>total_fees</code>、<code>peak_nav</code>、<code>drawdown_pct</code></p>
+          <p><strong>来源：</strong><code>Portfolio</code> 内部记账。</p>
+          <p><strong>用处：</strong>风控、绩效统计、状态恢复、dashboard 展示。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">J. 持仓级数据</div>
+          <h3>Position Fields</h3>
+          <p><strong>字段：</strong><code>qty</code>、<code>avg_entry_price</code>、<code>mark</code>、<code>notional</code>、<code>weight</code>、<code>upnl</code>、<code>side</code></p>
+          <p><strong>来源：</strong><code>Portfolio.snapshot()</code> 生成。</p>
+          <p><strong>用处：</strong>状态展示、风险检查、dashboard 持仓表。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">K. 风险状态</div>
+          <h3>Risk State</h3>
+          <p><strong>字段：</strong><code>circuit_breaker_state</code>、<code>vol_regime</code>、<code>risk_scalar</code>、<code>atr_stops</code></p>
+          <p><strong>来源：</strong><code>core/risk.py</code> 与 <code>trading_engine.py</code>。</p>
+          <p><strong>用处：</strong>在调仓或 60 秒检查里缩仓、清仓、止损。</p>
+        </div>
+
+        <div class="data-card">
+          <div class="k">L. 日志与展示数据</div>
+          <h3>Summary / Event Logs</h3>
+          <p><strong>字段：</strong><code>summary.json</code>、每组合 <code>.jsonl</code>、<code>performance.csv</code>、<code>trades.csv</code>、<code>decision_journal</code></p>
+          <p><strong>来源：</strong><code>StructuredLogger</code> 和自定义策略日志。</p>
+          <p><strong>用处：</strong><code>status</code> 命令、dashboard、赛后分析。</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:20px;">数据元明细表</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>数据元</th>
+            <th>来自哪里</th>
+            <th>在哪里被使用</th>
+            <th>它的意义</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>close</code></td>
+            <td>OHLCV</td>
+            <td>趋势、突破、横截面动量、regime、NAV 估值</td>
+            <td>最基本的定价输入</td>
+          </tr>
+          <tr>
+            <td><code>high</code> / <code>low</code></td>
+            <td>OHLCV</td>
+            <td>ATR 止损、突破逻辑</td>
+            <td>衡量波动区间</td>
+          </tr>
+          <tr>
+            <td><code>volume</code></td>
+            <td>OHLCV / ticker</td>
+            <td>动态 universe、YOLO 入场确认</td>
+            <td>衡量是否有足够成交活跃度</td>
+          </tr>
+          <tr>
+            <td><code>funding_rate</code></td>
+            <td>历史 funding 或 crowding 轮询</td>
+            <td>carry、拥挤度模型</td>
+            <td>永续合约多空偏斜和持仓成本</td>
+          </tr>
+          <tr>
+            <td><code>open_interest</code></td>
+            <td>elite_flow REST</td>
+            <td>crowding</td>
+            <td>仓位总量是否在快速堆积</td>
+          </tr>
+          <tr>
+            <td><code>mark_price</code> / <code>index_price</code></td>
+            <td>elite_flow REST</td>
+            <td>crowding premium</td>
+            <td>判断合约溢价是否异常</td>
+          </tr>
+          <tr>
+            <td><code>long_short_ratio</code></td>
+            <td>elite_flow REST</td>
+            <td>crowding</td>
+            <td>判断市场偏向多头还是空头</td>
+          </tr>
+          <tr>
+            <td><code>bids</code> / <code>asks</code></td>
+            <td>elite_flow WebSocket</td>
+            <td>OFI</td>
+            <td>盘口被吃单还是被补单</td>
+          </tr>
+          <tr>
+            <td><code>flow_score</code></td>
+            <td>OFI + taker flow</td>
+            <td>elite_flow 入场</td>
+            <td>短线方向力度</td>
+          </tr>
+          <tr>
+            <td><code>crowd_score</code></td>
+            <td>拥挤度模型</td>
+            <td>elite_flow 入场</td>
+            <td>是否可能出现挤仓</td>
+          </tr>
+          <tr>
+            <td><code>regime_score</code></td>
+            <td>1m momentum + vol regime</td>
+            <td>elite_flow 入场</td>
+            <td>当前市场是否值得交易</td>
+          </tr>
+          <tr>
+            <td><code>conviction</code></td>
+            <td>flow + crowd + regime 加权</td>
+            <td>elite_flow 状态机</td>
+            <td>最终综合信号强度</td>
+          </tr>
+          <tr>
+            <td><code>nav</code></td>
+            <td>Portfolio snapshot</td>
+            <td>risk、summary、dashboard</td>
+            <td>策略净值</td>
+          </tr>
+          <tr>
+            <td><code>pnl</code> / <code>pnl_pct</code></td>
+            <td>Portfolio snapshot</td>
+            <td>绩效、停止规则、面板</td>
+            <td>赚了多少</td>
+          </tr>
+          <tr>
+            <td><code>drawdown_pct</code></td>
+            <td>risk state</td>
+            <td>circuit breaker</td>
+            <td>从峰值回撤了多少</td>
+          </tr>
+          <tr>
+            <td><code>positions</code></td>
+            <td>Portfolio / custom strategy state</td>
+            <td>risk、展示、reconcile</td>
+            <td>当前持仓详情</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel" id="strategies">
+      <div class="eyebrow">Strategies</div>
+      <h2>策略大模块：现在有哪些策略，各自由什么组成</h2>
+      <p class="section-lead">仓库里的策略分成两类。第一类是标准化组合策略，会接入通用引擎。第二类是比赛专用自定义策略，会自己维护事件循环和持仓状态。</p>
+
+      <div class="strategy-cards">
+        <div class="strategy-card">
+          <div class="k">标准策略</div>
+          <h3>Combined Portfolio</h3>
+          <p><strong>组成：</strong>Trend Momentum + Cross-Sectional Momentum + Funding Carry。</p>
+          <p><strong>含义：</strong>它不是一个单信号，而是三种 alpha sleeve 的组合。</p>
+          <p><strong>怎么变化：</strong>daily / hourly profile 会改变 sleeve 权重、调仓节奏和风控阈值。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">标准策略</div>
+          <h3>Trend Momentum</h3>
+          <p><strong>组成：</strong>DMA crossover、breakout、time-series momentum、inverse-vol sizing。</p>
+          <p><strong>含义：</strong>同一个币自己和自己的历史比，判断趋势方向。</p>
+          <p><strong>怎么看变化：</strong>从负变正，说明趋势开始偏多；绝对值变大，说明趋势更强。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">标准策略</div>
+          <h3>Cross-Sectional Momentum</h3>
+          <p><strong>组成：</strong>多 lookback 收益率排名，做多最强、做空最弱。</p>
+          <p><strong>含义：</strong>不是看某个币绝对涨跌，而是看“谁比别人更强”。</p>
+          <p><strong>怎么看变化：</strong>排名变化越大，说明风格切换越明显。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">标准策略</div>
+          <h3>Funding Carry</h3>
+          <p><strong>组成：</strong>funding 均值平滑 + trend veto。</p>
+          <p><strong>含义：</strong>利用永续合约 funding 偏斜来赚 carry，但会用趋势 veto 防止逆着趋势硬做。</p>
+          <p><strong>怎么看变化：</strong>funding 越极端，信号越强；如果趋势反着来，信号会被 veto。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">比赛策略</div>
+          <h3>Elite Flow</h3>
+          <p><strong>组成：</strong>Multi-level OFI 45% + Crowding 35% + Regime Gate 20%。</p>
+          <p><strong>含义：</strong>这是一个盘口驱动的挤仓/踩踏捕捉器，不是日频轮动模型。</p>
+          <p><strong>怎么看变化：</strong><code>conviction</code> 越高，说明方向、拥挤与环境越一致；状态机会从观望转为入场或持有。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">比赛策略</div>
+          <h3>YOLO Momentum</h3>
+          <p><strong>组成：</strong>多周期动量 + 高杠杆 + 分轮补仓 + ROI 目标停止。</p>
+          <p><strong>含义：</strong>偏激进实验型策略，目标明确，风险也更集中。</p>
+          <p><strong>怎么看变化：</strong>round 越往后，说明前面回合失败或止损，仓位风险在上升。</p>
+        </div>
+
+        <div class="strategy-card">
+          <div class="k">比赛编排策略</div>
+          <h3>YOLO Orchestrator</h3>
+          <p><strong>组成：</strong>10 个顺序部署的 YOLO slot。</p>
+          <p><strong>含义：</strong>不是新 alpha，而是把 YOLO 包装成一个更容易做 demo 验证的实验框架。</p>
+          <p><strong>怎么看变化：</strong>看 slot 的 running / succeeded / drained 分布，就能知道整体实验健康度。</p>
+        </div>
+      </div>
+
+      <div class="mono-block">
+<pre>标准策略的输出形式：
+price_data -> Insight(symbol, direction, weight, confidence)
+          -> target_weights
+          -> risk-adjusted weights
+
+Elite Flow 的输出形式：
+orderbook / trades / crowding / 1m close
+  -> flow_score / crowd_score / regime_score
+  -> conviction
+  -> state machine
+  -> order / leverage / exit decision</pre>
+      </div>
+    </section>
+
+    <section class="panel" id="yolo-routes">
+      <div class="eyebrow">YOLO Routes</div>
+      <h2>YOLO 的两条路线：单策略执行器与多槽位编排器</h2>
+      <p class="section-lead">你提到的 YOLO 其实不是一条路线，而是两层结构。<code>yolo_momentum</code> 负责“怎么交易”，<code>yolo_orchestrator</code> 负责“怎么批量部署和管理多个 YOLO 实验槽位”。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="k">路线 1</div>
+          <h3><code>yolo_momentum</code></h3>
+          <p><strong>它是什么：</strong>一个高杠杆、单方向、单合约优先的激进动量执行器。</p>
+          <p><strong>目标：</strong>用分轮保证金和高杠杆，追求累计投入资金的 20% ROI 目标。</p>
+          <p><strong>关键机制：</strong></p>
+          <ul>
+            <li>动态发现可交易 USDT-SWAP 标的，并过滤稳定币、股票 perp、过宽价差。</li>
+            <li>根据 EMA、RSI、量能等做多周期动量判断。</li>
+            <li>使用 <code>round_margins = [50, 100, 200, 400]</code> 的分轮投入。</li>
+            <li>用高杠杆扩大收益，也允许在 liquidation 后进入下一轮。</li>
+            <li>达到目标 ROI 后自动停机。</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="k">路线 2</div>
+          <h3><code>yolo_orchestrator</code></h3>
+          <p><strong>它是什么：</strong>一个实验编排器，不直接生成 alpha。</p>
+          <p><strong>目标：</strong>把 10 个 YOLO slot 依次部署出来，做更长时间的 demo 验证。</p>
+          <p><strong>关键机制：</strong></p>
+          <ul>
+            <li>每个 slot 有独立的预算、ROI、交易历史和状态。</li>
+            <li>默认一次只允许 1 个 slot 真正活跃，避免共享账户下净持仓合并。</li>
+            <li>一个 slot 结束后，立刻或按 stagger 时间部署下一个。</li>
+            <li>把总实验结果写入 <code>engine/logs/yolo_orchestrator.json</code>。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="mono-block">
+<pre>YOLO 两条路线的关系：
+
+yolo_momentum
+  = 单个激进策略实例
+  = 负责选标的、开仓、止损、追踪 ROI、轮次切换
+
+yolo_orchestrator
+  = 多个 yolo_momentum 的上层调度器
+  = 负责 slot 排队、串行部署、整体 ROI 汇总、实验状态总览</pre>
+      </div>
+
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">YOLO Momentum 的核心数据元</div>
+          <p><code>round</code>、<code>cumulative_invested</code>、<code>target_roi_pct</code>、<code>default_lever</code>、<code>high_vol_lever</code>、<code>low_vol_lever</code>、<code>hard_stop_pct</code>、<code>cooldown_min</code></p>
+          <p>这些字段共同定义了“这一轮打多大、打多久、输了怎么切到下一轮”。</p>
+        </div>
+        <div class="card">
+          <div class="k">Orchestrator 的核心数据元</div>
+          <p><code>slot.status</code>、<code>started_at</code>、<code>finished_at</code>、<code>overall_pnl</code>、<code>overall_roi_pct</code>、<code>total_running</code>、<code>total_pending</code></p>
+          <p>这些字段不决定单笔交易，而是决定整个实验编排是否还健康。</p>
+        </div>
+        <div class="card">
+          <div class="k">为什么要单独讲两条路线</div>
+          <p>因为 <code>yolo_momentum</code> 是策略，<code>yolo_orchestrator</code> 是调度器。把两者混为一个东西，会误判修改点，也会误判日志与状态文件的职责。</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:20px;">YOLO 路线怎么看“变化代表什么”</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>字段或现象</th>
+            <th>变化时代表什么</th>
+            <th>你该怎么理解</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>round</code> 上升</td>
+            <td>策略进入下一轮资金投入</td>
+            <td>说明上一轮没有完成目标，风险和资本占用在上升</td>
+          </tr>
+          <tr>
+            <td><code>roi_pct</code> 接近 20%</td>
+            <td>接近 slot 成功线</td>
+            <td>这是 YOLO 的主要停机目标，不是普通净值指标而已</td>
+          </tr>
+          <tr>
+            <td><code>status = drained</code></td>
+            <td>预算轮次已经耗尽</td>
+            <td>该 slot 被视为失败实验，需要交给下一个 slot</td>
+          </tr>
+          <tr>
+            <td><code>status = succeeded</code></td>
+            <td>单 slot 达成目标 ROI</td>
+            <td>说明这一轮实验按设计完成</td>
+          </tr>
+          <tr>
+            <td><code>overall_roi_pct</code> 上升</td>
+            <td>整个 orchestrator 实验变好</td>
+            <td>这是看 10 个 slot 合并表现的总指标</td>
+          </tr>
+          <tr>
+            <td><code>total_pending</code> 下降</td>
+            <td>更多 slot 已部署</td>
+            <td>说明实验在往后推进，而不代表策略本身变强</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：开仓规则到底是什么</h3>
+      <p>YOLO 这一条线最容易被误解的点是：它有“3 个 gate”，但这 3 个 gate 讲的是<strong>入场条件</strong>，不是止损条件。也就是说，YOLO 不是先开了再想办法解释，而是先要求趋势、动量、量能同时对齐，才允许下单。</p>
+      <div class="triple">
+        <div class="mini-panel">
+          <h4>Gate 1: Trend Gate</h4>
+          <p><strong>看什么：</strong>15m、1H、4H 的 EMA 排列，再加 1H 相对 EMA50 的位置，最后做多数投票。</p>
+          <p><strong>代码口径：</strong><code>ema_alignment &gt;= 60%</code>。</p>
+          <p><strong>为什么重要：</strong>它先回答“现在大方向是不是顺着这笔交易”。如果大方向都不一致，后面的动量和量能很可能只是噪声。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 2: Momentum Burst Gate</h4>
+          <p><strong>看什么：</strong>15m RSI 是否处在可追击区间，同时 MACD histogram 不能明显反着来。</p>
+          <p><strong>多头口径：</strong><code>RSI 53-78</code>；<strong>空头口径：</strong><code>RSI 22-47</code>。</p>
+          <p><strong>为什么重要：</strong>它确保“这不是已经衰竭的趋势”，而是还有一段惯性能继续跑。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 3: Volume Gate</h4>
+          <p><strong>看什么：</strong>当前 15m 成交量是否明显高于最近平均量。</p>
+          <p><strong>代码口径：</strong><code>volume_ratio &gt;= 1.1</code>。</p>
+          <p><strong>为什么重要：</strong>YOLO 用高杠杆，最怕“方向判断对了，但没成交量跟随”，那种走势最容易抽回来。</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：不是先过 gate，而是先打分、再选最强、再过 gate</h3>
+      <p>真正的执行顺序不是“看到一个币就立刻过 gate”，而是先做一轮全市场横向比较。也就是说，YOLO 先对可交易 universe 里的所有合约逐个评分，挑出分数最高的那个，再让这个“第一名”去过 3 个 gate。只有第一名通过 gate，才允许真正开仓。</p>
+      <div class="mono-block">
+<pre>真实决策流水：
+
+动态 universe
+  -> 对每个合约抓 15m / 1H / 4H candles
+  -> 计算 ADX / EMA alignment / volume ratio / funding / ATR% / RSI / MACD
+  -> 算 composite score
+  -> 选 score 最高的那个
+  -> 让这个第一名过 Trend / Momentum / Volume 3 个 gate
+  -> 通过后再决定杠杆、张数、止损单
+  -> 下单</pre>
+      </div>
+
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">第一步</div>
+          <h3>YOLO 怎么评分</h3>
+          <p>YOLO 不是直接看 RSI 一个指标，而是先做一个 0 到 100 的综合评分。这个分数来自 5 块：</p>
+          <ul>
+            <li><strong>ADX 35%：</strong>趋势强不强。</li>
+            <li><strong>EMA Alignment 25%：</strong>多周期 EMA 是否朝同一方向排列。</li>
+            <li><strong>Volume 20%：</strong>当前量能是不是放大。</li>
+            <li><strong>Funding Edge 10%：</strong>如果要做多，负 funding 更加分；如果要做空，正 funding 更加分。</li>
+            <li><strong>ATR Sweet Spot 10%：</strong>波动率是否落在策略喜欢的区间。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="k">第二步</div>
+          <h3>为什么先评分再过 gate</h3>
+          <p>因为 gate 解决的是“这个币现在能不能打”，评分解决的是“今天这么多币里，谁最值得先看”。</p>
+          <p>所以实际是：</p>
+          <ul>
+            <li>评分负责做横向排序。</li>
+            <li>gate 负责做最后的入场确认。</li>
+            <li>如果第一名被 gate 挡掉，系统不会立刻开第二名，而是等下一轮重新扫描。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout">
+        可以把 YOLO 理解成两层筛选：
+        <strong>第一层是“全市场谁最强”，第二层是“这个最强者现在是否真能打”。</strong>
+      </div>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：评分公式到底在看什么</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>评分块</th>
+            <th>权重</th>
+            <th>看什么</th>
+            <th>作用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ADX Score</td>
+            <td>35%</td>
+            <td>1H ADX 强度</td>
+            <td>回答“这是不是一个有趋势的市场”</td>
+          </tr>
+          <tr>
+            <td>Alignment Score</td>
+            <td>25%</td>
+            <td>15m / 1H / 4H EMA 方向投票</td>
+            <td>回答“多周期方向是否一致”</td>
+          </tr>
+          <tr>
+            <td>Volume Score</td>
+            <td>20%</td>
+            <td>当前量 / 平均量</td>
+            <td>回答“有没有量能确认”</td>
+          </tr>
+          <tr>
+            <td>Funding Score</td>
+            <td>10%</td>
+            <td>funding 是否对这笔方向有利</td>
+            <td>回答“拥挤度是否给这笔交易加分”</td>
+          </tr>
+          <tr>
+            <td>ATR Sweet Spot</td>
+            <td>10%</td>
+            <td>ATR% 是否落在策略喜欢的波动区间</td>
+            <td>回答“这只币的波动既不能太死，也不能乱飞”</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:12px;">这就是为什么你在看板上会看到一个币分数很高，但最后还是不开。高分只说明它在今天的全市场里很强，不代表它已经通过了最终入场确认。</p>
+
+      <div class="callout">
+        用一句话概括 YOLO 的开仓逻辑：
+        <strong>先给全市场打分，选出第一名；再让第一名去过 3 个 gate；过了之后再根据 ATR 波动率先算目标杠杆，再被交易所最大杠杆和账户最大可下张数二次裁剪，最后才真正下单。</strong>
+      </div>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：杠杆是怎么决定的</h3>
+      <p>YOLO 不是固定一个杠杆写死到底，而是先看波动率，再看交易所限制。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>阶段</th>
+            <th>代码口径</th>
+            <th>含义</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>先算目标杠杆</td>
+            <td><code>ATR% &gt; 3 -&gt; 30x</code><br><code>ATR% &lt; 1 -&gt; 75x</code><br>其他默认 <code>50x</code></td>
+            <td>波动很大就降杠杆，波动很小才允许更高杠杆</td>
+          </tr>
+          <tr>
+            <td>再看交易所上限</td>
+            <td>如果目标杠杆大于该合约允许最大杠杆，就自动降到该合约的 <code>max leverage</code></td>
+            <td>比如想开 50x，但这个币只允许 20x，就会变成 20x</td>
+          </tr>
+          <tr>
+            <td>最后看账户最大可下张数</td>
+            <td>如果按当前保证金和杠杆算出来的张数大于账户可下上限，就自动缩小</td>
+            <td>这一步解决“理论上能开，但账户实际下不了那么多张”的问题</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：什么时候真正开仓</h3>
+      <p>YOLO 不是扫到高分就立刻下单。它真正下单要同时满足下面 6 个条件：</p>
+      <div class="step-list">
+        <div class="step">
+          <strong>条件 1：这一轮还在 HUNTING</strong>
+          只有当前状态是 <code>HUNTING</code>，系统才会继续扫描。
+        </div>
+        <div class="step">
+          <strong>条件 2：全市场评分已经选出第一名</strong>
+          先完成一轮 universe 扫描，拿到 <code>selected_candidate</code>。
+        </div>
+        <div class="step">
+          <strong>条件 3：第一名通过 3 个 gate</strong>
+          趋势、动量、量能三关必须同时过线。
+        </div>
+        <div class="step">
+          <strong>条件 4：杠杆和张数在交易所允许范围内</strong>
+          目标杠杆会被交易所上限裁剪，张数会被 <code>account max-size</code> 裁剪。
+        </div>
+        <div class="step">
+          <strong>条件 5：这一轮风险桶资金够</strong>
+          现在 live 版本已经改成逐仓，还会检查这一轮的 <code>margin + reserve</code> 资金桶是否够，不够就进 <code>RECHARGE_REQUIRED</code>。
+        </div>
+        <div class="step">
+          <strong>条件 6：下单成功</strong>
+          真正成功标准不是“发出信号”，而是 kit 下单成功，并进入 <code>IN_POSITION</code>。
+        </div>
+      </div>
+
+      <h3 style="margin-top:22px;">YOLO Momentum：止损和退出规则是什么</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>退出规则</th>
+            <th>触发条件</th>
+            <th>系统会做什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Target Hit</td>
+            <td>浮盈达到当前轮次目标利润</td>
+            <td>立即平仓，状态记为成功，本 slot 停机</td>
+          </tr>
+          <tr>
+            <td>Hard Stop</td>
+            <td>浮亏达到当前轮 <code>current_margin</code> 的 <code>60%</code></td>
+            <td>平仓，记为 <code>ROUND_LOST</code>，进入冷却并准备下一轮</td>
+          </tr>
+          <tr>
+            <td>Trailing Stop</td>
+            <td>先达到目标的 50%，之后利润从峰值明显回撤</td>
+            <td>平仓，锁住一部分利润，不一定结束整个 slot</td>
+          </tr>
+          <tr>
+            <td>Reversal Detection</td>
+            <td>综合反转分数 <code>&gt;= 0.45</code></td>
+            <td>立即平仓；如果只是 <code>&gt;= 0.30</code>，则先收紧止损</td>
+          </tr>
+          <tr>
+            <td>Time Decay</td>
+            <td>持仓超过 <code>4 小时</code>，但利润还不到目标的 <code>5%</code></td>
+            <td>认为动量已经钝化，主动退出</td>
+          </tr>
+          <tr>
+            <td>Liquidation Detection</td>
+            <td>当亏损较深时，交易所上已经查不到该持仓</td>
+            <td>视作本轮失败，进入下一轮资金分配逻辑</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3 style="margin-top:22px;">YOLO Momentum：什么时候关仓</h3>
+      <p>一旦进入 <code>IN_POSITION</code>，系统每隔一段时间会做一次 reconcile。它不是盯着一个指标，而是按一套优先级顺序检查：</p>
+      <div class="step-list">
+        <div class="step">
+          <strong>第 1 优先级：Target Hit</strong>
+          如果浮盈已经达到当前轮目标利润，直接平仓，这是 YOLO 最理想的退出方式。
+        </div>
+        <div class="step">
+          <strong>第 2 优先级：Hard Stop</strong>
+          如果浮亏达到本轮 <code>current_margin × hard_stop_pct</code>，直接退出。现在代码里还会在下单时同步挂一个硬止损单，防止只靠本地轮询来平仓。
+        </div>
+        <div class="step">
+          <strong>第 3 优先级：Trailing Stop</strong>
+          如果盈利先达到目标的一半，系统会启动 trailing；之后如果利润从峰值回撤到阈值以下，就锁盈离场。
+        </div>
+        <div class="step">
+          <strong>第 4 优先级：Time Decay</strong>
+          如果已经抱了 4 小时，但利润还是低于目标的 5%，说明动量钝化，主动退出。
+        </div>
+        <div class="step">
+          <strong>第 5 优先级：Reversal Detection</strong>
+          系统还会额外算一个反转分数，由 volume climax、RSI divergence、EMA cross、funding extreme、MACD shrinking 组成。分数够高就直接平；分数中等则先收紧止损。
+        </div>
+        <div class="step">
+          <strong>第 6 优先级：仓位消失检测</strong>
+          如果亏损已经很深，同时交易所上查不到仓位，系统会把它视作本轮失败，进入下一轮逻辑。
+        </div>
+      </div>
+      <p style="margin-top:12px;">如果第一轮就打到硬止损，YOLO 不会继续摊平原仓位。它会先冷却，再把轮次切到下一轮，把保证金从 <code>50 → 100 → 200 → 400</code> 逐级提高，然后重新跑一次全市场选标和 3 个 gate，目标是用下一轮交易把前面的亏损和新的 20% ROI 目标一起追回来。</p>
+    </section>
+
+    <section class="panel" id="elite-flow">
+      <div class="eyebrow">Elite Flow</div>
+      <h2>当前主策略 `elite_flow` 详细说明</h2>
+      <p class="section-lead">README 明确说明了当前最稳定可运行的路径是 <code>elite_flow</code>。它是这个仓库里最值得优先理解的策略，因为 dashboard、start script 和日志解析都围绕它做了增强。</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="k">信号结构</div>
+          <h3>三段式信号</h3>
+          <ul>
+            <li><strong>Flow：</strong>看盘口与主动成交，判断现在的短线力量到底往哪边推。</li>
+            <li><strong>Crowding：</strong>看 OI、funding、premium、L/S ratio，判断对手盘是不是已经站得太挤。</li>
+            <li><strong>Regime：</strong>看短期动量和波动率分位，避免在震荡或极端异常波动里乱打。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="k">配置重点</div>
+          <h3>阈值与权重</h3>
+          <ul>
+            <li><code>flow_weight = 0.45</code></li>
+            <li><code>crowd_weight = 0.35</code></li>
+            <li><code>regime_weight = 0.20</code></li>
+            <li><code>entry_threshold = 0.40</code></li>
+            <li><code>full_threshold = 0.60</code></li>
+            <li><code>max_positions = 1</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="triple">
+        <div class="mini-panel">
+          <h4>Flow 变大说明什么</h4>
+          <p>盘口深度在你想要的方向上被持续吃穿，或者该方向不断补单强化。它代表“眼前这一分钟，主动推动价格的是谁”。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Crowd 变大说明什么</h4>
+          <p>市场一边倒地拥挤。如果价格一旦突破，对拥挤一侧会形成挤压。这个分数的重点不是顺势，而是“对手盘会不会被迫踩踏”。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Regime 变差说明什么</h4>
+          <p>要么太震荡，没有方向；要么太极端，容易失控。Regime Gate 的任务是过滤掉“信号看着有，但环境不支持”的时刻。</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        新手最容易误解的一点：
+        <strong><code>elite_flow</code> 不是单纯“趋势策略”。它本质上是在寻找“方向 + 拥挤 + 环境”同时对齐的短线机会。</strong>
+      </div>
+
+      <h3 style="margin-top:22px;">Elite Flow：开仓规则怎么理解</h3>
+      <p><code>elite_flow</code> 没有像 YOLO 那样把规则写成“Trend / Momentum / Volume 三个 gate”，但它本质上也有三层入场门，只是表达方式是“三个分数组合成 conviction”。你可以把它理解成一个更交易员化的三段式开仓系统。</p>
+      <div class="triple">
+        <div class="mini-panel">
+          <h4>Gate 1: Flow</h4>
+          <p><strong>看什么：</strong>盘口 top-N 深度失衡 + 主动成交方向。</p>
+          <p><strong>代码口径：</strong>先算 <code>flow_score</code>；如果 <code>abs(flow_score)</code> 太小，直接不做。</p>
+          <p><strong>意义：</strong>先确认“眼前这一刻是谁在真正推动价格”，这是 Elite 最重要的前置条件。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 2: Crowding</h4>
+          <p><strong>看什么：</strong>OI、funding、premium、long/short ratio 是否说明某一边已经太拥挤。</p>
+          <p><strong>代码口径：</strong>形成 <code>crowd_score</code>，只在 squeeze / flush 结构清晰时给分。</p>
+          <p><strong>意义：</strong>不是单纯顺势，而是判断“如果价格再往这边走，对手盘会不会被迫补仓”。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 3: Regime</h4>
+          <p><strong>看什么：</strong>短周期趋势和波动率环境是不是可交易。</p>
+          <p><strong>代码口径：</strong>形成 <code>regime_score</code>；如果趋势和 flow 打架，会强行降权。</p>
+          <p><strong>意义：</strong>防止在震荡、极端波动或错误环境里把微观信号过度解释。</p>
+        </div>
+      </div>
+
+      <p style="margin-top:12px;">最终它不是简单“3 个都过就开”，而是走这条链路：</p>
+      <div class="mono-block">
+<pre>flow_score / crowd_score / regime_score
+  -> 加权合成 conviction
+  -> 先检查 flow 是否足够强
+  -> 再检查 flow 和 regime 是否同向
+  -> conviction 达到 entry_threshold 才允许入场
+  -> conviction 更高时，从 PROBE 进入 FULL</pre>
+      </div>
+      <p style="margin-top:12px;">所以 Elite 的开仓规则更像：“先看微观流是否强，再看拥挤结构是否支持，再看环境是否允许，最后把三者压缩成一个 conviction，再决定是不开、试探仓还是满仓。”</p>
+
+      <h3 style="margin-top:22px;">Elite Flow：止损和退出规则是什么</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>退出规则</th>
+            <th>触发条件</th>
+            <th>系统会做什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Flow Reversal</td>
+            <td>持仓方向和 <code>flow_score</code> 明显反着来，而且反向流已经很强</td>
+            <td>立即退出，因为 Elite 把微观流当成第一优先级</td>
+          </tr>
+          <tr>
+            <td>Stop Loss</td>
+            <td><code>pnl_pct &lt;= -2.0%</code></td>
+            <td>硬止损，平掉当前仓位</td>
+          </tr>
+          <tr>
+            <td>Take Profit</td>
+            <td><code>pnl_pct &gt;= 3.5%</code> 且 flow 已经衰减</td>
+            <td>止盈退出，不追求无限抱单</td>
+          </tr>
+          <tr>
+            <td>Max Hold</td>
+            <td>持仓时间超过 <code>max_hold_min</code></td>
+            <td>无论盈亏都退出，避免短线策略拖成长线赌单</td>
+          </tr>
+          <tr>
+            <td>Daily Loss Stop</td>
+            <td>当日累计亏损超过 <code>5%</code></td>
+            <td>停止开新仓，让系统进入保护状态</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:12px;">跟 YOLO 相比，Elite 的风险控制更“硬”和更交易员化：它不靠多轮补仓去追回，而是更强调单笔快速验证、错了马上砍、对了在流衰减时离场。</p>
+    </section>
+
+    <section class="panel" id="core-system">
+      <div class="eyebrow">Core Trading System</div>
+      <h2>核心交易系统：非常详细的拆解</h2>
+      <p class="section-lead">这一部分不是讲策略思想，而是讲系统是如何把想法变成交易的。你如果以后要维护这个仓库，最该读懂的是这里。</p>
+
+      <div class="system-grid">
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>1. `TradingEngine` 是调度中枢</h3>
+          <p><strong>它是什么：</strong>一个长期运行的 orchestrator。</p>
+          <p><strong>它解决什么问题：</strong>让多个组合自动运行、自动调仓、自动风控、自动保存状态。</p>
+          <p><strong>它怎么工作：</strong></p>
+          <ul>
+            <li><code>start()</code> 根据配置创建或恢复多个 <code>Portfolio</code>。</li>
+            <li>启动 <code>WebSocketPriceCache</code>，降低风险检查时的 REST 成本。</li>
+            <li>写 PID 文件，写启动 summary。</li>
+            <li><code>run_loop()</code> 每轮检查是否需要 rebalance、是否需要 risk check。</li>
+            <li>每个循环结束后写 <code>summary.json</code> 和 <code>engine_state.json</code>。</li>
+          </ul>
+          <p class="flow-note">为什么这样设计：这让“策略逻辑”和“运行维护逻辑”分开，后续出问题时更容易定位是在信号层、风控层还是进程层。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>2. `TradingAlgorithm` 是调仓流水线</h3>
+          <p><strong>它是什么：</strong>无状态的调仓 pipeline。</p>
+          <p><strong>它为什么重要：</strong>项目里最通用、最可复用的抽象都在这里。</p>
+          <p><strong>单次 rebalance 内部发生什么：</strong></p>
+          <ul>
+            <li>从 <code>price_data</code> 取当前 close，估算调仓前 NAV。</li>
+            <li>调用 <code>alpha.generate()</code> 输出 raw insights。</li>
+            <li>调用 <code>portfolio_construction.create_targets()</code> 输出目标权重。</li>
+            <li>调用 <code>risk.adjust()</code> 进一步缩放或清零权重。</li>
+            <li>调用 <code>execution.execute()</code> 把目标权重变成真实 trade。</li>
+            <li>更新组合快照、NAV 历史、peak NAV，并写结构化日志。</li>
+          </ul>
+          <p class="flow-note">这套设计非常像 LEAN 的模块化模型，但代码更贴近这个项目自己的比赛和部署场景。</p>
+        </div>
+      </div>
+
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>3. Alpha 层</h3>
+          <p>标准路径下由 <code>CombinedAlphaModel</code> 统一调度多个 sleeve。它把策略输出标准化成 <code>Insight</code> 列表，每条 insight 至少包含 symbol、方向、权重、置信度和来源。</p>
+          <p><strong>为什么重要：</strong>只有先把观点表达成统一对象，后面的组合构建和风控才能完全复用。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>4. Portfolio Construction 层</h3>
+          <p>由 <code>SignalFilteredPortfolioModel</code> 做三件事：阈值过滤、集中度过滤、杠杆和净敞口约束。</p>
+          <p><strong>为什么重要：</strong>策略可能会产生很多小而杂的信号，但真正能下场交易的通常只应该留下最强的一部分。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>5. Risk 层</h3>
+          <p>用 <code>CompositeRiskModel</code> 串联多个模型，至少包括回撤断路器、波动率 regime、相关性 watchdog。</p>
+          <p><strong>为什么重要：</strong>它不是“止损补丁”，而是决定系统还能不能继续开仓的控制塔。</p>
+        </div>
+      </div>
+
+      <div class="grid-3" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>6. Execution 层</h3>
+          <p>标准路径里会把目标权重转成交易动作，再调用 <code>Broker</code>。真实下单不走 ccxt，而是走 OKX CLI，这样能满足比赛对标签和路径的要求。</p>
+          <p><strong>关键点：</strong>读和写是分离的。读市场用 ccxt，写订单用 CLI。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>7. Portfolio 账本层</h3>
+          <p>项目内部净值不是直接复制交易所余额，而是自己用 <code>record_trade()</code> 算已实现收益、手续费、持仓成本和现金。</p>
+          <p><strong>关键点：</strong>这让多策略共享一个账户时，仍能保持各自独立的表现归因。</p>
+        </div>
+
+        <div class="card">
+          <div class="k">核心对象</div>
+          <h3>8. Logger 与 Dashboard</h3>
+          <p><code>StructuredLogger</code> 把系统状态从“运行中的对象”变成“可消费的文件格式”。dashboard 不需要直接 import 引擎内部对象，只读文件即可。</p>
+          <p><strong>关键点：</strong>这是系统工程里非常稳的一种解耦方式。</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:20px;">核心交易系统的完整链路</h3>
+      <div class="mono-block">
+<pre>1. main.py 接收命令
+2. TradingEngine.start() 创建或恢复 Portfolio
+3. WebSocketPriceCache 启动，准备轻量实时价格
+4. run_loop() 进入长期循环
+5. 到了调仓时间：
+   5.1 拉取 price_data
+   5.2 TradingAlgorithm.rebalance()
+       - Alpha 生成 insight
+       - PortfolioConstruction 生成目标权重
+       - Risk 做断路器 / 波动 / 相关性调整
+       - Execution 生成订单
+       - Portfolio 记账
+       - StructuredLogger 写日志
+   5.3 重新计算 ATR stops
+6. 每 60 秒：
+   6.1 读取实时价格
+   6.2 计算当前 NAV 与 drawdown
+   6.3 必要时 emergency close 或 ATR stop
+7. 每轮循环后：
+   7.1 写 summary.json
+   7.2 持久化 engine_state.json
+8. dashboard / status 命令读取这些文件展示结果</pre>
+      </div>
+
+      <h3 style="margin-top:20px;">风险系统为什么值得重点看</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>风控模型</th>
+            <th>做什么</th>
+            <th>什么时候触发</th>
+            <th>动作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Drawdown Circuit Breaker</td>
+            <td>跟踪从峰值 NAV 的回撤</td>
+            <td>回撤超过 reduced 或 cash 阈值</td>
+            <td>缩仓 50% 或直接归零</td>
+          </tr>
+          <tr>
+            <td>Vol Regime</td>
+            <td>根据 NAV 历史波动决定风险倍数</td>
+            <td>高波动或低波动 regime</td>
+            <td>统一乘一个风险 scalar</td>
+          </tr>
+          <tr>
+            <td>Correlation Watchdog</td>
+            <td>看整个 universe 是否都一起动</td>
+            <td>平均相关性过高</td>
+            <td>所有仓位乘 0.6</td>
+          </tr>
+          <tr>
+            <td>ATR Stops</td>
+            <td>给单个仓位设置动态止损线</td>
+            <td>当前价格击穿 stop_price</td>
+            <td>单仓平掉</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px;">自定义策略路径里的核心交易系统</h3>
+      <div class="grid-2">
+        <div class="card">
+          <div class="k">Elite Flow 系统结构</div>
+          <ul>
+            <li>维护每个 symbol 的 <code>SymbolState</code>。</li>
+            <li>在 state 里记录 OFI 计算器、regime gate、crowding model、最近成交时间和最近价格。</li>
+            <li>不断更新 <code>flow_score</code>、<code>crowd_score</code>、<code>regime_score</code>。</li>
+            <li>把三个分数合成为 <code>conviction</code>，再驱动状态机。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="k">为什么它单独实现</div>
+          <ul>
+            <li>因为它依赖盘口 top-5 深度，不是简单 OHLCV 因子。</li>
+            <li>因为它的调度频率比标准日频/4 小时调仓快很多。</li>
+            <li>因为它要自己管理杠杆、最小持有时间、逐笔 reconcile 和 entry / exit 事件日志。</li>
+            <li>因为它更像一个微观结构事件驱动策略，而不是传统组合轮动策略。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top:16px;">
+        <div class="card">
+          <div class="k">YOLO Momentum 系统结构</div>
+          <ul>
+            <li>先做动态 universe 发现，再挑流动性和价差合格的合约。</li>
+            <li>用 EMA、RSI、量能等组合成单标的动量判断。</li>
+            <li>根据波动率在 30x、50x、75x 之间调整杠杆。</li>
+            <li>用轮次资金和 trailing / hard stop / time decay 控制退出。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="k">YOLO Orchestrator 系统结构</div>
+          <ul>
+            <li>把一个高风险策略包成多个 slot 的实验流程。</li>
+            <li>每个 slot 单独跟踪投入、PnL、ROI、当前仓位和交易记录。</li>
+            <li>通过 stagger 机制错峰部署，避免多个 slot 同时打架。</li>
+            <li>把单策略层的问题，提升成“实验管理”和“资金编排”问题。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout">
+        最重要的工程结论：
+        <strong>这个仓库的核心交易系统不是某一个类，而是“调度 + 数据 + 决策 + 执行 + 记账 + 日志”六件事拼起来的整体。</strong>
+      </div>
+
+      <div class="footer-note">
+        这份页面基于仓库当前代码结构整理，重点参考了 <code>README.md</code>、<code>engine/main.py</code>、<code>engine/engine/trading_engine.py</code>、<code>engine/core/</code>、<code>engine/portfolio/portfolio.py</code>、<code>engine/execution/broker.py</code>、<code>engine/data/</code>、<code>engine/config/competition_strategies.json</code> 和 <code>engine/competition/strategies/elite_flow.py</code>。
+      </div>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# ── Credentials & secrets ────────────────────────────────────────────────────
+config/.env
+config/.env.*
+!config/.env.example
+
+# ── Runtime state (regenerated on start) ─────────────────────────────────────
+data/engine_state*.json
+data/cache/
+
+# ── Logs (transient, large) ───────────────────────────────────────────────────
+logs/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.bak
+*.bak.*
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/

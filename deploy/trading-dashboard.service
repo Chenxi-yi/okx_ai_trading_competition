@@ -1,0 +1,16 @@
+[Unit]
+Description=OKX Trading Dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+User=trader
+WorkingDirectory=/opt/quant_trade_competition/engine
+ExecStart=/opt/quant_venv/bin/python3 dashboard.py --port 8080
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/trading/dashboard.log
+StandardError=append:/var/log/trading/dashboard.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,117 @@
+{
+  "version": "1.1",
+  "competition": {
+    "start_date": "2026-04-09",
+    "end_date": "2026-04-23",
+    "seed_capital": 300,
+    "default_symbols": [
+      "BTC/USDT", "ETH/USDT"
+    ],
+    "capital_policy": {
+      "note": "300 USDT is the organiser incentive (seed). Top up only when: strategy Sharpe > 0.5 AND expected ROI on new capital > current ROI (else it dilutes the denominator).",
+      "roi_formula": "ROI = AI_net_pnl / (initial_nav + cumulative_deposits) * 100",
+      "top_up_rule": "top_up if (current_pnl + new_capital * daily_return * days_left) / (current_capital + new_capital) > current_roi",
+      "optimizer": "engine/competition/capital_optimizer.py"
+    }
+  },
+
+  "strategies": [
+    {
+      "id": "elite_flow",
+      "name": "Elite Flow",
+      "description": "Multi-level OFI + crowding model + regime gate. Trades squeeze/flush setups with conviction state machine. Single active strategy for competition.",
+      "base_profile": "custom",
+      "seed_capital": 300,
+      "current_capital": 300,
+      "symbols": ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+      "elite_flow_config": {
+        "symbols":              ["BTC-USDT-SWAP", "ETH-USDT-SWAP"],
+        "base_sz_usdt":         40.0,
+        "base_lever":           2,
+        "max_lever":            5,
+        "max_positions":        1,
+        "reconcile_sec":        15,
+        "profile":              "live",
+        "ofi_levels":           5,
+        "ofi_decay_lambda":     0.35,
+        "ofi_window_sec":       300,
+        "taker_window_sec":     1800,
+        "squeeze_threshold":    1.25,
+        "crowd_poll_sec":       60,
+        "rv_low":               0.10,
+        "rv_high":              0.95,
+        "flow_weight":          0.45,
+        "crowd_weight":         0.35,
+        "regime_weight":        0.20,
+        "flow_min_threshold":   0.40,
+        "entry_threshold":      0.40,
+        "full_threshold":       0.60,
+        "stop_loss_pct":        0.020,
+        "take_profit_pct":      0.035,
+        "max_hold_min":         240,
+        "min_hold_min":         3,
+        "daily_loss_stop_pct":  0.05,
+        "lag_ms":               1500,
+        "heartbeat_sec":        60
+      },
+      "notes": "Custom execution loop. Multi-level OFI + crowding + regime gate. Evaluate via demo run only."
+    },
+    {
+      "id": "yolo_momentum",
+      "name": "YOLO Momentum",
+      "description": "Aggressive leveraged momentum with martingale doubling. High leverage (30-75x), multi-timeframe trend confluence, 20% ROI target. Doubles margin on liquidation.",
+      "base_profile": "custom",
+      "seed_capital": 50,
+      "current_capital": 50,
+      "symbols": ["dynamic"],
+      "yolo_momentum_config": {
+        "profile":              "live",
+        "reconcile_sec":        10,
+        "heartbeat_sec":        30,
+        "round_margins":        [50, 100, 200, 400],
+        "target_roi_pct":       0.20,
+        "total_budget":         1000,
+        "default_lever":        50,
+        "high_vol_lever":       30,
+        "low_vol_lever":        75,
+        "ema_fast":             9,
+        "ema_slow":             21,
+        "rsi_long_low":         53,
+        "rsi_long_high":        78,
+        "rsi_short_low":        22,
+        "rsi_short_high":       47,
+        "volume_mult_threshold": 1.1,
+        "hard_stop_pct":        0.60,
+        "trail_activate_pct":   0.50,
+        "trail_distance_pct":   0.40,
+        "time_decay_hours":     4,
+        "time_decay_min_pct":   0.05,
+        "reversal_threshold":   0.45,
+        "tighten_threshold":    0.30,
+        "cooldown_min":         30,
+        "max_same_dir_losses":  3
+      },
+      "notes": "Aggressive martingale momentum. Custom execution loop. Budget: 1000 USDT across 4 rounds (50/100/200/400). Aim: 20% ROI on cumulative invested, then stop."
+    },
+    {
+      "id": "yolo_orchestrator",
+      "name": "YOLO Demo Test (10x)",
+      "description": "10 staggered YOLO Momentum instances for demo validation. Deploys slots sequentially, 1h stagger. Each slot: $1000 budget, 4 martingale rounds, 20% ROI target.",
+      "base_profile": "custom",
+      "seed_capital": 10000,
+      "current_capital": 10000,
+      "symbols": ["dynamic"],
+      "yolo_orchestrator_config": {
+        "profile":              "live",
+        "num_slots":            10,
+        "budget_per_slot":      1000,
+        "stagger_interval_sec": 3600,
+        "reconcile_sec":        10,
+        "slot_target_roi_pct":  0.20,
+        "slot_round_margins":   [50, 100, 200, 400],
+        "yolo_config_overrides": {}
+      },
+      "notes": "Demo orchestrator. Runs 10 sequential YOLO Momentum slots with staggered deployment. Only 1 slot trades at a time (shared OKX demo account, net position mode)."
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "baseline": {
+    "params": {
+      "rsi_long_low": 55,
+      "rsi_long_high": 75,
+      "rsi_short_low": 25,
+      "rsi_short_high": 45,
+      "volume_mult_threshold": 1.2,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 20,
+    "success_rate_pct": 80.0,
+    "mean_roi_pct": 11.04,
+    "median_roi_pct": 16.21,
+    "mean_invested": 290.0,
+    "mean_trades": 2.55,
+    "mean_rounds": 2.15,
+    "mean_max_dd_pct": -82.01,
+    "roi_std_pct": 88.58,
+    "objective": 0.528084
+  },
+  "balanced_v1": {
+    "params": {
+      "rsi_long_low": 52,
+      "rsi_long_high": 78,
+      "rsi_short_low": 22,
+      "rsi_short_high": 47,
+      "volume_mult_threshold": 1.1,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 20,
+    "success_rate_pct": 75.0,
+    "mean_roi_pct": -2.33,
+    "median_roi_pct": 18.56,
+    "mean_invested": 325.0,
+    "mean_trades": 2.75,
+    "mean_rounds": 2.3,
+    "mean_max_dd_pct": -84.69,
+    "roi_std_pct": 72.3,
+    "objective": 0.476756
+  },
+  "balanced_v2": {
+    "params": {
+      "rsi_long_low": 53,
+      "rsi_long_high": 78,
+      "rsi_short_low": 22,
+      "rsi_short_high": 47,
+      "volume_mult_threshold": 1.1,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 20,
+    "success_rate_pct": 80.0,
+    "mean_roi_pct": 4.36,
+    "median_roi_pct": 18.56,
+    "mean_invested": 295.0,
+    "mean_trades": 2.6,
+    "mean_rounds": 2.2,
+    "mean_max_dd_pct": -81.5,
+    "roi_std_pct": 67.5,
+    "objective": 0.5166
+  },
+  "aggressive_v1": {
+    "params": {
+      "rsi_long_low": 52,
+      "rsi_long_high": 80,
+      "rsi_short_low": 20,
+      "rsi_short_high": 48,
+      "volume_mult_threshold": 1.0,
+      "ema_alignment_min": 0.6
+    },
+    "n_trials": 20,
+    "success_rate_pct": 75.0,
+    "mean_roi_pct": -5.89,
+    "median_roi_pct": 18.56,
+    "mean_invested": 295.0,
+    "mean_trades": 2.65,
+    "mean_rounds": 2.2,
+    "mean_max_dd_pct": -98.17,
+    "roi_std_pct": 76.83,
+    "objective": 0.482643
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "strategies": [
+    {
+      "id": "combined_portfolio",
+      "name": "Combined Portfolio (Trend + XS Momentum + Carry)",
+      "description": "Three-sleeve portfolio: trend momentum (50%), cross-sectional momentum (35%), funding carry (15%)",
+      "profiles": ["daily", "hourly"]
+    },
+    {
+      "id": "trend_momentum",
+      "name": "Trend / Time-Series Momentum",
+      "description": "DMA crossover + breakout detection + time-series momentum with inverse-vol sizing",
+      "profiles": ["daily", "hourly"]
+    },
+    {
+      "id": "cross_sectional_momentum",
+      "name": "Cross-Sectional Momentum",
+      "description": "Rank symbols by multi-lookback returns, long top-N and short bottom-N",
+      "profiles": ["daily", "hourly"]
+    },
+    {
+      "id": "funding_carry",
+      "name": "Funding-Aware Carry",
+      "description": "Long/short based on perpetual funding rates with trend veto filter",
+      "profiles": ["daily", "hourly"]
+    }
+  ],
+
+  "portfolio_presets": {
+    "single_combined_daily": {
+      "description": "Single combined portfolio, daily rebalance — default setup",
+      "config": [
+        {"id": "daily_combined", "strategy": "combined_portfolio", "profile": "daily", "capital": 5000}
+      ]
+    },
+    "single_combined_hourly": {
+      "description": "Single combined portfolio, 4-hourly rebalance",
+      "config": [
+        {"id": "hourly_combined", "strategy": "combined_portfolio", "profile": "hourly", "capital": 5000}
+      ]
+    },
+    "dual_profile": {
+      "description": "Daily + hourly combined portfolios running in parallel — default production setup",
+      "config": [
+        {"id": "daily_combined",  "strategy": "combined_portfolio", "profile": "daily",  "capital": 5000},
+        {"id": "hourly_combined", "strategy": "combined_portfolio", "profile": "hourly", "capital": 5000}
+      ]
+    },
+    "multi_strategy": {
+      "description": "Three isolated sleeves running independently for attribution analysis",
+      "config": [
+        {"id": "trend_daily",   "strategy": "trend_momentum",         "profile": "daily", "capital": 3000},
+        {"id": "xs_daily",      "strategy": "cross_sectional_momentum","profile": "daily", "capital": 3000},
+        {"id": "carry_daily",   "strategy": "funding_carry",           "profile": "daily", "capital": 2000}
+      ]
+    },
+    "research_small": {
+      "description": "Small capital versions of all four strategies for research comparison",
+      "config": [
+        {"id": "combined_d",  "strategy": "combined_portfolio",        "profile": "daily", "capital": 1000},
+        {"id": "trend_d",     "strategy": "trend_momentum",            "profile": "daily", "capital": 1000},
+        {"id": "xs_d",        "strategy": "cross_sectional_momentum",  "profile": "daily", "capital": 1000},
+        {"id": "carry_d",     "strategy": "funding_carry",             "profile": "daily", "capital": 1000}
+      ]
+    }
+  }
+}

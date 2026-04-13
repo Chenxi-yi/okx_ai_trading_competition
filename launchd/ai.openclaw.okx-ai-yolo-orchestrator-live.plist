@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.openclaw.okx-ai-yolo-orchestrator-live</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/scripts/start_yolo_orchestrator_live.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>WorkingDirectory</key>
+  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage</string>
+  <key>StandardOutPath</key>
+  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/launchd-yolo-orchestrator-live.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/launchd-yolo-orchestrator-live.err.log</string>
+</dict>
+</plist>
