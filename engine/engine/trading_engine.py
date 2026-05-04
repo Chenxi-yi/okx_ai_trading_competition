@@ -63,11 +63,12 @@ class TradingEngine:
         engine.run_loop()  # blocks until stop signal
     """
 
-    def __init__(self, sandbox: bool = True, mode: str = TRADING_MODE, paper: bool = False):
+    def __init__(self, sandbox: bool = True, mode: str = TRADING_MODE, paper: bool = False, okx_profile: str = None):
         self.sandbox = sandbox
         self.mode = mode
         self.paper = paper
-        self.broker = Broker(mode=mode, sandbox=sandbox)
+        self.okx_profile = okx_profile or os.environ.get("OKX_PROFILE") or ("demo" if sandbox else "live")
+        self.broker = Broker(mode=mode, sandbox=sandbox, okx_profile=self.okx_profile)
         self.slogger = StructuredLogger()
         self.portfolios: Dict[str, Portfolio] = {}
         self.running = False
@@ -153,6 +154,7 @@ class TradingEngine:
             "=" * 50,
             f"PID: {self._pid}",
             f"Mode: {self.mode} ({'sandbox' if self.sandbox else 'LIVE'})",
+            f"OKX profile: {self.okx_profile}",
             f"Portfolios: {len(self.portfolios)}",
             "",
         ]

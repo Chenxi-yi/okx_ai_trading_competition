@@ -1,0 +1,339 @@
+{
+  "datasets": [
+    {
+      "created_at": "2026-05-03T16:06:00.051733+00:00",
+      "dataset_id": "raw_ohlcv_train_hist_134_5m_20240101_20260424_5m",
+      "end": "2026-04-24",
+      "kind": "raw_ohlcv",
+      "metadata": {
+        "download_status": "completed",
+        "quality": {
+          "coverage_max": 1.0,
+          "coverage_median": 0.76812,
+          "coverage_min": 0.001923,
+          "dataset_type": "training_history",
+          "failed_jobs": 0,
+          "first_ts": "2024-01-01 00:00:00+00:00",
+          "generated_at": "2026-05-03T16:05:59.623584+00:00",
+          "last_ts": "2026-04-24 23:55:00+00:00",
+          "low_coverage_jobs": 68,
+          "missing_cache_files": 0,
+          "missing_jobs": 0,
+          "ok_jobs": 134,
+          "rows": 20555723,
+          "run_id": "train_hist_134_5m_20240101_20260424",
+          "total_jobs": 134,
+          "validation_status": "ok",
+          "warnings": {
+            "failed_records": [],
+            "low_coverage_jobs": [
+              {
+                "coverage": 0.201019,
+                "symbol": "ZEC/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.037377,
+                "symbol": "BZ/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.688507,
+                "symbol": "TAO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.060934,
+                "symbol": "CL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.096721,
+                "symbol": "XPT/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.50616,
+                "symbol": "HYPE/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.201031,
+                "symbol": "DASH/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.275637,
+                "symbol": "OKB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.215035,
+                "symbol": "GIGGLE/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.125099,
+                "symbol": "RIVER/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.545287,
+                "symbol": "TRUMP/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.096746,
+                "symbol": "XPD/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.563963,
+                "symbol": "BIO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.154635,
+                "symbol": "RAVE/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.204434,
+                "symbol": "ZEN/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.523566,
+                "symbol": "BERA/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.030251,
+                "symbol": "BASED/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.515479,
+                "symbol": "IP/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.068294,
+                "symbol": "INTC/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.026726,
+                "symbol": "BSB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.2265,
+                "symbol": "COAI/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.206505,
+                "symbol": "LAB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.254187,
+                "symbol": "ASTER/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.210154,
+                "symbol": "ENSO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.001923,
+                "symbol": "OPG/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.506998,
+                "symbol": "KAITO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.591219,
+                "symbol": "VIRTUAL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.580617,
+                "symbol": "FARTCOIN/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.584414,
+                "symbol": "VANA/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.643068,
+                "symbol": "GRASS/USDT",
+                "timeframe": "5m"
+              }
+            ],
+            "missing_cache_files": [],
+            "missing_jobs": []
+          }
+        },
+        "run_id": "train_hist_134_5m_20240101_20260424",
+        "summary": {
+          "failed": 0,
+          "ok": 134,
+          "skipped_existing": 0,
+          "total_jobs": 134
+        }
+      },
+      "path": "engine/data/training_history/train_hist_134_5m_20240101_20260424",
+      "rows": 20555723,
+      "source": "okx_ccxt",
+      "start": "2024-01-01",
+      "status": "ok",
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "ZEC/USDT",
+        "YFI/USDT",
+        "BNB/USDT",
+        "BZ/USDT",
+        "TAO/USDT",
+        "CL/USDT",
+        "XPT/USDT",
+        "HYPE/USDT",
+        "DASH/USDT",
+        "OKB/USDT",
+        "GIGGLE/USDT",
+        "SOL/USDT",
+        "ORDI/USDT",
+        "ICP/USDT",
+        "RIVER/USDT",
+        "TRUMP/USDT",
+        "AAVE/USDT",
+        "XPD/USDT",
+        "FIL/USDT",
+        "BCH/USDT",
+        "APE/USDT",
+        "CORE/USDT",
+        "SUI/USDT",
+        "AR/USDT",
+        "BIO/USDT",
+        "LINK/USDT",
+        "RAVE/USDT",
+        "ZEN/USDT",
+        "METIS/USDT",
+        "AXS/USDT",
+        "TRB/USDT",
+        "KSM/USDT",
+        "BERA/USDT",
+        "INJ/USDT",
+        "WLD/USDT",
+        "DOT/USDT",
+        "STRK/USDT",
+        "CRV/USDT",
+        "UNI/USDT",
+        "COMP/USDT",
+        "LTC/USDT",
+        "AVAX/USDT",
+        "NMR/USDT",
+        "ENS/USDT",
+        "BASED/USDT",
+        "WIF/USDT",
+        "IP/USDT",
+        "INTC/USDT",
+        "BSB/USDT",
+        "COAI/USDT",
+        "SSV/USDT",
+        "EGLD/USDT",
+        "DYDX/USDT",
+        "TON/USDT",
+        "LAB/USDT",
+        "ASTER/USDT",
+        "ENSO/USDT",
+        "LPT/USDT",
+        "OPG/USDT",
+        "KAITO/USDT",
+        "MERL/USDT",
+        "VIRTUAL/USDT",
+        "APT/USDT",
+        "FARTCOIN/USDT",
+        "VANA/USDT",
+        "OP/USDT",
+        "MASK/USDT",
+        "GRASS/USDT",
+        "UMA/USDT",
+        "MET/USDT",
+        "LDO/USDT",
+        "LIT/USDT",
+        "ZRO/USDT",
+        "AUCTION/USDT",
+        "PI/USDT",
+        "LUNA/USDT",
+        "GMX/USDT",
+        "SNDK/USDT",
+        "AVNT/USDT",
+        "ZBT/USDT",
+        "ATOM/USDT",
+        "ETHW/USDT",
+        "RENDER/USDT",
+        "KAT/USDT",
+        "YB/USDT",
+        "TIA/USDT",
+        "ETHFI/USDT",
+        "BEAT/USDT",
+        "CHZ/USDT",
+        "ENJ/USDT",
+        "SPX/USDT",
+        "PIPPIN/USDT",
+        "AMD/USDT",
+        "BARD/USDT",
+        "CHIP/USDT",
+        "MORPHO/USDT",
+        "SPK/USDT",
+        "JTO/USDT",
+        "QQQ/USDT",
+        "MU/USDT",
+        "PIEVERSE/USDT",
+        "W/USDT",
+        "GALA/USDT",
+        "XRP/USDT",
+        "XPL/USDT",
+        "LIGHT/USDT",
+        "BLUR/USDT",
+        "BREV/USDT",
+        "YGG/USDT",
+        "EWY/USDT",
+        "WLFI/USDT",
+        "ORCL/USDT",
+        "ACT/USDT",
+        "NG/USDT",
+        "ARKM/USDT",
+        "EIGEN/USDT",
+        "BICO/USDT",
+        "EDGE/USDT",
+        "HOOD/USDT",
+        "XTZ/USDT",
+        "SOON/USDT",
+        "ENA/USDT",
+        "ARB/USDT",
+        "ME/USDT",
+        "SNX/USDT",
+        "MON/USDT",
+        "API3/USDT",
+        "AGLD/USDT",
+        "CELO/USDT",
+        "NEAR/USDT",
+        "SUSHI/USDT",
+        "SPY/USDT"
+      ],
+      "timeframe": "5m",
+      "updated_at": "2026-05-03T16:06:00.052002+00:00"
+    }
+  ],
+  "version": "1.0"
+}

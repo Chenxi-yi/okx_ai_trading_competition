@@ -10,7 +10,7 @@ print_usage() {
   cat <<'EOF'
 usage:
   ./manage_local.sh
-  ./manage_local.sh start [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live]
+  ./manage_local.sh start [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live|personal]
   ./manage_local.sh stop
   ./manage_local.sh status
 
@@ -48,12 +48,14 @@ prompt_environment() {
   echo ""
   echo "选择环境："
   echo "  1) demo"
-  echo "  2) production (live)"
-  read "choice?请输入 1/2: "
+  echo "  2) competition (live)"
+  echo "  3) personal"
+  read "choice?请输入 1/2/3: "
 
   case "${choice:-1}" in
     1) echo "demo" ;;
     2) echo "live" ;;
+    3) echo "personal" ;;
     *)
       echo "invalid environment choice: ${choice:-}"
       exit 1

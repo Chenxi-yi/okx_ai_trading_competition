@@ -1,0 +1,988 @@
+#!/usr/bin/env python3
+"""Local web launcher for the OKX trading system.
+
+This server intentionally stays thin: it validates UI requests, then delegates
+all trading lifecycle work to the existing local shell scripts.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import mimetypes
+import os
+import subprocess
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+CONTROL_DIR = ROOT_DIR / "engine" / "control"
+LOGS_DIR = ROOT_DIR / "engine" / "logs"
+TRAINING_HISTORY_DIR = ROOT_DIR / "engine" / "data" / "training_history"
+DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structure"
+MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
+MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
+
+ALLOWED_ENVS = {"demo", "live", "personal"}
+ALLOWED_STRATEGIES = {"elite_flow", "yolo_momentum", "yolo_orchestrator"}
+DEFAULT_DASHBOARD_PORT = 8080
+DEFAULT_DOWNLOAD_RUN_ID = "train_hist_vol1m_1h_20240101_20260424"
+DEFAULT_DERIVATIVES_RUN_ID = "deriv_struct_132_5m_20240101_20260424"
+DEFAULT_MONSTER_WATCHLIST_ID = "monster_watchlist_5m_live_gated_20260426"
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text().strip() if path.exists() else None
+    except OSError:
+        return None
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text()) if path.exists() else None
+    except Exception:
+        return None
+
+
+def process_alive(pid: str | int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def pid_snapshot() -> dict[str, Any]:
+    strategies = []
+    for strategy in sorted(ALLOWED_STRATEGIES):
+        for env in ("demo", "live", "personal"):
+            path = CONTROL_DIR / f"{strategy}_{env}.pid"
+            pid = read_text(path)
+            if pid:
+                strategies.append(
+                    {
+                        "strategy": strategy,
+                        "env": env,
+                        "pid": pid,
+                        "alive": process_alive(pid),
+                        "pid_file": str(path.relative_to(ROOT_DIR)),
+                    }
+                )
+
+    dashboard_pid = read_text(CONTROL_DIR / "dashboard.pid")
+    launcher_pid = read_text(CONTROL_DIR / "launcher.pid")
+    return {
+        "dashboard": {
+            "pid": dashboard_pid,
+            "alive": process_alive(dashboard_pid),
+            "pid_file": "engine/control/dashboard.pid",
+        },
+        "launcher": {
+            "pid": launcher_pid,
+            "alive": process_alive(launcher_pid),
+            "pid_file": "engine/control/launcher.pid",
+        },
+        "strategies": strategies,
+    }
+
+
+def tail_file(path: Path, lines: int = 120) -> list[str]:
+    if not path.exists():
+        return []
+    try:
+        data = path.read_text(errors="replace").splitlines()
+        return data[-lines:]
+    except OSError:
+        return []
+
+
+def latest_launcher_logs() -> list[dict[str, Any]]:
+    items = []
+    for path in sorted(LOGS_DIR.glob("launcher_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]:
+        items.append(
+            {
+                "path": str(path.relative_to(ROOT_DIR)),
+                "mtime": path.stat().st_mtime,
+                "tail": tail_file(path, 80),
+            }
+        )
+    return items
+
+
+def iter_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        return []
+    return records
+
+
+def find_download_processes(run_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        known_download = (
+            "scripts/fetch_training_history.py" in command
+            or "scripts/fetch_derivatives_structure.py" in command
+        )
+        if not known_download:
+            continue
+        if run_id and run_id not in command:
+            continue
+        matches.append({"pid": pid, "command": command, "run_id": _run_id_from_command(command)})
+    return matches
+
+
+def _run_id_from_command(command: str) -> str | None:
+    parts = command.split()
+    for i, part in enumerate(parts):
+        if part == "--run-id" and i + 1 < len(parts):
+            return parts[i + 1]
+        if part.startswith("--run-id="):
+            return part.split("=", 1)[1]
+    return None
+
+
+def _download_roots() -> list[Path]:
+    return [TRAINING_HISTORY_DIR, DERIVATIVES_STRUCTURE_DIR]
+
+
+def _download_run_dir(run_id: str) -> Path | None:
+    for root in _download_roots():
+        candidate = root / run_id
+        if (candidate / "manifest.json").exists():
+            return candidate
+    return None
+
+
+def latest_download_run_id() -> str | None:
+    active = [p.get("run_id") for p in find_download_processes(None) if p.get("run_id")]
+    if active:
+        return str(active[0])
+    preferred_deriv = DERIVATIVES_STRUCTURE_DIR / DEFAULT_DERIVATIVES_RUN_ID
+    if preferred_deriv.exists():
+        return DEFAULT_DERIVATIVES_RUN_ID
+    preferred = TRAINING_HISTORY_DIR / DEFAULT_DOWNLOAD_RUN_ID
+    if preferred.exists():
+        return DEFAULT_DOWNLOAD_RUN_ID
+    candidates = []
+    for root in _download_roots():
+        if root.exists():
+            candidates.extend([p for p in root.iterdir() if p.is_dir() and (p / "manifest.json").exists()])
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
+    return latest.name
+
+
+def latest_monster_watchlist_id() -> str | None:
+    if not MONSTER_EVENTS_DIR.exists():
+        return None
+    candidates = [
+        p
+        for p in MONSTER_EVENTS_DIR.iterdir()
+        if p.is_dir() and (p / "watchlist.parquet").exists() and (p / "manifest.json").exists()
+    ]
+    if candidates:
+        latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
+        return latest.name
+    preferred = MONSTER_EVENTS_DIR / DEFAULT_MONSTER_WATCHLIST_ID
+    if (preferred / "manifest.json").exists():
+        return DEFAULT_MONSTER_WATCHLIST_ID
+    if not candidates:
+        return None
+
+
+def latest_monster_orderbook_id() -> str | None:
+    if not MONSTER_EVENTS_DIR.exists():
+        return None
+    candidates = [
+        p
+        for p in MONSTER_EVENTS_DIR.iterdir()
+        if p.is_dir() and p.name.startswith("monster_orderbook_") and (p / "manifest.json").exists()
+    ]
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
+    return latest.name
+
+
+def latest_monster_derivatives_id() -> str | None:
+    if not MONSTER_EVENTS_DIR.exists():
+        return None
+    candidates = [
+        p
+        for p in MONSTER_EVENTS_DIR.iterdir()
+        if p.is_dir() and p.name.startswith("monster_derivatives_") and (p / "manifest.json").exists()
+    ]
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
+    return latest.name
+
+
+def latest_monster_auto_refresh_id() -> str | None:
+    if not MONSTER_EVENTS_DIR.exists():
+        return None
+    candidates = [
+        p
+        for p in MONSTER_EVENTS_DIR.iterdir()
+        if p.is_dir() and p.name.startswith("monster_auto_refresh_") and ((p / "manifest.json").exists() or (p / "status.json").exists())
+    ]
+    if not candidates:
+        return None
+    latest = max(candidates, key=lambda p: max((p / "manifest.json").stat().st_mtime if (p / "manifest.json").exists() else 0, (p / "status.json").stat().st_mtime if (p / "status.json").exists() else 0))
+    return latest.name
+
+
+def find_monster_processes() -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    needles = (
+        "scripts/run_monster_refresh_and_score.py",
+        "scripts/run_monster_paper.py",
+        "scripts/collect_monster_orderbook.py",
+        "scripts/collect_monster_derivatives.py",
+        "scripts/run_monster_auto_refresh.py",
+    )
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid or not any(needle in command for needle in needles):
+            continue
+        matches.append({"pid": pid, "command": command})
+    return matches
+
+
+def monster_status(run_id: str | None = None) -> dict[str, Any]:
+    selected = run_id or latest_monster_watchlist_id()
+    if not selected:
+        return {"ok": True, "available": False, "message": "no monster watchlist found"}
+    run_dir = MONSTER_EVENTS_DIR / selected
+    manifest = read_json(run_dir / "manifest.json") or {}
+    top = read_json(run_dir / "watchlist_top.json") or []
+    if not isinstance(top, list):
+        top = []
+    trade_candidates = [item for item in top if int(item.get("trade_candidate_flag") or 0) == 1]
+    fresh = sum(1 for item in top if int(item.get("fresh_data_flag") or 0) == 1)
+    liquidity = sum(1 for item in top if int(item.get("liquidity_gate") or 0) == 1)
+    return {
+        "ok": True,
+        "available": True,
+        "run_id": selected,
+        "run_dir": str(run_dir.relative_to(ROOT_DIR)),
+        "manifest": manifest,
+        "top": top[:30],
+        "trade_candidates": trade_candidates[:12],
+        "top_count": len(top),
+        "fresh_top_count": fresh,
+        "liquidity_top_count": liquidity,
+        "trade_candidate_count": len(trade_candidates),
+        "updated_at": manifest.get("created_at"),
+        "processes": find_monster_processes(),
+        "orderbook": monster_orderbook_status(),
+        "derivatives": monster_derivatives_status(),
+        "paper": monster_paper_status(),
+        "auto_refresh": monster_auto_refresh_status(),
+    }
+
+
+def refresh_monster() -> dict[str, Any]:
+    existing = find_monster_processes()
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing}
+    result = run_script(["python3", "scripts/run_monster_refresh_and_score.py"], "monster_refresh")
+    result.update({"ok": True})
+    return result
+
+
+def monster_orderbook_status(run_id: str | None = None) -> dict[str, Any]:
+    selected = run_id or latest_monster_orderbook_id()
+    if not selected:
+        return {"available": False, "message": "no monster orderbook run found"}
+    run_dir = MONSTER_EVENTS_DIR / selected
+    manifest = read_json(run_dir / "manifest.json") or {}
+    status = read_json(run_dir / "status.json") or {}
+    progress = iter_jsonl(run_dir / "progress.jsonl")
+    processes = [p for p in find_monster_processes() if "collect_monster_orderbook.py" in p.get("command", "")]
+    ok_count = sum(1 for item in progress if item.get("status") == "ok")
+    failed_count = sum(1 for item in progress if item.get("status") == "failed")
+    return {
+        "available": True,
+        "run_id": selected,
+        "run_dir": str(run_dir.relative_to(ROOT_DIR)),
+        "manifest": manifest,
+        "status": status,
+        "running": bool(processes),
+        "processes": processes,
+        "ok": ok_count,
+        "failed": failed_count,
+        "last_record": progress[-1] if progress else None,
+        "updated_at": status.get("updated_at") or manifest.get("completed_at") or manifest.get("created_at"),
+    }
+
+
+def monster_derivatives_status(run_id: str | None = None) -> dict[str, Any]:
+    selected = run_id or latest_monster_derivatives_id()
+    if not selected:
+        return {"available": False, "message": "no monster derivatives run found"}
+    run_dir = MONSTER_EVENTS_DIR / selected
+    manifest = read_json(run_dir / "manifest.json") or {}
+    status = read_json(run_dir / "status.json") or {}
+    progress = iter_jsonl(run_dir / "progress.jsonl")
+    processes = [p for p in find_monster_processes() if "collect_monster_derivatives.py" in p.get("command", "")]
+    ok_count = sum(1 for item in progress if item.get("status") == "ok")
+    failed_count = sum(1 for item in progress if item.get("status") == "failed")
+    return {
+        "available": True,
+        "run_id": selected,
+        "run_dir": str(run_dir.relative_to(ROOT_DIR)),
+        "manifest": manifest,
+        "status": status,
+        "running": bool(processes),
+        "processes": processes,
+        "ok": ok_count,
+        "failed": failed_count,
+        "last_record": progress[-1] if progress else None,
+        "updated_at": status.get("updated_at") or manifest.get("completed_at") or manifest.get("created_at"),
+    }
+
+
+def start_monster_orderbook() -> dict[str, Any]:
+    existing = [p for p in find_monster_processes() if "collect_monster_orderbook.py" in p.get("command", "")]
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing}
+    dataset_id = f"monster_orderbook_live_{time.strftime('%Y%m%d_%H%M%S')}"
+    result = run_script(
+        [
+            "python3",
+            "scripts/collect_monster_orderbook.py",
+            "--dataset-id",
+            dataset_id,
+            "--candidate-only",
+            "--top-n",
+            "20",
+            "--samples",
+            "0",
+            "--limit",
+            "20",
+            "--interval-sec",
+            "10",
+            "--sleep-sec",
+            "0.15",
+        ],
+        f"monster_orderbook_{dataset_id}",
+    )
+    result.update({"ok": True, "dataset_id": dataset_id})
+    return result
+
+
+def start_monster_derivatives() -> dict[str, Any]:
+    existing = [p for p in find_monster_processes() if "collect_monster_derivatives.py" in p.get("command", "")]
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing}
+    dataset_id = f"monster_derivatives_live_{time.strftime('%Y%m%d_%H%M%S')}"
+    result = run_script(
+        [
+            "python3",
+            "scripts/collect_monster_derivatives.py",
+            "--dataset-id",
+            dataset_id,
+            "--candidate-only",
+            "--top-n",
+            "20",
+            "--samples",
+            "0",
+            "--timeframe",
+            "5m",
+            "--interval-sec",
+            "60",
+            "--sleep-sec",
+            "0.2",
+        ],
+        f"monster_derivatives_{dataset_id}",
+    )
+    result.update({"ok": True, "dataset_id": dataset_id})
+    return result
+
+
+def monster_paper_status(state_id: str = "lottery_live") -> dict[str, Any]:
+    state_path = MONSTER_PAPER_DIR / f"{state_id}.json"
+    ledger_path = MONSTER_PAPER_DIR / f"{state_id}_ledger.jsonl"
+    equity_path = MONSTER_PAPER_DIR / f"{state_id}_equity.jsonl"
+    state = read_json(state_path) or {}
+    ledger = iter_jsonl(ledger_path)
+    equity = iter_jsonl(equity_path)
+    processes = [p for p in find_monster_processes() if "run_monster_paper.py" in p.get("command", "")]
+    if not state and not ledger and not equity and not processes:
+        return {"available": False, "state_id": state_id, "message": "no monster paper state found"}
+    positions = state.get("positions") or {}
+    realized_pnl = sum(float(item.get("pnl", 0.0) or 0.0) for item in ledger if item.get("event") in {"exit", "partial_exit"})
+    metrics = _paper_metrics(equity, state, realized_pnl)
+    return {
+        "available": True,
+        "state_id": state_id,
+        "state_path": str(state_path.relative_to(ROOT_DIR)) if state_path.exists() else None,
+        "ledger_path": str(ledger_path.relative_to(ROOT_DIR)) if ledger_path.exists() else None,
+        "equity_path": str(equity_path.relative_to(ROOT_DIR)) if equity_path.exists() else None,
+        "running": bool(processes),
+        "processes": processes,
+        "updated_at": state.get("updated_at"),
+        "cash": state.get("cash"),
+        "nav": state.get("nav"),
+        "unrealized_pnl": state.get("unrealized_pnl"),
+        "realized_pnl": realized_pnl,
+        "open_risk": sum(float(pos.get("risk_budget", 0.0)) for pos in positions.values()) if isinstance(positions, dict) else 0.0,
+        "positions": positions,
+        "live_gates_enabled": state.get("live_gates_enabled"),
+        "live_gate_pass_count": state.get("live_gate_pass_count"),
+        "metrics": metrics,
+        "equity": equity[-240:],
+        "ledger_tail": ledger[-20:],
+    }
+
+
+def _paper_metrics(equity: list[dict[str, Any]], state: dict[str, Any], realized_pnl: float) -> dict[str, Any]:
+    navs = [float(row["nav"]) for row in equity if row.get("nav") is not None]
+    if not navs and state.get("nav") is not None:
+        navs = [float(state["nav"])]
+    if not navs:
+        return {"realized_pnl": realized_pnl}
+    initial_nav = navs[0]
+    current_nav = navs[-1]
+    peak = navs[0]
+    max_dd = 0.0
+    for nav in navs:
+        peak = max(peak, nav)
+        if peak > 0:
+            max_dd = min(max_dd, nav / peak - 1.0)
+    return {
+        "initial_nav": initial_nav,
+        "current_nav": current_nav,
+        "total_return": current_nav / initial_nav - 1.0 if initial_nav else 0.0,
+        "max_drawdown": max_dd,
+        "realized_pnl": realized_pnl,
+        "equity_points": len(equity),
+    }
+
+
+def start_monster_paper() -> dict[str, Any]:
+    existing = [p for p in find_monster_processes() if "run_monster_paper.py" in p.get("command", "")]
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": monster_paper_status()}
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_monster_paper.py",
+            "--state-id",
+            "lottery_live",
+            "--mode",
+            "lottery",
+            "--initial-capital",
+            "1000",
+            "--risk-budget",
+            "20",
+            "--max-open-risk",
+            "60",
+            "--score-threshold",
+            "0.85",
+            "--quality-exit-min-hours",
+            "4",
+            "--exit-score-threshold",
+            "0.80",
+            "--exit-ret-1h-threshold",
+            "-0.035",
+            "--live-gate-exit-min-hours",
+            "2",
+            "--max-positions",
+            "3",
+            "--use-live-gates",
+            "--loop",
+            "--interval-sec",
+            "300",
+        ],
+        "monster_paper_lottery_live",
+    )
+    result.update({"ok": True, "state_id": "lottery_live"})
+    return result
+
+
+def monster_auto_refresh_status(run_id: str | None = None) -> dict[str, Any]:
+    selected = run_id or latest_monster_auto_refresh_id()
+    processes = [p for p in find_monster_processes() if "run_monster_auto_refresh.py" in p.get("command", "")]
+    if not selected:
+        return {"available": False, "message": "no monster auto refresh run found", "running": bool(processes), "processes": processes}
+    run_dir = MONSTER_EVENTS_DIR / selected
+    manifest = read_json(run_dir / "manifest.json") or {}
+    status = read_json(run_dir / "status.json") or {}
+    progress = iter_jsonl(run_dir / "progress.jsonl")
+    ok_count = sum(1 for item in progress if item.get("status") == "ok")
+    failed_count = sum(1 for item in progress if item.get("status") == "failed")
+    return {
+        "available": True,
+        "run_id": selected,
+        "run_dir": str(run_dir.relative_to(ROOT_DIR)),
+        "manifest": manifest,
+        "status": status,
+        "running": bool(processes),
+        "processes": processes,
+        "ok": ok_count,
+        "failed": failed_count,
+        "last_record": progress[-1] if progress else None,
+        "updated_at": status.get("updated_at") or manifest.get("completed_at") or manifest.get("created_at"),
+    }
+
+
+def start_monster_auto_refresh() -> dict[str, Any]:
+    existing = [p for p in find_monster_processes() if "run_monster_auto_refresh.py" in p.get("command", "")]
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": monster_auto_refresh_status()}
+    run_id = f"monster_auto_refresh_{time.strftime('%Y%m%d_%H%M%S')}"
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_monster_auto_refresh.py",
+            "--run-id",
+            run_id,
+            "--interval-sec",
+            "900",
+            "--iterations",
+            "0",
+            "--run-prefix",
+            "monster_auto",
+            "--lookback-days",
+            "3",
+            "--sleep-sec",
+            "0.25",
+            "--min-quote-volume",
+            "1000000",
+            "--min-score",
+            "0.75",
+            "--max-ret-1h",
+            "0.25",
+            "--fresh-hours",
+            "0.35",
+        ],
+        f"monster_auto_refresh_{run_id}",
+    )
+    result.update({"ok": True, "run_id": run_id})
+    return result
+
+
+def download_status(run_id: str | None = None) -> dict[str, Any]:
+    selected_run_id = run_id or latest_download_run_id()
+    if not selected_run_id:
+        return {"ok": True, "available": False, "message": "no training history runs found"}
+
+    run_dir = _download_run_dir(selected_run_id) or (TRAINING_HISTORY_DIR / selected_run_id)
+    manifest = read_json(run_dir / "manifest.json") or {}
+    heartbeat = read_json(run_dir / "status.json") or {}
+    progress = iter_jsonl(run_dir / "progress.jsonl")
+    timeframes = manifest.get("timeframes") or [manifest.get("timeframe") or "1h"]
+    kinds = manifest.get("kinds") or ["ohlcv"]
+    symbols = manifest.get("symbols") or []
+    total_jobs = int(manifest.get("summary", {}).get("total_jobs") or (len(symbols) * len(timeframes) * len(kinds)))
+
+    latest_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for record in progress:
+        key = (str(record.get("symbol", "")), str(record.get("kind", "ohlcv")), str(record.get("timeframe", "")))
+        latest_by_key[key] = record
+
+    ok_count = sum(1 for r in latest_by_key.values() if r.get("status") == "ok")
+    failed_count = sum(1 for r in latest_by_key.values() if r.get("status") == "failed")
+    attempted_count = len(latest_by_key)
+    last_record = progress[-1] if progress else None
+    processes = find_download_processes(selected_run_id)
+
+    current_symbol = heartbeat.get("current_symbol")
+    current_kind = heartbeat.get("current_kind")
+    next_symbol = None
+    next_kind = None
+    if processes:
+        if not current_symbol and last_record:
+            current_symbol = last_record.get("symbol")
+            current_kind = last_record.get("kind")
+        done_ok = {(k[0], k[1], k[2]) for k, r in latest_by_key.items() if r.get("status") == "ok"}
+        for timeframe in timeframes:
+            for symbol in symbols:
+                for kind in kinds:
+                    if (symbol, kind, timeframe) not in done_ok:
+                        next_symbol = symbol
+                        next_kind = kind
+                        break
+                if next_symbol:
+                    break
+            if next_symbol:
+                break
+
+    percent = round((ok_count / total_jobs) * 100, 2) if total_jobs else 0
+    return {
+        "ok": True,
+        "available": True,
+        "run_id": selected_run_id,
+        "run_dir": str(run_dir.relative_to(ROOT_DIR)),
+        "manifest": manifest,
+        "heartbeat": heartbeat,
+        "running": bool(processes),
+        "processes": processes,
+        "total_jobs": total_jobs,
+        "downloaded": ok_count,
+        "attempted": attempted_count,
+        "failed_latest": failed_count,
+        "remaining": max(total_jobs - ok_count, 0),
+        "percent": percent,
+        "current_symbol": current_symbol,
+        "current_kind": current_kind,
+        "next_symbol": next_symbol,
+        "next_kind": next_kind,
+        "last_record": last_record,
+        "updated_at": last_record.get("ts") if last_record else manifest.get("created_at"),
+        "progress_tail": progress[-20:],
+    }
+
+
+def resume_download(run_id: str | None = None) -> dict[str, Any]:
+    selected_run_id = run_id or latest_download_run_id() or DEFAULT_DOWNLOAD_RUN_ID
+    run_dir = _download_run_dir(selected_run_id) or (TRAINING_HISTORY_DIR / selected_run_id)
+    manifest = read_json(run_dir / "manifest.json") or {}
+    if not manifest:
+        raise ValueError(f"download manifest not found for run_id={selected_run_id}")
+
+    existing = find_download_processes(selected_run_id)
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": download_status(selected_run_id)}
+
+    if manifest.get("download_type") == "derivatives_structure":
+        cmd = [
+            "python3",
+            "scripts/fetch_derivatives_structure.py",
+            "--run-id",
+            selected_run_id,
+            "--start",
+            str(manifest.get("start", "2024-01-01")),
+            "--end",
+            str(manifest.get("end", "2026-04-24")),
+            "--timeframe",
+            str(manifest.get("timeframe", "5m")),
+            "--kinds",
+            ",".join(manifest.get("kinds") or ["funding", "open_interest", "long_short"]),
+            "--limit",
+            str(manifest.get("limit", 100)),
+            "--sleep-sec",
+            "1",
+            "--retry-attempts",
+            "4",
+            "--retry-sleep-sec",
+            "8",
+        ]
+    else:
+        timeframes = ",".join(manifest.get("timeframes") or ["1h"])
+        cmd = [
+            "python3",
+            "scripts/fetch_training_history.py",
+            "--run-id",
+            selected_run_id,
+            "--start",
+            str(manifest.get("start", "2024-01-01")),
+            "--end",
+            str(manifest.get("end", "2026-04-24")),
+            "--timeframes",
+            timeframes,
+            "--sleep-sec",
+            "4",
+            "--retry-attempts",
+            "8",
+            "--retry-sleep-sec",
+            "20",
+            "--min-rows",
+            "100",
+        ]
+        if manifest.get("source_manifest"):
+            cmd.extend(["--symbols-manifest", str(ROOT_DIR / manifest["source_manifest"])])
+        else:
+            cmd.extend(["--min-volume-usd", str(manifest.get("min_volume_usd", 1_000_000)), "--max-symbols", str(manifest.get("max_symbols", 300))])
+    result = run_script(cmd, f"download_resume_{selected_run_id}")
+    result.update({"ok": True, "run_id": selected_run_id})
+    return result
+
+
+def pause_download(run_id: str | None = None) -> dict[str, Any]:
+    selected_run_id = run_id or latest_download_run_id()
+    processes = find_download_processes(selected_run_id)
+    stopped: list[int] = []
+    for proc in processes:
+        pid = int(proc["pid"])
+        try:
+            os.kill(pid, 15)
+            stopped.append(pid)
+        except OSError:
+            continue
+    return {"ok": True, "run_id": selected_run_id, "stopped_pids": stopped}
+
+
+def normalize_port(value: Any) -> int:
+    try:
+        port = int(value)
+    except Exception as exc:
+        raise ValueError("dashboard port must be an integer") from exc
+    if port < 1024 or port > 65535:
+        raise ValueError("dashboard port must be between 1024 and 65535")
+    return port
+
+
+def run_script(args: list[str], prefix: str) -> dict[str, Any]:
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    log_path = LOGS_DIR / f"launcher_{prefix}_{stamp}.log"
+    log = log_path.open("a", buffering=1)
+    log.write(f"$ {' '.join(args)}\n")
+    proc = subprocess.Popen(
+        args,
+        cwd=str(ROOT_DIR),
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        text=True,
+    )
+    return {
+        "pid": proc.pid,
+        "log_path": str(log_path.relative_to(ROOT_DIR)),
+    }
+
+
+class LauncherHandler(BaseHTTPRequestHandler):
+    server_version = "OKXTradingLauncher/1.0"
+
+    def send_json(self, status: int, payload: Any) -> None:
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        return json.loads(raw.decode("utf-8"))
+
+    def do_GET(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        if path == "/api/status":
+            self.send_json(200, self.status_payload())
+            return
+        if path == "/api/download-status":
+            self.send_json(200, download_status())
+            return
+        if path == "/api/monster":
+            self.send_json(200, monster_status())
+            return
+        if path == "/api/monster-orderbook":
+            self.send_json(200, {"ok": True, **monster_orderbook_status()})
+            return
+        if path == "/api/monster-derivatives":
+            self.send_json(200, {"ok": True, **monster_derivatives_status()})
+            return
+        if path == "/api/monster-paper":
+            self.send_json(200, {"ok": True, **monster_paper_status()})
+            return
+        if path == "/api/monster-auto-refresh":
+            self.send_json(200, {"ok": True, **monster_auto_refresh_status()})
+            return
+        if path == "/api/logs":
+            self.send_json(200, {"logs": latest_launcher_logs()})
+            return
+        self.serve_static(path)
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path.rstrip("/") or "/"
+        try:
+            if path == "/api/start":
+                self.send_json(200, self.handle_start())
+                return
+            if path == "/api/stop":
+                self.send_json(200, self.handle_stop())
+                return
+            if path == "/api/download-pause":
+                self.send_json(200, pause_download())
+                return
+            if path == "/api/download-resume":
+                self.send_json(200, resume_download())
+                return
+            if path == "/api/monster-refresh":
+                self.send_json(200, refresh_monster())
+                return
+            if path == "/api/monster-orderbook-start":
+                self.send_json(200, start_monster_orderbook())
+                return
+            if path == "/api/monster-derivatives-start":
+                self.send_json(200, start_monster_derivatives())
+                return
+            if path == "/api/monster-paper-start":
+                self.send_json(200, start_monster_paper())
+                return
+            if path == "/api/monster-auto-refresh-start":
+                self.send_json(200, start_monster_auto_refresh())
+                return
+            self.send_json(404, {"ok": False, "error": "unknown route"})
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+    def handle_start(self) -> dict[str, Any]:
+        payload = self.read_json_body()
+        env = str(payload.get("env", "demo")).strip()
+        strategy = str(payload.get("strategy", "yolo_orchestrator")).strip()
+        port = normalize_port(payload.get("port", DEFAULT_DASHBOARD_PORT))
+        confirm_live = bool(payload.get("confirm_live", False))
+
+        if env not in ALLOWED_ENVS:
+            raise ValueError(f"unsupported environment: {env}")
+        if strategy not in ALLOWED_STRATEGIES:
+            raise ValueError(f"unsupported strategy: {strategy}")
+        if env == "live" and not confirm_live:
+            raise ValueError("live/competition environment requires explicit confirmation")
+
+        result = run_script(
+            [str(ROOT_DIR / "manage_local.sh"), "start", strategy, str(port), env],
+            f"start_{strategy}_{env}",
+        )
+        result.update(
+            {
+                "ok": True,
+                "strategy": strategy,
+                "env": env,
+                "dashboard_port": port,
+                "dashboard_url": f"http://127.0.0.1:{port}/",
+                "yolo_url": f"http://127.0.0.1:{port}/yolo",
+            }
+        )
+        return result
+
+    def handle_stop(self) -> dict[str, Any]:
+        result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
+        result.update({"ok": True})
+        return result
+
+    def status_payload(self) -> dict[str, Any]:
+        summary = read_json(ROOT_DIR / "engine" / "logs" / "summary.json") or {}
+        pids = pid_snapshot()
+        return {
+            "ok": True,
+            "root": str(ROOT_DIR),
+            "default_dashboard_port": DEFAULT_DASHBOARD_PORT,
+            "default_dashboard_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/",
+            "default_yolo_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/yolo",
+            "summary": summary,
+            "pids": pids,
+            "launcher_logs": latest_launcher_logs(),
+        }
+
+    def serve_static(self, path: str) -> None:
+        rel = "index.html" if path == "/" else path.lstrip("/")
+        static_path = (STATIC_DIR / rel).resolve()
+        if not str(static_path).startswith(str(STATIC_DIR.resolve())):
+            self.send_error(403)
+            return
+        if not static_path.exists() or not static_path.is_file():
+            self.send_error(404)
+            return
+        content = static_path.read_bytes()
+        ctype = mimetypes.guess_type(str(static_path))[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        with (LOGS_DIR / "launcher_access.log").open("a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {self.address_string()} {fmt % args}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Local OKX trading launcher")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8788)
+    args = parser.parse_args()
+
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    (CONTROL_DIR / "launcher.pid").write_text(str(os.getpid()))
+
+    server = ThreadingHTTPServer((args.host, args.port), LauncherHandler)
+    print(f"launcher: http://{args.host}:{args.port}")
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

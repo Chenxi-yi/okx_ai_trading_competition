@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>数据下载控制台</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>数据下载控制台</h1>
+        <p id="serviceStatus">connecting</p>
+      </div>
+      <div class="header-actions">
+        <button id="refreshBtn" type="button">刷新</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="status-band">
+        <div class="run-title">
+          <div>
+            <span>当前任务</span>
+            <strong id="downloadRunId">--</strong>
+          </div>
+          <b id="downloadState">--</b>
+        </div>
+        <div class="progress-track">
+          <div id="downloadBar"></div>
+        </div>
+        <div class="metrics">
+          <div><span>总任务</span><strong id="downloadTotal">--</strong></div>
+          <div><span>已完成</span><strong id="downloadDone">--</strong></div>
+          <div><span>失败</span><strong id="downloadFailed">--</strong></div>
+          <div><span>剩余</span><strong id="downloadRemaining">--</strong></div>
+        </div>
+        <div class="quality-grid">
+          <div><span>Catalog</span><strong id="catalogState">--</strong></div>
+          <div><span>质量</span><strong id="qualityState">--</strong></div>
+          <div><span>总行数</span><strong id="qualityRows">--</strong></div>
+          <div><span>覆盖率中位数</span><strong id="qualityCoverage">--</strong></div>
+        </div>
+        <div class="current-grid">
+          <label>当前 <strong id="downloadCurrent">--</strong></label>
+          <label>下一项 <strong id="downloadNext">--</strong></label>
+          <label>更新时间 <strong id="downloadUpdated">--</strong></label>
+          <label>目录 <strong id="downloadDir">--</strong></label>
+        </div>
+        <div class="control-row">
+          <button id="pauseDownloadBtn" class="danger" type="button">暂停</button>
+          <button id="resumeDownloadBtn" class="positive" type="button">继续</button>
+        </div>
+      </section>
+
+      <section class="config-panel">
+        <h2>启动下载</h2>
+        <form id="startForm">
+          <label>run_id <input id="runIdInput" name="run_id" placeholder="留空自动生成"></label>
+          <label>symbols <input id="symbolsInput" name="symbols" placeholder="BTC/USDT:USDT,ETH/USDT:USDT"></label>
+          <label>symbols_manifest <input id="manifestInput" name="symbols_manifest" placeholder="engine/data/training_history/.../manifest.json"></label>
+          <label>开始日期 <input id="startInput" name="start" value="2024-01-01"></label>
+          <label>结束日期 <input id="endInput" name="end" placeholder="留空使用今天"></label>
+          <label>周期 <input id="timeframesInput" name="timeframes" value="1h"></label>
+          <label>最小成交额USD <input id="minVolumeInput" name="min_volume_usd" type="number" value="30000000"></label>
+          <label>最多币种 <input id="maxSymbolsInput" name="max_symbols" type="number" value="250"></label>
+          <label>请求间隔秒 <input id="sleepInput" name="sleep_sec" type="number" step="0.1" value="0.5"></label>
+          <label>最少行数 <input id="minRowsInput" name="min_rows" type="number" value="100"></label>
+          <div class="checks">
+            <label><input id="refreshUniverseInput" type="checkbox"> 重建 universe</label>
+            <label><input id="discoverOnlyInput" type="checkbox"> 只发现币种</label>
+          </div>
+          <button id="startDownloadBtn" class="primary" type="submit">开始下载</button>
+        </form>
+      </section>
+
+      <section class="runs-panel">
+        <h2>下载记录</h2>
+        <div id="runsList" class="runs-list"></div>
+      </section>
+
+      <section class="log-panel">
+        <h2>进度尾部</h2>
+        <pre id="downloadTail">等待下载记录</pre>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

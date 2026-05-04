@@ -145,12 +145,21 @@ def cmd_start(args):
     from engine.trading_engine import TradingEngine
 
     paper_mode = getattr(args, "paper", False)
+    okx_profile = getattr(args, "okx_profile", None) or os.environ.get("OKX_PROFILE") or ("demo" if args.sandbox else "live")
+    try:
+        from config.settings import require_okx_profile
+        require_okx_profile(okx_profile)
+    except Exception as e:
+        print(f"Error: invalid OKX profile {okx_profile!r}: {e}")
+        sys.exit(1)
+    os.environ["OKX_PROFILE"] = okx_profile
+    os.environ.setdefault("STRATEGY_PROFILE", okx_profile)
     if paper_mode:
         # Paper trading: fetch real mainnet prices, but no real orders
         logging.getLogger().info("PAPER TRADING MODE — real prices, no real orders")
-        engine = TradingEngine(sandbox=False, mode="futures", paper=True)
+        engine = TradingEngine(sandbox=False, mode="futures", paper=True, okx_profile=okx_profile)
     else:
-        engine = TradingEngine(sandbox=args.sandbox, mode="futures")
+        engine = TradingEngine(sandbox=args.sandbox, mode="futures", okx_profile=okx_profile)
     startup_msg = engine.start(portfolio_configs)
 
     if args.foreground:
@@ -376,7 +385,12 @@ def cmd_competition(args):
 
         if strategy_def.get("base_profile") == "custom":
             # Custom execution-loop strategy (e.g. elite_flow) — bypass TradingEngine
-            _run_custom_strategy(args.strategy, strategy_def, foreground=getattr(args, "foreground", False))
+            _run_custom_strategy(
+                args.strategy,
+                strategy_def,
+                foreground=getattr(args, "foreground", False),
+                profile=getattr(args, "profile", None),
+            )
         else:
             cfg = reg.to_portfolio_config(args.strategy)
             # Launch via the existing start command path
@@ -397,7 +411,12 @@ def cmd_competition(args):
         print("Available: list, backtest, compare, demo-start, demo-status")
 
 
-def _run_custom_strategy(strategy_id: str, strategy_def: dict, foreground: bool = False) -> None:
+def _run_custom_strategy(
+    strategy_id: str,
+    strategy_def: dict,
+    foreground: bool = False,
+    profile: str = None,
+) -> None:
     """
     Dispatch a 'base_profile: custom' strategy to its own execution module.
 
@@ -417,8 +436,14 @@ def _run_custom_strategy(strategy_id: str, strategy_def: dict, foreground: bool 
 
     config = strategy_def.get(f"{strategy_id}_config", {})
     effective_config = dict(config)
-    profile_override = os.getenv("STRATEGY_PROFILE")
-    if profile_override in ("demo", "live"):
+    profile_override = profile or os.getenv("STRATEGY_PROFILE")
+    if profile_override:
+        try:
+            from config.settings import require_okx_profile
+            require_okx_profile(profile_override)
+        except Exception as e:
+            print(f"Error: invalid STRATEGY_PROFILE={profile_override!r}: {e}")
+            sys.exit(1)
         effective_config["profile"] = profile_override
     budget_override = os.getenv("YOLO_TOTAL_BUDGET")
     if strategy_id.startswith("yolo_") and budget_override:
@@ -441,7 +466,7 @@ def _run_custom_strategy(strategy_id: str, strategy_def: dict, foreground: bool 
         ],
     )
 
-    mod.run(config=config, foreground=foreground)
+    mod.run(config=effective_config, foreground=foreground)
 
 
 def parse_args():
@@ -472,6 +497,7 @@ def parse_args():
 
     p_demo = comp_sub.add_parser("demo-start", help="Start a strategy in demo mode")
     p_demo.add_argument("--strategy", "-s", required=True, help="Strategy ID to demo run")
+    p_demo.add_argument("--profile", default=None, help="OKX profile to use, e.g. demo, live, personal")
     p_demo.add_argument("--foreground", "-f", action="store_true", default=False,
                         help="Run in foreground (don't daemonize)")
 
@@ -498,6 +524,10 @@ def parse_args():
     p_start.add_argument(
         "--paper", action="store_true", default=False,
         help="Paper trading: real mainnet prices, SimulatedExecution (no real orders sent)",
+    )
+    p_start.add_argument(
+        "--okx-profile", default=None,
+        help="OKX CLI profile to use for account/order calls, e.g. demo, live, personal",
     )
 
     # session

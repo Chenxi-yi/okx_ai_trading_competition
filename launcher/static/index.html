@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OKX Trading Launcher</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="topbar">
+      <div>
+        <h1>OKX Trading Launcher</h1>
+        <p id="rootPath">loading...</p>
+      </div>
+      <div class="status-pill" id="launcherStatus">checking</div>
+    </section>
+
+    <section class="control-grid">
+      <div class="panel control-panel">
+        <div class="panel-head">
+          <h2>启动</h2>
+          <span id="lastAction">未执行</span>
+        </div>
+
+        <label class="field-label">环境</label>
+        <div class="segmented" id="envGroup" role="group" aria-label="environment">
+          <button data-value="demo" class="active">Demo</button>
+          <button data-value="live">Live 比赛</button>
+          <button data-value="personal">个人</button>
+        </div>
+
+        <label class="field-label">策略</label>
+        <div class="strategy-list" id="strategyGroup">
+          <button data-value="yolo_orchestrator" class="strategy-card active">
+            <strong>YOLO Orchestrator</strong>
+            <span>10 轮 YOLO，使用现有 /yolo 页面</span>
+          </button>
+          <button data-value="yolo_momentum" class="strategy-card">
+            <strong>YOLO Momentum</strong>
+            <span>单策略动量版本</span>
+          </button>
+          <button data-value="elite_flow" class="strategy-card">
+            <strong>Elite Flow</strong>
+            <span>订单流 + crowding + regime gate</span>
+          </button>
+        </div>
+
+        <div class="inline-fields">
+          <label>
+            Dashboard 端口
+            <input id="portInput" type="number" min="1024" max="65535" value="8080">
+          </label>
+        </div>
+
+        <label class="live-confirm hidden" id="liveConfirmBox">
+          <input id="liveConfirm" type="checkbox">
+          我确认要启动 live/比赛环境
+        </label>
+
+        <div class="button-row">
+          <button id="startBtn" class="primary">启动系统</button>
+          <button id="stopBtn" class="danger">暂停全部</button>
+          <button id="refreshBtn">刷新</button>
+        </div>
+      </div>
+
+      <div class="panel status-panel">
+        <div class="panel-head">
+          <h2>状态</h2>
+          <span id="updatedAt">--</span>
+        </div>
+        <div class="metrics">
+          <div><span>Dashboard</span><strong id="dashboardState">--</strong></div>
+          <div><span>策略进程</span><strong id="strategyState">--</strong></div>
+          <div><span>NAV</span><strong id="navState">--</strong></div>
+          <div><span>PnL</span><strong id="pnlState">--</strong></div>
+        </div>
+        <div class="running-list" id="runningList"></div>
+        <pre id="logTail" class="log-tail"></pre>
+      </div>
+    </section>
+
+    <section class="panel yolo-panel">
+      <div class="panel-head">
+        <h2>YOLO 页面</h2>
+        <a id="openYolo" href="http://127.0.0.1:8080/yolo" target="_blank" rel="noreferrer">新窗口打开</a>
+      </div>
+      <iframe id="yoloFrame" title="YOLO dashboard" src="about:blank"></iframe>
+    </section>
+
+    <section class="panel monster-panel">
+      <div class="panel-head">
+        <h2>妖币扫描</h2>
+        <div class="panel-actions">
+          <button id="monsterRefreshBtn">刷新并重扫</button>
+          <button id="monsterOrderbookBtn">采盘口</button>
+          <button id="monsterDerivativesBtn">采结构</button>
+          <button id="monsterPaperBtn">跑纸面</button>
+          <button id="monsterAutoRefreshBtn">自动刷新</button>
+          <span id="monsterUpdated">--</span>
+        </div>
+      </div>
+      <div class="metrics monster-metrics">
+        <div><span>Run</span><strong id="monsterRunId">--</strong></div>
+        <div><span>Fresh Top</span><strong id="monsterFresh">--</strong></div>
+        <div><span>Liquidity</span><strong id="monsterLiquidity">--</strong></div>
+        <div><span>候选</span><strong id="monsterCandidates">--</strong></div>
+      </div>
+      <div class="orderbook-status" id="monsterOrderbookStatus">盘口采集：--</div>
+      <div class="orderbook-status" id="monsterDerivativesStatus">结构采集：--</div>
+      <div class="orderbook-status" id="monsterPaperStatus">纸面 lottery：--</div>
+      <div class="orderbook-status" id="monsterAutoRefreshStatus">自动刷新：--</div>
+      <div class="monster-list" id="monsterList"></div>
+    </section>
+
+    <section class="panel paper-panel">
+      <div class="panel-head">
+        <h2>纸面 Lottery</h2>
+        <span id="paperUpdated">--</span>
+      </div>
+      <div class="metrics paper-metrics">
+        <div><span>NAV</span><strong id="paperNav">--</strong></div>
+        <div><span>现金</span><strong id="paperCash">--</strong></div>
+        <div><span>浮动 PnL</span><strong id="paperUnrealized">--</strong></div>
+        <div><span>已实现</span><strong id="paperRealized">--</strong></div>
+        <div><span>Open Risk</span><strong id="paperRisk">--</strong></div>
+        <div><span>收益</span><strong id="paperReturn">--</strong></div>
+        <div><span>Max DD</span><strong id="paperDrawdown">--</strong></div>
+        <div><span>Gate</span><strong id="paperGate">--</strong></div>
+      </div>
+      <canvas id="paperChart" width="1200" height="260"></canvas>
+      <div class="paper-grid">
+        <div>
+          <h3>持仓</h3>
+          <div id="paperPositions" class="paper-list"></div>
+        </div>
+        <div>
+          <h3>事件</h3>
+          <div id="paperLedger" class="paper-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="download-widget" id="downloadWidget">
+      <div class="download-head">
+        <div>
+          <h2>数据下载</h2>
+          <span id="downloadRunId">--</span>
+        </div>
+        <strong id="downloadState">--</strong>
+      </div>
+      <div class="progress-track">
+        <div id="downloadBar"></div>
+      </div>
+      <div class="download-stats">
+        <div><span>预计</span><strong id="downloadTotal">--</strong></div>
+        <div><span>已完成</span><strong id="downloadDone">--</strong></div>
+        <div><span>失败</span><strong id="downloadFailed">--</strong></div>
+      </div>
+      <div class="download-current">
+        <span>当前</span>
+        <strong id="downloadCurrent">--</strong>
+      </div>
+      <div class="download-current">
+        <span>下一项</span>
+        <strong id="downloadNext">--</strong>
+      </div>
+      <div class="download-actions">
+        <button id="pauseDownloadBtn">暂停</button>
+        <button id="resumeDownloadBtn">继续</button>
+      </div>
+      <pre id="downloadTail"></pre>
+    </aside>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

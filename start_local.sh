@@ -10,7 +10,7 @@ STRATEGY="${1:-elite_flow}"
 arg2="${2:-}"
 arg3="${3:-}"
 
-if [[ "$arg2" == "demo" || "$arg2" == "live" ]]; then
+if [[ "$arg2" == "demo" || "$arg2" == "live" || "$arg2" == "personal" ]]; then
   ENV_MODE="$arg2"
   DASHBOARD_PORT="${arg3:-8080}"
 else
@@ -22,22 +22,22 @@ case "$STRATEGY" in
   elite_flow|yolo_momentum|yolo_orchestrator) ;;
   *)
     echo "unknown strategy: $STRATEGY"
-    echo "usage: ./start_local.sh [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live]"
+    echo "usage: ./start_local.sh [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live|personal]"
     exit 1
     ;;
 esac
 
 case "$ENV_MODE" in
-  demo|live) ;;
+  demo|live|personal) ;;
   *)
     echo "unknown environment: $ENV_MODE"
-    echo "usage: ./start_local.sh [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live]"
+    echo "usage: ./start_local.sh [elite_flow|yolo_momentum|yolo_orchestrator] [port] [demo|live|personal]"
     exit 1
     ;;
 esac
 
 STRATEGY_LOG="$LOG_DIR/${STRATEGY}_${ENV_MODE}.stdout.log"
-STRATEGY_PID_FILE="$CONTROL_DIR/${STRATEGY}.pid"
+STRATEGY_PID_FILE="$CONTROL_DIR/${STRATEGY}_${ENV_MODE}.pid"
 DASHBOARD_LOG="$LOG_DIR/dashboard_${DASHBOARD_PORT}.stdout.log"
 DASHBOARD_PID_FILE="$CONTROL_DIR/dashboard.pid"
 
@@ -49,7 +49,7 @@ is_running() {
 }
 
 find_strategy_pid() {
-  pgrep -f "engine/main.py competition demo-start --strategy $STRATEGY --foreground" | tail -n 1 || true
+  pgrep -f "engine/main.py competition demo-start --strategy $STRATEGY .*--foreground" | tail -n 1 || true
 }
 
 find_dashboard_pid() {
@@ -240,9 +240,10 @@ start_strategy() {
   (
     cd "$ROOT_DIR"
     STRATEGY_PROFILE="$ENV_MODE" \
-    LIVE_TRADING="$([[ "$ENV_MODE" == "live" ]] && echo true || echo false)" \
-    YOLO_RESET_STATE="$([[ "$ENV_MODE" == "live" && "$STRATEGY" == yolo_* ]] && echo 1 || echo 0)" \
-    nohup python3 engine/main.py competition demo-start --strategy "$STRATEGY" --foreground \
+    OKX_PROFILE="$ENV_MODE" \
+    LIVE_TRADING="$([[ "$ENV_MODE" != "demo" ]] && echo true || echo false)" \
+    YOLO_RESET_STATE="$([[ "$ENV_MODE" != "demo" && "$STRATEGY" == yolo_* ]] && echo 1 || echo 0)" \
+    nohup python3 engine/main.py competition demo-start --strategy "$STRATEGY" --profile "$ENV_MODE" --foreground \
       >> "$STRATEGY_LOG" 2>&1 < /dev/null &
     local child_pid=$!
     disown "$child_pid" 2>/dev/null || true

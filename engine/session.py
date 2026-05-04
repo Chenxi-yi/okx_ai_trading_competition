@@ -379,6 +379,11 @@ def cmd_session(args) -> None:
             config_overrides = json.loads(args.config)
         capital = config_overrides.pop("capital", 300.0)
         profile = config_overrides.pop("profile", "demo")
+        try:
+            from config.settings import require_okx_profile
+            require_okx_profile(profile)
+        except Exception as e:
+            raise SystemExit(f"Invalid OKX profile {profile!r}: {e}")
         sid = registry.create(
             strategy_id=args.strategy,
             session_id=getattr(args, "id", None),

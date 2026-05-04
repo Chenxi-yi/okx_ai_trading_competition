@@ -41,7 +41,12 @@ def _load_env_files(paths: Iterable[Path]) -> None:
                     os.environ[key.strip()] = value.strip()
 
 
-def _read_okx_toml() -> Dict[str, str]:
+def _profile_field(profile: Dict, key: str) -> str:
+    """Read an OKX profile field, accepting legacy space-separated keys."""
+    return str(profile.get(key) or profile.get(key.replace("_", " ")) or "")
+
+
+def _read_okx_toml(profile_name: str = "") -> Dict[str, str]:
     """
     Read OKX credentials from ~/.okx/config.toml.
     Supports both tomllib (Python 3.11+) and a simple fallback parser.
@@ -59,12 +64,13 @@ def _read_okx_toml() -> Dict[str, str]:
             # Fallback: simple line-by-line parser for our known config format
             data = _parse_toml_simple(_OKX_TOML)
 
-        default = data.get("default_profile", "live")
+        default = profile_name or os.environ.get("OKX_PROFILE", "").strip() or data.get("default_profile", "live")
         profile = data.get("profiles", {}).get(default, {})
         return {
-            "api_key":    profile.get("api_key", ""),
-            "secret_key": profile.get("secret_key", ""),
-            "passphrase": profile.get("passphrase", ""),
+            "profile":    default,
+            "api_key":    _profile_field(profile, "api_key"),
+            "secret_key": _profile_field(profile, "secret_key"),
+            "passphrase": _profile_field(profile, "passphrase"),
         }
     except Exception:
         return {}
@@ -92,7 +98,7 @@ def _parse_toml_simple(path: Path) -> Dict:
             # Key = value
             if "=" in line:
                 key, _, raw_val = line.partition("=")
-                key = key.strip()
+                key = key.strip().replace(" ", "_")
                 val = raw_val.strip().strip('"').strip("'")
                 # Handle triple-quoted values
                 if val.startswith("'''") and val.endswith("'''"):
@@ -133,7 +139,37 @@ def _resolve_secret(
     return "", "missing"
 
 
+def get_okx_profiles() -> Dict[str, Dict]:
+    """Return configured OKX CLI profiles without exposing secret values."""
+    if not _OKX_TOML.exists():
+        return {}
+    try:
+        try:
+            import tomllib
+            with open(_OKX_TOML, "rb") as f:
+                data = tomllib.load(f)
+        except Exception:
+            data = _parse_toml_simple(_OKX_TOML)
+        profiles = data.get("profiles", {})
+        return profiles if isinstance(profiles, dict) else {}
+    except Exception:
+        return {}
+
+
+def okx_profile_exists(profile: str) -> bool:
+    return profile in get_okx_profiles()
+
+
+def require_okx_profile(profile: str) -> str:
+    profiles = get_okx_profiles()
+    if profile not in profiles:
+        raise ValueError(f"Unknown OKX profile '{profile}'. Configured profiles: {sorted(profiles)}")
+    return profile
+
+
 _load_env_files(_ENV_FILES)
+
+OKX_PROFILE = os.environ.get("OKX_PROFILE", "").strip() or os.environ.get("STRATEGY_PROFILE", "").strip() or "live"
 
 OKX_API_KEY, OKX_API_KEY_SOURCE = _resolve_secret(
     ("OKX_API_KEY",),

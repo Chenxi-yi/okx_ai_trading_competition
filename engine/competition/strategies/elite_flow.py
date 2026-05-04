@@ -44,6 +44,17 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+
+def _env_profile_override() -> Optional[str]:
+    profile = os.getenv("STRATEGY_PROFILE", "").strip()
+    if not profile:
+        return None
+    try:
+        from config.settings import require_okx_profile
+        return require_okx_profile(profile)
+    except Exception as e:
+        raise ValueError(f"Invalid STRATEGY_PROFILE={profile!r}: {e}") from e
+
 # Contract values: coins per contract (OKX perpetuals)
 CT_VAL: Dict[str, float] = {
     "BTC-USDT-SWAP": 0.01,
@@ -367,8 +378,8 @@ class EliteFlowStrategy:
 
     def __init__(self, config: Optional[Dict] = None):
         self.cfg = {**DEFAULT_CONFIG, **(config or {})}
-        profile_override = os.getenv("STRATEGY_PROFILE")
-        if profile_override in ("demo", "live"):
+        profile_override = _env_profile_override()
+        if profile_override:
             self.cfg["profile"] = profile_override
         self._symbols: List[str] = list(self.cfg["symbols"])
 
@@ -451,7 +462,8 @@ class EliteFlowStrategy:
     def _state_path(self) -> Path:
         if "session_state_file" in self.cfg:
             return Path(self.cfg["session_state_file"])
-        return Path(__file__).resolve().parents[2] / "logs" / self._STATE_FILE
+        profile = str(self.cfg.get("profile", "demo")).replace("/", "_")
+        return Path(__file__).resolve().parents[2] / "logs" / f"elite_flow_{profile}_state.json"
 
     def _save_state(self) -> None:
         """Persist position state + realized PnL to disk."""

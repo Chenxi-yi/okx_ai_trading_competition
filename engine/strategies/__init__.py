@@ -2,6 +2,8 @@ from strategies.base import BaseStrategy, StrategyOutput
 from strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 from strategies.funding_carry import FundingCarryStrategy
 from strategies.trend_momentum import TrendMomentumStrategy
+from strategies.protocol_adapter import TargetWeightStrategyAdapter
+from strategies.c_auto_h24_regression import CAutoH24RegressionStrategy
 
 
 def __getattr__(name):
@@ -23,4 +25,6 @@ __all__ = [
     "TrendMomentumStrategy",
     "CrossSectionalMomentumStrategy",
     "FundingCarryStrategy",
+    "TargetWeightStrategyAdapter",
+    "CAutoH24RegressionStrategy",
 ]

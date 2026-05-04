@@ -525,6 +525,21 @@ STATE_FILE = Path(__file__).resolve().parents[2] / "logs" / "yolo_momentum_state
 LOGS_DIR = Path(__file__).resolve().parents[2] / "logs"
 
 
+def _profile_suffix(profile: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in profile)
+
+
+def _env_profile_override() -> Optional[str]:
+    profile = os.getenv("STRATEGY_PROFILE", "").strip()
+    if not profile:
+        return None
+    try:
+        from config.settings import require_okx_profile
+        return require_okx_profile(profile)
+    except Exception as e:
+        raise ValueError(f"Invalid STRATEGY_PROFILE={profile!r}: {e}") from e
+
+
 # ---------------------------------------------------------------------------
 # Helpers: OKX CLI calls
 # ---------------------------------------------------------------------------
@@ -1245,8 +1260,8 @@ class YoloMomentumStrategy:
 
     def __init__(self, config: Optional[Dict] = None, state_file: Optional[Path] = None):
         self.cfg = {**DEFAULT_CONFIG, **(config or {})}
-        profile_override = os.getenv("STRATEGY_PROFILE")
-        if profile_override in ("demo", "live"):
+        profile_override = _env_profile_override()
+        if profile_override:
             self.cfg["profile"] = profile_override
         budget_override = os.getenv("YOLO_TOTAL_BUDGET")
         if budget_override:
@@ -1256,8 +1271,8 @@ class YoloMomentumStrategy:
                 logger.warning("Ignoring invalid YOLO_TOTAL_BUDGET=%r", budget_override)
         self.profile = self.cfg["profile"]
         default_state_file = STATE_FILE
-        if not state_file and self.profile == "live":
-            default_state_file = LOGS_DIR / "yolo_momentum_live_state.json"
+        if not state_file:
+            default_state_file = LOGS_DIR / f"yolo_momentum_{_profile_suffix(self.profile)}_state.json"
         self.state_file = Path(state_file) if state_file else default_state_file
         if os.getenv("YOLO_RESET_STATE") == "1" and self.state_file.exists():
             try:

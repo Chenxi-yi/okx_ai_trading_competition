@@ -37,11 +37,16 @@ stop_pid_file() {
 }
 
 stop_pattern "dashboard" "python3 dashboard.py --port"
-stop_pattern "elite_flow" "engine/main.py competition demo-start --strategy elite_flow --foreground"
-stop_pattern "yolo_momentum" "engine/main.py competition demo-start --strategy yolo_momentum --foreground"
-stop_pattern "yolo_orchestrator" "engine/main.py competition demo-start --strategy yolo_orchestrator --foreground"
+stop_pattern "elite_flow" "engine/main.py competition demo-start --strategy elite_flow .*--foreground"
+stop_pattern "yolo_momentum" "engine/main.py competition demo-start --strategy yolo_momentum .*--foreground"
+stop_pattern "yolo_orchestrator" "engine/main.py competition demo-start --strategy yolo_orchestrator .*--foreground"
 
 stop_pid_file "dashboard" "$CONTROL_DIR/dashboard.pid"
-stop_pid_file "elite_flow" "$CONTROL_DIR/elite_flow.pid"
-stop_pid_file "yolo_momentum" "$CONTROL_DIR/yolo_momentum.pid"
-stop_pid_file "yolo_orchestrator" "$CONTROL_DIR/yolo_orchestrator.pid"
+for env_mode in demo live personal; do
+  stop_pid_file "elite_flow/$env_mode" "$CONTROL_DIR/elite_flow_${env_mode}.pid"
+  stop_pid_file "yolo_momentum/$env_mode" "$CONTROL_DIR/yolo_momentum_${env_mode}.pid"
+  stop_pid_file "yolo_orchestrator/$env_mode" "$CONTROL_DIR/yolo_orchestrator_${env_mode}.pid"
+done
+stop_pid_file "elite_flow/legacy" "$CONTROL_DIR/elite_flow.pid"
+stop_pid_file "yolo_momentum/legacy" "$CONTROL_DIR/yolo_momentum.pid"
+stop_pid_file "yolo_orchestrator/legacy" "$CONTROL_DIR/yolo_orchestrator.pid"

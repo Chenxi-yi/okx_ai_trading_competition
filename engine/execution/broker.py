@@ -205,9 +205,10 @@ class Broker:
         "spot" | "futures" | "margin"
     """
 
-    def __init__(self, mode: str = TRADING_MODE, sandbox: bool = False):
+    def __init__(self, mode: str = TRADING_MODE, sandbox: bool = False, okx_profile: str = None):
         self.mode = mode
         self.sandbox = sandbox
+        self.okx_profile = okx_profile or os.environ.get("OKX_PROFILE") or ("demo" if sandbox else "live")
         self.max_leverage = LEVERAGE_LIMITS[mode]
         self.tx_cost_pct  = TRANSACTION_COSTS[mode]
         self._exchange = None   # lazy-initialised
@@ -257,7 +258,7 @@ class Broker:
             self.set_leverage(symbol, leverage)
         ex = self._get_exchange()
         sz = _qty_to_contracts(ex, symbol, quantity)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         order = _place_via_agent_trade_kit(inst_id, "buy", sz, profile=profile)
         logger.info("[LIVE] BUY executed via ATK: %s", order)
         return order
@@ -285,7 +286,7 @@ class Broker:
             self.set_leverage(symbol, leverage)
         ex = self._get_exchange()
         sz = _qty_to_contracts(ex, symbol, quantity)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         order = _place_via_agent_trade_kit(inst_id, "sell", sz, profile=profile)
         logger.info("[LIVE] SELL executed via ATK: %s", order)
         return order
@@ -300,7 +301,7 @@ class Broker:
             logger.info("[PAPER] SET LEVERAGE %s | %.1fx | mode=%s", symbol, capped, self.mode)
             return
         inst_id = _to_inst_id(symbol)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "swap", "leverage",
                "--instId", inst_id, "--lever", str(int(capped)), "--mgnMode", "cross"]
         try:
@@ -334,7 +335,7 @@ class Broker:
         inst_id = _to_inst_id(symbol)
         ex = self._get_exchange()
         sz = _qty_to_contracts(ex, symbol, quantity)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         order = _place_via_cli(inst_id, "buy", sz, ord_type="limit", price=str(price), profile=profile)
         logger.info("[LIVE] LIMIT BUY placed via ATK: %s", order)
         return order
@@ -349,7 +350,7 @@ class Broker:
         inst_id = _to_inst_id(symbol)
         ex = self._get_exchange()
         sz = _qty_to_contracts(ex, symbol, quantity)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         order = _place_via_cli(inst_id, "sell", sz, ord_type="limit", price=str(price), profile=profile)
         logger.info("[LIVE] LIMIT SELL placed via ATK: %s", order)
         return order
@@ -359,7 +360,7 @@ class Broker:
         if not _is_live_trading():
             return {"id": order_id, "status": "closed", "filled": 1.0}
         inst_id = _to_inst_id(symbol)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "swap", "get",
                "--instId", inst_id, "--ordId", order_id]
         try:
@@ -386,7 +387,7 @@ class Broker:
             logger.info("[PAPER] CANCEL ORDER %s | %s", order_id, symbol)
             return
         inst_id = _to_inst_id(symbol)
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "swap", "cancel", inst_id, "--ordId", order_id]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -404,7 +405,7 @@ class Broker:
         if not _is_live_trading():
             logger.debug("[PAPER] get_positions → returning empty list")
             return []
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "swap", "positions"]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -419,7 +420,7 @@ class Broker:
         if not _is_live_trading():
             logger.debug("[PAPER] get_balance → returning placeholder")
             return {"USDT": {"free": 5000.0, "used": 0.0, "total": 5000.0}}
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "account", "balance"]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
@@ -434,7 +435,7 @@ class Broker:
         if not _is_live_trading():
             logger.info("[PAPER] CANCEL ALL ORDERS | symbol=%s", symbol or "ALL")
             return
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         if symbol:
             inst_id = _to_inst_id(symbol)
             # List open orders, then cancel each
@@ -463,7 +464,7 @@ class Broker:
         if not _is_live_trading():
             return 5000.0
 
-        profile = "demo" if self.sandbox else "live"
+        profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "account", "balance"]
         try:
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)

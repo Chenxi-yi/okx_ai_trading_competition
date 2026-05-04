@@ -5,11 +5,13 @@
 | ID | Name | Profile | Signal | Leverage | Status |
 |---|---|---|---|---|---|
 | `elite_flow` | **Elite Flow** | tick/1min | mOFI + crowding + regime gate | 2x base, 5x cap | ✅ Active |
+| `monster_coin` | **Monster Coin Catcher** | 5m | volatility/range expansion + cross-sectional strength | research only | 🧪 Research |
 
 Capital: 300 USDT seed.
 
 ## Status Legend
 - ✅ Active — deployed, running on demo
+- 🧪 Research — backtest/paper only, no order placement
 
 ## CLI Commands
 ```bash

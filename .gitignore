@@ -41,9 +41,20 @@ env/
 # ── Engine runtime state (regenerated on start) ──────────────────────────────
 engine/data/engine_state*.json
 engine/data/cache/
+engine/control/*.pid
+engine/control/startup.txt
 
 # ── Engine logs (large, transient) ───────────────────────────────────────────
 engine/logs/
+
+# ── Generated market/research datasets ───────────────────────────────────────
+engine/data/derivatives_structure/
+engine/data/features/
+engine/data/microstructure/
+engine/data/monster_events/
+engine/data/research/
+engine/data/training_history/
+engine/results/
 
 # ── IDE ──────────────────────────────────────────────────────────────────────
 .vscode/

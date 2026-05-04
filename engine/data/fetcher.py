@@ -97,7 +97,7 @@ def fetch_tradable_futures_symbols(
         if market and not market.get("active", True):
             continue
 
-        vol_24h = float(ticker.get("quoteVolume", 0) or 0)
+        vol_24h = _ticker_quote_volume_usd(ticker)
         if vol_24h < min_daily_volume_usd:
             continue
 
@@ -112,6 +112,29 @@ def fetch_tradable_futures_symbols(
         len(symbols), len(tickers), min_daily_volume_usd / 1e6,
     )
     return symbols
+
+
+def _ticker_quote_volume_usd(ticker: Dict) -> float:
+    quote_volume = ticker.get("quoteVolume")
+    if quote_volume:
+        return float(quote_volume)
+
+    info = ticker.get("info") or {}
+    for key in ("volCcyQuote24h", "volCcyQuote", "quoteVolume"):
+        value = info.get(key)
+        if value:
+            return float(value)
+
+    base_volume = ticker.get("baseVolume") or info.get("volCcy24h")
+    last = ticker.get("last") or info.get("last")
+    if base_volume and last:
+        return float(base_volume) * float(last)
+
+    contracts = info.get("vol24h")
+    contract_value = info.get("ctVal")
+    if contracts and contract_value and last:
+        return float(contracts) * float(contract_value) * float(last)
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -206,6 +229,8 @@ def fetch_ohlcv(
     timeframe: str = TIMEFRAME,
     use_cache: bool = True,
     sandbox: bool = False,
+    fallback_to_stale: bool = True,
+    fallback_to_yfinance: bool = True,
 ) -> pd.DataFrame:
     """
     Fetch daily OHLCV for *symbol* between *start* and *end*.
@@ -222,22 +247,25 @@ def fetch_ohlcv(
             # Only trust the cache if it covers the requested end date.
             # Allow a small tolerance for missing trailing bars.
             tolerance = pd.Timedelta(days=2) if timeframe == "1d" else pd.Timedelta(hours=8)
+            requested_start = _parse_bound(start, timeframe=timeframe, is_end=False)
             requested_end = _parse_bound(end, timeframe=timeframe, is_end=True)
-            if cached.index.max() >= requested_end - tolerance:
+            if cached.index.min() <= requested_start + tolerance and cached.index.max() >= requested_end - tolerance:
                 return _slice_dates(cached, start, end)
             logger.info(
-                "Cache stale for %s: ends %s, need %s — re-fetching",
-                symbol, cached.index.max().date(), requested_end.date(),
+                "Cache stale for %s: covers %s..%s, need %s..%s — re-fetching",
+                symbol, cached.index.min().date(), cached.index.max().date(), requested_start.date(), requested_end.date(),
             )
 
     try:
         df = _fetch_ccxt(symbol, start, end, mode, timeframe=timeframe, sandbox=sandbox)
     except Exception as e:
         logger.warning("ccxt fetch failed for %s (%s): %s. Trying yfinance.", symbol, mode, e)
+        if not fallback_to_yfinance:
+            raise
         try:
             df = _fetch_yfinance(symbol, start, end)
         except Exception:
-            if cached is not None and not cached.empty:
+            if fallback_to_stale and cached is not None and not cached.empty:
                 logger.warning(
                     "Falling back to stale cache for %s after live fetch failure; cache ends at %s",
                     symbol, cached.index.max(),
@@ -272,7 +300,7 @@ def _fetch_funding_rates(
                 break
             all_rates.extend(rates)
             cursor = rates[-1]["timestamp"] + 1
-            time.sleep(ex.rateLimit / 1000)
+            time.sleep(max(ex.rateLimit / 1000, 0.35))
     except Exception as e:
         logger.warning("Could not fetch funding rates for %s: %s", symbol, e)
         return pd.Series(dtype=float)
@@ -329,10 +357,29 @@ def _fetch_ccxt(
         if last_ts >= end_ms:
             break
         since_ms = last_ts + 1
-        time.sleep(ex.rateLimit / 1000)  # respect rate limit
+        time.sleep(max(ex.rateLimit / 1000, 0.35))  # respect rate limit
 
     if not all_bars:
-        raise ValueError(f"No OHLCV data returned for {symbol}")
+        listed_since_ms = _listed_since_ms(ex, fetch_symbol)
+        if listed_since_ms and listed_since_ms > funding_since_ms and listed_since_ms < end_ms:
+            logger.info(
+                "No OHLCV for %s at requested start; retrying from listed time %s",
+                symbol,
+                pd.Timestamp(listed_since_ms, unit="ms", tz="UTC"),
+            )
+            since_ms = listed_since_ms
+            while True:
+                bars = ex.fetch_ohlcv(fetch_symbol, timeframe=timeframe, since=since_ms, limit=1000)
+                if not bars:
+                    break
+                all_bars.extend(bars)
+                last_ts = bars[-1][0]
+                if last_ts >= end_ms:
+                    break
+                since_ms = last_ts + 1
+                time.sleep(max(ex.rateLimit / 1000, 0.35))
+        if not all_bars:
+            raise ValueError(f"No OHLCV data returned for {symbol}")
 
     df = pd.DataFrame(all_bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
@@ -346,6 +393,18 @@ def _fetch_ccxt(
     else:
         df["funding_rate"] = 0.0
     return df.astype(float)
+
+
+def _listed_since_ms(ex: ccxt.Exchange, symbol: str) -> Optional[int]:
+    market = ex.markets.get(symbol)
+    info = (market or {}).get("info") or {}
+    value = info.get("listTime") or info.get("launchTime")
+    if value:
+        try:
+            return int(value)
+        except Exception:
+            return None
+    return None
 
 
 def _fetch_yfinance(symbol: str, start: str, end: str) -> pd.DataFrame:
@@ -535,9 +594,15 @@ def _parse_bound(value: str, timeframe: str, is_end: bool) -> pd.Timestamp:
 def _normalize_index_for_timeframe(index: pd.DatetimeIndex, timeframe: str) -> pd.DatetimeIndex:
     if timeframe == "1d":
         return index.normalize()
-    return index.floor(timeframe)
+    return index.floor(_pandas_timeframe(timeframe))
 
 
 def _bars_per_day(timeframe: str) -> int:
-    delta = pd.Timedelta("1D") / pd.Timedelta(timeframe)
+    delta = pd.Timedelta("1D") / pd.Timedelta(_pandas_timeframe(timeframe))
     return max(int(delta), 1)
+
+
+def _pandas_timeframe(timeframe: str) -> str:
+    if timeframe.endswith("m") and timeframe[:-1].isdigit():
+        return f"{timeframe[:-1]}min"
+    return timeframe

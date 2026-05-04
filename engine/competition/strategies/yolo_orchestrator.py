@@ -38,9 +38,24 @@ logger = logging.getLogger(__name__)
 # Paths
 LOGS_DIR = Path(__file__).resolve().parents[2] / "logs"
 
+
+def _profile_suffix(profile: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in profile)
+
+
+def _env_profile_override() -> Optional[str]:
+    profile = os.getenv("STRATEGY_PROFILE", "").strip()
+    if not profile:
+        return None
+    try:
+        from config.settings import require_okx_profile
+        return require_okx_profile(profile)
+    except Exception as e:
+        raise ValueError(f"Invalid STRATEGY_PROFILE={profile!r}: {e}") from e
+
+
 def _orchestrator_state_file(profile: str) -> Path:
-    suffix = "_live" if profile == "live" else ""
-    return LOGS_DIR / f"yolo_orchestrator{suffix}.json"
+    return LOGS_DIR / f"yolo_orchestrator_{_profile_suffix(profile)}.json"
 
 # How many nav snapshots to keep per slot
 MAX_NAV_HISTORY = 5000
@@ -117,8 +132,8 @@ class YoloOrchestrator:
 
     def __init__(self, config: Optional[Dict] = None):
         self.cfg = {**DEFAULT_CONFIG, **(config or {})}
-        profile_override = os.getenv("STRATEGY_PROFILE")
-        if profile_override in ("demo", "live"):
+        profile_override = _env_profile_override()
+        if profile_override:
             self.cfg["profile"] = profile_override
         budget_override = os.getenv("YOLO_TOTAL_BUDGET")
         if budget_override:
@@ -141,8 +156,8 @@ class YoloOrchestrator:
         self.slots: List[SlotInfo] = []
         for i in range(1, self.num_slots + 1):
             slot = SlotInfo(id=i)
-            suffix = "_live" if self.cfg["profile"] == "live" else ""
-            slot._state_file = LOGS_DIR / f"yolo_slot_{i}{suffix}_state.json"
+            suffix = _profile_suffix(self.cfg["profile"])
+            slot._state_file = LOGS_DIR / f"yolo_slot_{i}_{suffix}_state.json"
             self.slots.append(slot)
 
         # Deployment queue index (next slot to deploy)
