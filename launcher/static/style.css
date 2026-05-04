@@ -131,7 +131,7 @@ h2 {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 6px;
   padding: 5px;
   border: 1px solid var(--line);
@@ -181,6 +181,16 @@ h2 {
   font-size: 13px;
 }
 
+.strategy-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.strategy-card.primary-strategy {
+  background: #f6fffb;
+}
+
 .inline-fields {
   margin-top: 14px;
 }
@@ -202,8 +212,7 @@ input[type="number"] {
 }
 
 .live-confirm {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
   margin-top: 14px;
   padding: 10px;
@@ -212,6 +221,12 @@ input[type="number"] {
   color: var(--red);
   background: #fff3ef;
   font-weight: 700;
+}
+
+.live-confirm label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .hidden {
@@ -243,7 +258,7 @@ input[type="number"] {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
 

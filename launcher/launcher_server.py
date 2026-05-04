@@ -11,7 +11,9 @@ import argparse
 import json
 import mimetypes
 import os
+import signal
 import subprocess
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,16 +22,23 @@ from urllib.parse import urlparse
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+ENGINE_DIR = ROOT_DIR / "engine"
+sys.path.insert(0, str(ENGINE_DIR))
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONTROL_DIR = ROOT_DIR / "engine" / "control"
 LOGS_DIR = ROOT_DIR / "engine" / "logs"
+PRO_PAPER_DIR = LOGS_DIR / "pro_paper"
 TRAINING_HISTORY_DIR = ROOT_DIR / "engine" / "data" / "training_history"
 DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structure"
 MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
 MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
 
-ALLOWED_ENVS = {"demo", "live", "personal"}
-ALLOWED_STRATEGIES = {"elite_flow", "yolo_momentum", "yolo_orchestrator"}
+from registry import StrategyRegistry
+
+
+ALLOWED_ENVS = {"personal", "demo", "competition"}
+ALLOWED_MODES = {"paper", "real"}
+LEGACY_STRATEGIES = {"elite_flow", "yolo_momentum", "yolo_orchestrator"}
 DEFAULT_DASHBOARD_PORT = 8080
 DEFAULT_DOWNLOAD_RUN_ID = "train_hist_vol1m_1h_20240101_20260424"
 DEFAULT_DERIVATIVES_RUN_ID = "deriv_struct_132_5m_20240101_20260424"
@@ -62,7 +71,7 @@ def process_alive(pid: str | int | None) -> bool:
 
 def pid_snapshot() -> dict[str, Any]:
     strategies = []
-    for strategy in sorted(ALLOWED_STRATEGIES):
+    for strategy in sorted(LEGACY_STRATEGIES):
         for env in ("demo", "live", "personal"):
             path = CONTROL_DIR / f"{strategy}_{env}.pid"
             pid = read_text(path)
@@ -91,7 +100,57 @@ def pid_snapshot() -> dict[str, Any]:
             "pid_file": "engine/control/launcher.pid",
         },
         "strategies": strategies,
+        "pro_paper": find_pro_paper_processes(),
     }
+
+
+def strategy_options() -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
+    try:
+        registry = StrategyRegistry()
+        for record in registry.list_strategies():
+            options.append(
+                {
+                    "strategy_id": record.strategy_id,
+                    "name": record.name,
+                    "book": record.book,
+                    "status": record.status,
+                    "kind": "professional",
+                    "description": record.description,
+                    "live_enabled": record.live_enabled,
+                    "live_allocation_pct": record.live_allocation_pct,
+                    "default_parameter_set_id": record.default_parameter_set_id,
+                    "paper_supported": True,
+                    "real_supported": bool(record.live_enabled and record.status == "live"),
+                    "primary": record.strategy_id == "core_c_auto_h24_regression_v1",
+                }
+            )
+    except Exception:
+        pass
+    for strategy in sorted(LEGACY_STRATEGIES):
+        options.append(
+            {
+                "strategy_id": strategy,
+                "name": strategy.replace("_", " ").title(),
+                "book": "legacy",
+                "status": "legacy",
+                "kind": "legacy",
+                "description": "Legacy competition launcher path",
+                "live_enabled": False,
+                "live_allocation_pct": 0.0,
+                "paper_supported": False,
+                "real_supported": True,
+                "primary": False,
+            }
+        )
+    return options
+
+
+def strategy_option(strategy_id: str) -> dict[str, Any] | None:
+    for item in strategy_options():
+        if item["strategy_id"] == strategy_id:
+            return item
+    return None
 
 
 def tail_file(path: Path, lines: int = 120) -> list[str]:
@@ -115,6 +174,122 @@ def latest_launcher_logs() -> list[dict[str, Any]]:
             }
         )
     return items
+
+
+def find_pro_paper_processes(strategy_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/start_pro_paper.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        found_strategy = _command_arg(command, "--strategy-id")
+        found_env = _command_arg(command, "--environment")
+        if strategy_id and found_strategy != strategy_id:
+            continue
+        matches.append({"pid": pid, "command": command, "strategy_id": found_strategy, "environment": found_env})
+    return matches
+
+
+def _command_arg(command: str, key: str) -> str | None:
+    parts = command.split()
+    for i, part in enumerate(parts):
+        if part == key and i + 1 < len(parts):
+            return parts[i + 1]
+        if part.startswith(f"{key}="):
+            return part.split("=", 1)[1]
+    return None
+
+
+def pro_paper_status(strategy_id: str = "core_c_auto_h24_regression_v1", environment: str = "personal") -> dict[str, Any]:
+    status_path = PRO_PAPER_DIR / f"{strategy_id}_{environment}.json"
+    scheduler_path = PRO_PAPER_DIR / f"{strategy_id}_{environment}_scheduler.json"
+    status = read_json(status_path) or {}
+    scheduler = read_json(scheduler_path) or {}
+    processes = find_pro_paper_processes(strategy_id)
+    return {
+        "available": bool(status or scheduler or processes),
+        "strategy_id": strategy_id,
+        "environment": environment,
+        "running": bool(processes),
+        "processes": processes,
+        "status": status,
+        "scheduler": scheduler,
+        "updated_at": scheduler.get("heartbeat_at") or status.get("heartbeat_at") or status.get("timestamp"),
+        "status_path": str(status_path.relative_to(ROOT_DIR)),
+        "scheduler_status_path": str(scheduler_path.relative_to(ROOT_DIR)),
+    }
+
+
+def start_pro_paper(strategy_id: str, environment: str) -> dict[str, Any]:
+    existing = find_pro_paper_processes(strategy_id)
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": pro_paper_status(strategy_id, environment)}
+    stop_path = CONTROL_DIR / f"pro_paper_{strategy_id}_{environment}.stop"
+    try:
+        stop_path.unlink()
+    except FileNotFoundError:
+        pass
+    result = run_script(
+        [
+            "python3",
+            "scripts/start_pro_paper.py",
+            "--strategy-id",
+            strategy_id,
+            "--environment",
+            environment,
+            "--symbols",
+            "BTC/USDT,ETH/USDT,SOL/USDT",
+            "--timeframe",
+            "1h",
+            "--interval-sec",
+            "60",
+            "--max-cycles",
+            "0",
+            "--warmup-bars",
+            "720",
+        ],
+        f"pro_paper_{strategy_id}_{environment}",
+    )
+    result.update({"ok": True, "strategy": strategy_id, "environment": environment, "mode": "paper"})
+    return result
+
+
+def stop_pro_paper() -> dict[str, Any]:
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    stopped: list[int] = []
+    stop_files: list[str] = []
+    for proc in find_pro_paper_processes():
+        strategy_id = proc.get("strategy_id") or "unknown"
+        environment = proc.get("environment") or "personal"
+        stop_path = CONTROL_DIR / f"pro_paper_{strategy_id}_{environment}.stop"
+        stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files}
 
 
 def iter_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -831,31 +1006,59 @@ class LauncherHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
-        if path == "/api/status":
-            self.send_json(200, self.status_payload())
-            return
-        if path == "/api/download-status":
-            self.send_json(200, download_status())
-            return
-        if path == "/api/monster":
-            self.send_json(200, monster_status())
-            return
-        if path == "/api/monster-orderbook":
-            self.send_json(200, {"ok": True, **monster_orderbook_status()})
-            return
-        if path == "/api/monster-derivatives":
-            self.send_json(200, {"ok": True, **monster_derivatives_status()})
-            return
-        if path == "/api/monster-paper":
-            self.send_json(200, {"ok": True, **monster_paper_status()})
-            return
-        if path == "/api/monster-auto-refresh":
-            self.send_json(200, {"ok": True, **monster_auto_refresh_status()})
-            return
-        if path == "/api/logs":
-            self.send_json(200, {"logs": latest_launcher_logs()})
-            return
-        self.serve_static(path)
+        try:
+            if path == "/api/health":
+                self.send_json(200, {"ok": True, "service": "launcher", "pid": os.getpid()})
+                return
+            if path == "/api/status":
+                self.send_json(200, self.status_payload())
+                return
+            if path == "/api/launch-options":
+                self.send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "strategies": strategy_options(),
+                        "environments": [
+                            {"id": "personal", "label": "个人"},
+                            {"id": "demo", "label": "Demo"},
+                            {"id": "competition", "label": "比赛"},
+                        ],
+                        "modes": [
+                            {"id": "paper", "label": "纸面交易"},
+                            {"id": "real", "label": "真实交易"},
+                        ],
+                        "primary_strategy_id": "core_c_auto_h24_regression_v1",
+                    },
+                )
+                return
+            if path == "/api/pro-paper":
+                self.send_json(200, {"ok": True, **pro_paper_status()})
+                return
+            if path == "/api/download-status":
+                self.send_json(200, download_status())
+                return
+            if path == "/api/monster":
+                self.send_json(200, monster_status())
+                return
+            if path == "/api/monster-orderbook":
+                self.send_json(200, {"ok": True, **monster_orderbook_status()})
+                return
+            if path == "/api/monster-derivatives":
+                self.send_json(200, {"ok": True, **monster_derivatives_status()})
+                return
+            if path == "/api/monster-paper":
+                self.send_json(200, {"ok": True, **monster_paper_status()})
+                return
+            if path == "/api/monster-auto-refresh":
+                self.send_json(200, {"ok": True, **monster_auto_refresh_status()})
+                return
+            if path == "/api/logs":
+                self.send_json(200, {"logs": latest_launcher_logs()})
+                return
+            self.serve_static(path)
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc), "route": path})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -896,20 +1099,39 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
     def handle_start(self) -> dict[str, Any]:
         payload = self.read_json_body()
-        env = str(payload.get("env", "demo")).strip()
-        strategy = str(payload.get("strategy", "yolo_orchestrator")).strip()
+        env = str(payload.get("env", "personal")).strip()
+        mode = str(payload.get("mode", "paper")).strip()
+        strategy = str(payload.get("strategy", "core_c_auto_h24_regression_v1")).strip()
         port = normalize_port(payload.get("port", DEFAULT_DASHBOARD_PORT))
-        confirm_live = bool(payload.get("confirm_live", False))
+        confirm_real = bool(payload.get("confirm_real", False))
+        confirm_competition = bool(payload.get("confirm_competition", False))
 
         if env not in ALLOWED_ENVS:
             raise ValueError(f"unsupported environment: {env}")
-        if strategy not in ALLOWED_STRATEGIES:
+        if mode not in ALLOWED_MODES:
+            raise ValueError(f"unsupported mode: {mode}")
+        option = strategy_option(strategy)
+        if option is None:
             raise ValueError(f"unsupported strategy: {strategy}")
-        if env == "live" and not confirm_live:
-            raise ValueError("live/competition environment requires explicit confirmation")
+        if mode == "real" and not confirm_real:
+            raise ValueError("真实交易模式需要明确确认")
+        if env == "competition" and mode == "real" and not confirm_competition:
+            raise ValueError("比赛真实交易环境需要明确确认")
+
+        if option["kind"] == "professional":
+            if mode == "paper":
+                return start_pro_paper(strategy, env)
+            if not option.get("real_supported"):
+                raise ValueError("该 professional 策略尚未通过 live gate，不能启动真实交易")
+            raise ValueError("professional live runner 尚未接入 launcher")
+
+        if mode == "paper":
+            raise ValueError("legacy 策略没有接入纸面交易模式；请选择 professional 策略")
+
+        script_env = "live" if env == "competition" else env
 
         result = run_script(
-            [str(ROOT_DIR / "manage_local.sh"), "start", strategy, str(port), env],
+            [str(ROOT_DIR / "manage_local.sh"), "start", strategy, str(port), script_env],
             f"start_{strategy}_{env}",
         )
         result.update(
@@ -917,6 +1139,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "strategy": strategy,
                 "env": env,
+                "mode": mode,
                 "dashboard_port": port,
                 "dashboard_url": f"http://127.0.0.1:{port}/",
                 "yolo_url": f"http://127.0.0.1:{port}/yolo",
@@ -926,7 +1149,8 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
     def handle_stop(self) -> dict[str, Any]:
         result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
-        result.update({"ok": True})
+        pro = stop_pro_paper()
+        result.update({"ok": True, "pro_paper": pro})
         return result
 
     def status_payload(self) -> dict[str, Any]:
@@ -940,6 +1164,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "default_yolo_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/yolo",
             "summary": summary,
             "pids": pids,
+            "pro_paper": pro_paper_status(),
             "launcher_logs": latest_launcher_logs(),
         }
 
@@ -975,6 +1200,8 @@ def main() -> None:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     (CONTROL_DIR / "launcher.pid").write_text(str(os.getpid()))
+    if hasattr(signal, "SIGCHLD"):
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
     server = ThreadingHTTPServer((args.host, args.port), LauncherHandler)
     print(f"launcher: http://{args.host}:{args.port}")

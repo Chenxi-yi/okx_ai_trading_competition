@@ -25,24 +25,22 @@
 
         <label class="field-label">环境</label>
         <div class="segmented" id="envGroup" role="group" aria-label="environment">
-          <button data-value="demo" class="active">Demo</button>
-          <button data-value="live">Live 比赛</button>
-          <button data-value="personal">个人</button>
+          <button data-value="personal" class="active">个人</button>
+          <button data-value="demo">Demo</button>
+          <button data-value="competition">比赛</button>
+        </div>
+
+        <label class="field-label">模式</label>
+        <div class="segmented" id="modeGroup" role="group" aria-label="mode">
+          <button data-value="paper" class="active">纸面交易</button>
+          <button data-value="real">真实交易</button>
         </div>
 
         <label class="field-label">策略</label>
         <div class="strategy-list" id="strategyGroup">
-          <button data-value="yolo_orchestrator" class="strategy-card active">
-            <strong>YOLO Orchestrator</strong>
-            <span>10 轮 YOLO，使用现有 /yolo 页面</span>
-          </button>
-          <button data-value="yolo_momentum" class="strategy-card">
-            <strong>YOLO Momentum</strong>
-            <span>单策略动量版本</span>
-          </button>
-          <button data-value="elite_flow" class="strategy-card">
-            <strong>Elite Flow</strong>
-            <span>订单流 + crowding + regime gate</span>
+          <button data-value="core_c_auto_h24_regression_v1" class="strategy-card active">
+            <strong>Core C-Auto H24 Regression</strong>
+            <span>Strategy Office / core / research</span>
           </button>
         </div>
 
@@ -53,10 +51,10 @@
           </label>
         </div>
 
-        <label class="live-confirm hidden" id="liveConfirmBox">
-          <input id="liveConfirm" type="checkbox">
-          我确认要启动 live/比赛环境
-        </label>
+        <div class="live-confirm hidden" id="realConfirmBox">
+          <label><input id="realConfirm" type="checkbox"> 我确认要启动真实交易模式</label>
+          <label id="competitionConfirmLine" class="hidden"><input id="competitionConfirm" type="checkbox"> 我确认这是比赛真实交易环境</label>
+        </div>
 
         <div class="button-row">
           <button id="startBtn" class="primary">启动系统</button>
@@ -75,6 +73,8 @@
           <div><span>策略进程</span><strong id="strategyState">--</strong></div>
           <div><span>NAV</span><strong id="navState">--</strong></div>
           <div><span>PnL</span><strong id="pnlState">--</strong></div>
+          <div><span>Pro Paper</span><strong id="proPaperState">--</strong></div>
+          <div><span>Pro Cycles</span><strong id="proPaperCycles">--</strong></div>
         </div>
         <div class="running-list" id="runningList"></div>
         <pre id="logTail" class="log-tail"></pre>

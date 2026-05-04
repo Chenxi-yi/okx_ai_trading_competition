@@ -1,8 +1,11 @@
 const state = {
-  env: localStorage.getItem('launcher.env') || 'demo',
-  strategy: localStorage.getItem('launcher.strategy') || 'yolo_orchestrator',
+  env: localStorage.getItem('launcher.env') || 'personal',
+  mode: localStorage.getItem('launcher.mode') || 'paper',
+  strategy: localStorage.getItem('launcher.strategy') || 'core_c_auto_h24_regression_v1',
   port: Number(localStorage.getItem('launcher.port') || 8080),
 };
+
+let launchOptions = { strategies: [] };
 
 const $ = (id) => document.getElementById(id);
 
@@ -22,17 +25,53 @@ function dashboardUrl() {
 
 function applySelection() {
   setActive('envGroup', state.env);
+  setActive('modeGroup', state.mode);
   setActive('strategyGroup', state.strategy);
   $('portInput').value = state.port;
-  $('liveConfirmBox').classList.toggle('hidden', state.env !== 'live');
+  $('realConfirmBox').classList.toggle('hidden', state.mode !== 'real');
+  $('competitionConfirmLine').classList.toggle('hidden', !(state.mode === 'real' && state.env === 'competition'));
   $('openYolo').href = yoloUrl();
   if ($('yoloFrame').src === 'about:blank' || $('yoloFrame').dataset.port !== String(state.port)) {
     $('yoloFrame').src = yoloUrl();
     $('yoloFrame').dataset.port = String(state.port);
   }
   localStorage.setItem('launcher.env', state.env);
+  localStorage.setItem('launcher.mode', state.mode);
   localStorage.setItem('launcher.strategy', state.strategy);
   localStorage.setItem('launcher.port', String(state.port));
+}
+
+function renderStrategyOptions(data) {
+  launchOptions = data || { strategies: [] };
+  const strategies = launchOptions.strategies || [];
+  if (!strategies.some((item) => item.strategy_id === state.strategy)) {
+    state.strategy = launchOptions.primary_strategy_id || strategies[0]?.strategy_id || state.strategy;
+  }
+  $('strategyGroup').innerHTML = strategies.map((item) => {
+    const classes = ['strategy-card'];
+    if (item.strategy_id === state.strategy) classes.push('active');
+    if (item.primary) classes.push('primary-strategy');
+    const caps = [
+      item.kind || 'strategy',
+      item.book || '-',
+      item.status || '-',
+      item.paper_supported ? 'paper' : null,
+      item.real_supported ? 'real' : null,
+    ].filter(Boolean).join(' / ');
+    return `
+      <button data-value="${item.strategy_id}" class="${classes.join(' ')}">
+        <strong>${item.name || item.strategy_id}</strong>
+        <span>${caps}</span>
+        <small>${item.description || ''}</small>
+      </button>
+    `;
+  }).join('');
+  bindStrategyEvents();
+  applySelection();
+}
+
+function strategyMeta(strategyId = state.strategy) {
+  return (launchOptions.strategies || []).find((item) => item.strategy_id === strategyId) || null;
 }
 
 async function api(path, options = {}) {
@@ -79,6 +118,10 @@ function renderStatus(data) {
   const running = strategies.filter((item) => item.alive);
   $('dashboardState').textContent = dashboard.alive ? `running #${dashboard.pid}` : 'stopped';
   $('strategyState').textContent = running.length ? `${running.length} running` : 'stopped';
+  const pro = data.pro_paper || {};
+  const scheduler = pro.scheduler || {};
+  $('proPaperState').textContent = pro.running ? `running #${(pro.processes || [])[0]?.pid || '-'}` : (pro.available ? (scheduler.scheduler_status || 'idle') : 'idle');
+  $('proPaperCycles').textContent = scheduler.cycles === undefined ? '--' : String(scheduler.cycles);
 
   const nav = summaryNav(data.summary);
   const pnl = summaryPnl(data.summary);
@@ -86,15 +129,24 @@ function renderStatus(data) {
   $('pnlState').textContent = pnl === null ? '--' : `${Number(pnl).toFixed(2)}%`;
 
   const list = $('runningList');
-  if (!strategies.length) {
+  const proRows = (data.pids?.pro_paper || []).map((item) => `
+    <div class="run-row">
+      <span>${item.strategy_id || 'pro_paper'} / ${item.environment || 'personal'} / paper / pid ${item.pid}</span>
+      <b>alive</b>
+    </div>
+  `);
+  if (!strategies.length && !proRows.length) {
     list.innerHTML = '<div class="run-row stale"><span>暂无策略 pid 文件</span><b>idle</b></div>';
   } else {
-    list.innerHTML = strategies.map((item) => `
+    list.innerHTML = [
+      ...proRows,
+      ...strategies.map((item) => `
       <div class="run-row ${item.alive ? '' : 'stale'}">
         <span>${item.strategy} / ${item.env} / pid ${item.pid}</span>
         <b>${item.alive ? 'alive' : 'stale'}</b>
       </div>
-    `).join('');
+    `),
+    ].join('');
   }
 
   const latestLog = (data.launcher_logs || [])[0];
@@ -464,18 +516,33 @@ async function refreshStatus() {
   }
 }
 
+async function refreshLaunchOptions() {
+  const data = await api('/api/launch-options');
+  renderStrategyOptions(data);
+}
+
 async function startSystem() {
   state.port = Number($('portInput').value || 8080);
   applySelection();
-  const confirmLive = $('liveConfirm').checked;
+  const meta = strategyMeta();
+  if (state.mode === 'paper' && meta && meta.paper_supported === false) {
+    throw new Error('该策略没有接入纸面交易模式');
+  }
+  if (state.mode === 'real' && meta && meta.real_supported === false && meta.kind === 'professional') {
+    throw new Error('该 professional 策略尚未通过 live gate');
+  }
+  const confirmReal = $('realConfirm').checked;
+  const confirmCompetition = $('competitionConfirm').checked;
   $('lastAction').textContent = '启动中...';
   const result = await api('/api/start', {
     method: 'POST',
     body: JSON.stringify({
       env: state.env,
+      mode: state.mode,
       strategy: state.strategy,
       port: state.port,
-      confirm_live: confirmLive,
+      confirm_real: confirmReal,
+      confirm_competition: confirmCompetition,
     }),
   });
   $('lastAction').textContent = `启动请求已提交 pid=${result.pid}`;
@@ -510,12 +577,21 @@ document.querySelectorAll('#envGroup [data-value]').forEach((node) => {
   });
 });
 
-document.querySelectorAll('#strategyGroup [data-value]').forEach((node) => {
+document.querySelectorAll('#modeGroup [data-value]').forEach((node) => {
   node.addEventListener('click', () => {
-    state.strategy = node.dataset.value;
+    state.mode = node.dataset.value;
     applySelection();
   });
 });
+
+function bindStrategyEvents() {
+  document.querySelectorAll('#strategyGroup [data-value]').forEach((node) => {
+    node.addEventListener('click', () => {
+      state.strategy = node.dataset.value;
+      applySelection();
+    });
+  });
+}
 
 $('portInput').addEventListener('change', () => {
   state.port = Number($('portInput').value || 8080);
@@ -574,7 +650,11 @@ $('monsterAutoRefreshBtn').addEventListener('click', () => {
   });
 });
 
+bindStrategyEvents();
 applySelection();
+refreshLaunchOptions().catch((err) => {
+  $('lastAction').textContent = err.message;
+});
 refreshStatus();
 refreshDownloadStatus();
 refreshMonsterStatus();

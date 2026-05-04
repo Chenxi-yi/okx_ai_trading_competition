@@ -42,6 +42,7 @@ env/
 engine/data/engine_state*.json
 engine/data/cache/
 engine/control/*.pid
+engine/control/*.stop
 engine/control/startup.txt
 
 # ── Engine logs (large, transient) ───────────────────────────────────────────
