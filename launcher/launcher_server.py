@@ -374,20 +374,20 @@ def latest_download_run_id() -> str | None:
     active = [p.get("run_id") for p in find_download_processes(None) if p.get("run_id")]
     if active:
         return str(active[0])
+    candidates = []
+    for root in _download_roots():
+        if root.exists():
+            candidates.extend([p for p in root.iterdir() if p.is_dir() and (p / "manifest.json").exists()])
+    if candidates:
+        latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
+        return latest.name
     preferred_deriv = DERIVATIVES_STRUCTURE_DIR / DEFAULT_DERIVATIVES_RUN_ID
     if preferred_deriv.exists():
         return DEFAULT_DERIVATIVES_RUN_ID
     preferred = TRAINING_HISTORY_DIR / DEFAULT_DOWNLOAD_RUN_ID
     if preferred.exists():
         return DEFAULT_DOWNLOAD_RUN_ID
-    candidates = []
-    for root in _download_roots():
-        if root.exists():
-            candidates.extend([p for p in root.iterdir() if p.is_dir() and (p / "manifest.json").exists()])
-    if not candidates:
-        return None
-    latest = max(candidates, key=lambda p: (p / "manifest.json").stat().st_mtime)
-    return latest.name
+    return None
 
 
 def latest_monster_watchlist_id() -> str | None:
@@ -935,6 +935,8 @@ def resume_download(run_id: str | None = None) -> dict[str, Any]:
             cmd.extend(["--symbols-manifest", str(ROOT_DIR / manifest["source_manifest"])])
         else:
             cmd.extend(["--min-volume-usd", str(manifest.get("min_volume_usd", 1_000_000)), "--max-symbols", str(manifest.get("max_symbols", 300))])
+        if manifest.get("skip_funding"):
+            cmd.append("--skip-funding")
     result = run_script(cmd, f"download_resume_{selected_run_id}")
     result.update({"ok": True, "run_id": selected_run_id})
     return result

@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--retry-attempts", type=int, default=4)
     p.add_argument("--retry-sleep-sec", type=float, default=8.0)
     p.add_argument("--refresh-manifest", action="store_true")
+    p.add_argument("--discover-only", action="store_true", help="Only write the derivatives manifest; do not download data")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -91,6 +92,18 @@ def main() -> int:
     end_ms = _to_ms(end, end_of_day=True)
 
     logging.info("Derivatives structure run=%s symbols=%d kinds=%s total_jobs=%d", run_id, len(symbols), kinds, total_jobs)
+    if args.discover_only:
+        manifest.update(
+            {
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "status": "discovered",
+                "summary": {"ok": 0, "failed": 0, "skipped_existing": 0, "total_jobs": total_jobs},
+            }
+        )
+        _write_json(manifest_path, manifest)
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
+
     job_index = 0
     for symbol in symbols:
         ccxt_symbol = _resolve_symbol(ex, symbol)

@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--retry-sleep-sec", type=float, default=8.0)
     p.add_argument("--min-coverage", type=float, default=0.8, help="Minimum expected bar coverage before a symbol is marked ok")
     p.add_argument("--min-rows", type=int, default=100, help="Minimum rows required before a symbol is marked ok")
+    p.add_argument("--skip-funding", action="store_true", help="Skip funding-rate join while downloading OHLCV")
     p.add_argument("--refresh-universe", action="store_true", help="Refresh universe even if manifest exists")
     p.add_argument("--discover-only", action="store_true", help="Only discover/write universe manifest; do not download symbol history")
     p.add_argument("--log-level", default="INFO")
@@ -71,6 +72,7 @@ def main() -> int:
                 "start": args.start,
                 "end": args.end,
                 "timeframes": timeframes,
+                "skip_funding": bool(args.skip_funding),
                 "status": "running",
                 "summary": {
                     "ok": 0,
@@ -97,6 +99,7 @@ def main() -> int:
                 "start": args.start,
                 "end": args.end,
                 "timeframes": timeframes,
+                "skip_funding": bool(args.skip_funding),
                 "status": "running",
             }
         )
@@ -166,6 +169,7 @@ def main() -> int:
                     args.retry_attempts,
                     args.retry_sleep_sec,
                     min_rows=min_rows,
+                    include_funding=not args.skip_funding,
                 )
                 coverage = len(df) / max(expected_rows, 1)
                 record.update(
@@ -237,6 +241,7 @@ def _fetch_with_retries(
     attempts: int,
     sleep_sec: float,
     min_rows: int,
+    include_funding: bool = True,
 ):
     last_exc: Exception | None = None
     for attempt in range(max(1, attempts)):
@@ -251,6 +256,7 @@ def _fetch_with_retries(
                 sandbox=False,
                 fallback_to_stale=False,
                 fallback_to_yfinance=False,
+                include_funding=include_funding,
             )
             if len(df) < min_rows:
                 raise RuntimeError(f"insufficient history coverage rows={len(df)} min_rows={min_rows}")

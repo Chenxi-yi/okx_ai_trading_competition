@@ -231,6 +231,7 @@ def fetch_ohlcv(
     sandbox: bool = False,
     fallback_to_stale: bool = True,
     fallback_to_yfinance: bool = True,
+    include_funding: bool = True,
 ) -> pd.DataFrame:
     """
     Fetch daily OHLCV for *symbol* between *start* and *end*.
@@ -251,13 +252,40 @@ def fetch_ohlcv(
             requested_end = _parse_bound(end, timeframe=timeframe, is_end=True)
             if cached.index.min() <= requested_start + tolerance and cached.index.max() >= requested_end - tolerance:
                 return _slice_dates(cached, start, end)
+            if cached.index.min() <= requested_start + tolerance and cached.index.max() < requested_end - tolerance:
+                tail_start = cached.index.max() + pd.Timedelta(_pandas_timeframe(timeframe))
+                logger.info(
+                    "Cache partial for %s: covers %s..%s, incrementally fetching %s..%s",
+                    symbol,
+                    cached.index.min(),
+                    cached.index.max(),
+                    tail_start,
+                    requested_end,
+                )
+                try:
+                    tail = _fetch_ccxt(
+                        symbol,
+                        start=tail_start.isoformat(),
+                        end=end,
+                        mode=mode,
+                        timeframe=timeframe,
+                        sandbox=sandbox,
+                        include_funding=include_funding,
+                    )
+                    if tail is not None and not tail.empty:
+                        combined = pd.concat([cached, tail]).sort_index()
+                        combined = combined[~combined.index.duplicated(keep="last")]
+                        _save_cache(combined, symbol, mode, timeframe)
+                        return _slice_dates(combined, start, end)
+                except Exception as e:
+                    logger.warning("Incremental cache update failed for %s: %s; re-fetching full range", symbol, e)
             logger.info(
                 "Cache stale for %s: covers %s..%s, need %s..%s — re-fetching",
                 symbol, cached.index.min().date(), cached.index.max().date(), requested_start.date(), requested_end.date(),
             )
 
     try:
-        df = _fetch_ccxt(symbol, start, end, mode, timeframe=timeframe, sandbox=sandbox)
+        df = _fetch_ccxt(symbol, start, end, mode, timeframe=timeframe, sandbox=sandbox, include_funding=include_funding)
     except Exception as e:
         logger.warning("ccxt fetch failed for %s (%s): %s. Trying yfinance.", symbol, mode, e)
         if not fallback_to_yfinance:
@@ -326,6 +354,7 @@ def _fetch_ccxt(
     mode: str,
     timeframe: str,
     sandbox: bool = False,
+    include_funding: bool = True,
 ) -> pd.DataFrame:
     """Download OHLCV using ccxt with pagination."""
     ex = _make_exchange(mode, sandbox=sandbox)
@@ -387,7 +416,7 @@ def _fetch_ccxt(
     df.index = _normalize_index_for_timeframe(df.index, timeframe)
     df = df[~df.index.duplicated(keep="last")]
 
-    if mode == "futures":
+    if mode == "futures" and include_funding:
         funding = _fetch_funding_rates(ex, fetch_symbol, funding_since_ms, end_ms, timeframe)
         df["funding_rate"] = funding.reindex(df.index).fillna(0.0)
     else:
