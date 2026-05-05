@@ -174,6 +174,42 @@ Interpretation:
 - `crowding_squeeze_reversal` is not a standalone alpha after all-fold testing.
   Keep funding, OI, and long/short data as filters and risk controls.
 
+## Portfolio Backtest Results
+
+Portfolio plan:
+`.claude/knowledge/research/c_auto_v2_portfolio_backtest_plan.md`
+
+Runner:
+`scripts/backtest_c_auto_v2_portfolio.py`
+
+First delayed-execution pass:
+
+```text
+signals at t -> entry at t+1h
+max positions: 5 baseline / 4 conservative
+rebalance: 6h
+round-trip cost baseline: 14 bps
+initial capital: 1,000 USDT
+```
+
+Key runs:
+
+| Run | Final NAV | Return | Max DD | Trades | Win Rate |
+|---|---:|---:|---:|---:|---:|
+| `c_auto_v2_portfolio_backtest_v1` | 383,989.70 | +38,298.97% | -14.89% | 3,265 | 57.43% |
+| `c_auto_v2_portfolio_backtest_conservative_v1` | 6,227.26 | +522.73% | -4.67% | 2,612 | 57.43% |
+| `c_auto_v2_portfolio_backtest_high_cost_v1` | 5,069.66 | +406.97% | -4.99% | 2,612 | 54.44% |
+
+The conservative profile is the more relevant research reference. It uses 6%
+base risk per position, 4 max positions, and only the top 10% candidates.
+
+Important caveat:
+
+The first portfolio backtest has delayed entry and explicit costs, but it is
+still a research simulator. Before paper trading, add mark-to-market open PnL,
+fixed-notional or volatility-targeted sizing, and stricter fold-boundary
+leakage checks.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text
