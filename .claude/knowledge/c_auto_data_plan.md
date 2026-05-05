@@ -213,6 +213,25 @@ verdict: default legacy feature set is not promotable; build a new feature set
 from IC-ranked multi-timeframe/regime features before backtesting.
 ```
 
+BTC impact study:
+
+```text
+experiment_id: btc_alt_impact_v1
+plan: .claude/knowledge/research/c_auto_btc_impact_plan.md
+output: engine/data/research/c_auto/btc_alt_impact_v1/
+panel rows: 1,066,845
+alts: 78
+main result: strong_bull is the only broad long-positive regime in v1;
+ordinary bull, bear, and chop_short are short/avoid candidates.
+```
+
+Implication:
+
+- Do not train C-Auto v2 as one mixed market model.
+- Do not merge `bull` and `strong_bull` by default.
+- Add BTC regime/state columns to the next feature store and run
+  regime-specific feature selection.
+
 ## Frontend Progress
 
 Launcher download widget reads:
