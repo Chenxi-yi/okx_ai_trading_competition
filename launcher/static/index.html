@@ -23,26 +23,24 @@
           <span id="lastAction">未执行</span>
         </div>
 
-        <label class="field-label">环境</label>
-        <div class="segmented" id="envGroup" role="group" aria-label="environment">
-          <button data-value="personal" class="active">个人</button>
-          <button data-value="demo">Demo</button>
-          <button data-value="competition">比赛</button>
-        </div>
-
         <label class="field-label">模式</label>
-        <div class="segmented" id="modeGroup" role="group" aria-label="mode">
+        <div class="segmented mode-tabs" id="modeGroup" role="tablist" aria-label="mode">
           <button data-value="paper" class="active">纸面交易</button>
           <button data-value="real">真实交易</button>
         </div>
 
+        <label class="field-label" for="envSelect">环境</label>
+        <select id="envSelect" class="select-field" aria-label="environment">
+          <option value="personal">个人</option>
+          <option value="demo">Demo</option>
+          <option value="competition">比赛</option>
+        </select>
+
         <label class="field-label">策略</label>
-        <div class="strategy-list" id="strategyGroup">
-          <button data-value="core_c_auto_h24_regression_v1" class="strategy-card active">
-            <strong>Core C-Auto H24 Regression</strong>
-            <span>Strategy Office / core / research</span>
-          </button>
-        </div>
+        <select id="strategySelect" class="select-field" aria-label="strategy">
+          <option value="core_c_auto_h24_regression_v1">Core C-Auto H24 Regression</option>
+        </select>
+        <div class="strategy-meta" id="strategyMeta">Strategy Office / core / research / paper</div>
 
         <div class="inline-fields">
           <label>

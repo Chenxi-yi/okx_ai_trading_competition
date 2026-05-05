@@ -24,7 +24,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -59,6 +60,8 @@ h2 {
 .topbar p,
 .panel-head span,
 .field-label,
+.strategy-meta span,
+.strategy-meta small,
 .strategy-card span,
 .metrics span {
   color: var(--muted);
@@ -153,6 +156,45 @@ h2 {
 .segmented button.active {
   background: #ffffff;
   border-color: #cbd4e1;
+}
+
+.mode-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.select-field {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.select-field:focus {
+  outline: 2px solid rgba(29, 95, 209, 0.18);
+  border-color: var(--blue);
+}
+
+.strategy-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 13px;
+}
+
+.strategy-meta strong {
+  font-size: 14px;
+}
+
+.strategy-meta small {
+  line-height: 1.4;
 }
 
 .strategy-list {

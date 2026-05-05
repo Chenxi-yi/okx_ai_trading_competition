@@ -24,9 +24,10 @@ function dashboardUrl() {
 }
 
 function applySelection() {
-  setActive('envGroup', state.env);
   setActive('modeGroup', state.mode);
-  setActive('strategyGroup', state.strategy);
+  $('envSelect').value = state.env;
+  $('strategySelect').value = state.strategy;
+  renderSelectedStrategyMeta();
   $('portInput').value = state.port;
   $('realConfirmBox').classList.toggle('hidden', state.mode !== 'real');
   $('competitionConfirmLine').classList.toggle('hidden', !(state.mode === 'real' && state.env === 'competition'));
@@ -47,31 +48,52 @@ function renderStrategyOptions(data) {
   if (!strategies.some((item) => item.strategy_id === state.strategy)) {
     state.strategy = launchOptions.primary_strategy_id || strategies[0]?.strategy_id || state.strategy;
   }
-  $('strategyGroup').innerHTML = strategies.map((item) => {
-    const classes = ['strategy-card'];
-    if (item.strategy_id === state.strategy) classes.push('active');
-    if (item.primary) classes.push('primary-strategy');
+  $('strategySelect').innerHTML = strategies.map((item) => {
     const caps = [
-      item.kind || 'strategy',
-      item.book || '-',
-      item.status || '-',
       item.paper_supported ? 'paper' : null,
       item.real_supported ? 'real' : null,
-    ].filter(Boolean).join(' / ');
-    return `
-      <button data-value="${item.strategy_id}" class="${classes.join(' ')}">
-        <strong>${item.name || item.strategy_id}</strong>
-        <span>${caps}</span>
-        <small>${item.description || ''}</small>
-      </button>
-    `;
+    ].filter(Boolean).join('+') || 'view only';
+    const label = `${item.name || item.strategy_id} (${item.book || '-'} / ${item.status || '-'} / ${caps})`;
+    return `<option value="${escapeAttr(item.strategy_id)}">${escapeHtml(label)}</option>`;
   }).join('');
-  bindStrategyEvents();
   applySelection();
 }
 
 function strategyMeta(strategyId = state.strategy) {
   return (launchOptions.strategies || []).find((item) => item.strategy_id === strategyId) || null;
+}
+
+function renderSelectedStrategyMeta() {
+  const item = strategyMeta();
+  if (!item) {
+    $('strategyMeta').textContent = '未加载策略元数据';
+    return;
+  }
+  const caps = [
+    item.kind || 'strategy',
+    item.book || '-',
+    item.status || '-',
+    item.paper_supported ? 'paper ok' : 'no paper',
+    item.real_supported ? 'real ok' : 'real locked',
+  ].join(' / ');
+  $('strategyMeta').innerHTML = `
+    <strong>${escapeHtml(item.name || item.strategy_id)}</strong>
+    <span>${escapeHtml(caps)}</span>
+    <small>${escapeHtml(item.description || '')}</small>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
 }
 
 async function api(path, options = {}) {
@@ -570,13 +592,6 @@ async function resumeDownload() {
   setTimeout(refreshDownloadStatus, 1200);
 }
 
-document.querySelectorAll('#envGroup [data-value]').forEach((node) => {
-  node.addEventListener('click', () => {
-    state.env = node.dataset.value;
-    applySelection();
-  });
-});
-
 document.querySelectorAll('#modeGroup [data-value]').forEach((node) => {
   node.addEventListener('click', () => {
     state.mode = node.dataset.value;
@@ -584,14 +599,15 @@ document.querySelectorAll('#modeGroup [data-value]').forEach((node) => {
   });
 });
 
-function bindStrategyEvents() {
-  document.querySelectorAll('#strategyGroup [data-value]').forEach((node) => {
-    node.addEventListener('click', () => {
-      state.strategy = node.dataset.value;
-      applySelection();
-    });
-  });
-}
+$('envSelect').addEventListener('change', () => {
+  state.env = $('envSelect').value;
+  applySelection();
+});
+
+$('strategySelect').addEventListener('change', () => {
+  state.strategy = $('strategySelect').value;
+  applySelection();
+});
 
 $('portInput').addEventListener('change', () => {
   state.port = Number($('portInput').value || 8080);
@@ -650,7 +666,6 @@ $('monsterAutoRefreshBtn').addEventListener('click', () => {
   });
 });
 
-bindStrategyEvents();
 applySelection();
 refreshLaunchOptions().catch((err) => {
   $('lastAction').textContent = err.message;
