@@ -140,6 +140,40 @@ short_tail_mean_return: -0.01361
 These are smoke tests using `fallback_linear_score`, because local sklearn is
 not installed. They are evidence for the architecture, not final model claims.
 
+## Sleeve Experiment Results
+
+Experiment plan:
+`.claude/knowledge/research/c_auto_v2_sleeve_experiment_plan.md`
+
+Policy:
+`engine/strategies/specs/c_auto_v2_regime_policy.json`
+
+All-fold summary:
+`engine/data/research/c_auto/c_auto_v2_sleeve_experiments_allfold_v1/summary.md`
+
+Key all-fold results:
+
+| Sleeve | Regime | Label | IC | Spread | Long Tail | Short Tail |
+|---|---|---|---:|---:|---:|---:|
+| `cross_section_spread` | `strong_bull` | 24h long | +0.1570 | +0.0336 | +0.0224 | -0.0112 |
+| `cross_section_spread` | `bear` | 24h long | +0.1975 | +0.0232 | +0.0095 | -0.0136 |
+| `cross_section_spread` | `chop_short` | 24h long | +0.2419 | +0.0191 | +0.0041 | -0.0150 |
+| `cross_section_spread` | `bull` | 24h long | +0.2758 | +0.0283 | +0.0107 | -0.0176 |
+| `high_beta_amplification` | `strong_bull` | 12h long | +0.2707 | +0.0420 | +0.0261 | -0.0159 |
+| `high_beta_amplification` | `bear` | 12h short | +0.3521 | +0.0299 | +0.0124 | -0.0175 |
+| `small_account_rotation` | `strong_bull` | 6h long | +0.2318 | +0.0142 | +0.0077 | -0.0065 |
+| `small_account_rotation` | `bear` | 6h short | +0.1740 | +0.0095 | +0.0030 | -0.0065 |
+
+Interpretation:
+
+- `cross_section_spread` remains the primary sleeve.
+- `high_beta_amplification` is the strongest conditional booster and should be
+  included in the first portfolio backtest.
+- `small_account_rotation` has signal but needs top-tail-only construction;
+  the current combined-tail selected return is not enough.
+- `crowding_squeeze_reversal` is not a standalone alpha after all-fold testing.
+  Keep funding, OI, and long/short data as filters and risk controls.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text
