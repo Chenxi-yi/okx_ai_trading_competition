@@ -49,6 +49,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--fee-bps-per-side", type=float, default=5.0)
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--base-risk", type=float, default=0.18, help="NAV fraction per new position before regime scalar")
+    p.add_argument("--sizing-mode", choices=["equity", "fixed"], default="equity")
+    p.add_argument("--fixed-notional-capital", type=float, default=1000.0)
     p.add_argument("--min-score-quantile", type=float, default=0.80)
     p.add_argument("--min-volume-usd", type=float, default=100000.0)
     p.add_argument("--start", default="")
@@ -121,6 +123,8 @@ def main() -> int:
             "fee_bps_per_side": args.fee_bps_per_side,
             "slippage_bps_per_side": args.slippage_bps_per_side,
             "base_risk": args.base_risk,
+            "sizing_mode": args.sizing_mode,
+            "fixed_notional_capital": args.fixed_notional_capital,
             "min_score_quantile": args.min_score_quantile,
             "min_volume_usd": args.min_volume_usd,
             "start": args.start,
@@ -311,7 +315,8 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
                 exit_price = _price(close, exit_ts, symbol)
                 if not _valid_price(entry_price) or not _valid_price(exit_price):
                     continue
-                notional = mtm_nav * float(args.base_risk) * float(row["risk_scalar"])
+                sizing_base = float(args.fixed_notional_capital) if args.sizing_mode == "fixed" else mtm_nav
+                notional = sizing_base * float(args.base_risk) * float(row["risk_scalar"])
                 if notional <= 0:
                     continue
                 active[symbol] = Position(

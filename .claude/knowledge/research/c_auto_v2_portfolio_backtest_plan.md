@@ -1,7 +1,7 @@
 # C-Auto v2 Portfolio Backtest Plan
 
 Created: 2026-05-05
-Status: MTM and fold-leakage checks completed
+Status: fixed-notional sizing completed
 
 ## Objective
 
@@ -247,7 +247,122 @@ The two checks did not break the edge:
 
 Remaining blockers before paper trading:
 
-- Add fixed-notional or volatility-targeted sizing to reduce compounding
-  sensitivity.
 - Add a stricter symbol listing-age mask for newly listed instruments.
 - Run a paper-mode dry deployment that emits signals without placing orders.
+
+## Fixed 1,000 USDT Notional Sizing
+
+The runner supports fixed notional sizing:
+
+```text
+--sizing-mode fixed --fixed-notional-capital 1000
+```
+
+In fixed mode, each new position uses:
+
+```text
+notional = fixed_notional_capital * base_risk * regime_risk_scalar
+```
+
+This removes compounding from position sizing while keeping NAV accounting and
+MTM drawdown intact.
+
+Fixed 1,000U baseline:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py \
+  --out-id c_auto_v2_portfolio_backtest_fixed1000_v1 \
+  --sizing-mode fixed \
+  --fixed-notional-capital 1000
+```
+
+| Metric | Value |
+|---|---:|
+| Final NAV | 7,246.86 |
+| Total return | +624.69% |
+| Max drawdown | -8.86% |
+| Trades | 3,265 |
+| Win rate | 57.43% |
+| Total costs | 601.52 |
+| Turnover | 429,660.00 |
+| Leakage violations | 0 |
+
+Fixed 1,000U conservative:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py \
+  --out-id c_auto_v2_portfolio_backtest_fixed1000_conservative_v1 \
+  --sizing-mode fixed \
+  --fixed-notional-capital 1000 \
+  --base-risk 0.06 \
+  --max-positions 4 \
+  --min-score-quantile 0.9
+```
+
+| Metric | Value |
+|---|---:|
+| Final NAV | 2,854.45 |
+| Total return | +185.44% |
+| Max drawdown | -3.05% |
+| Trades | 2,612 |
+| Win rate | 57.43% |
+| Total costs | 160.41 |
+| Turnover | 114,576.00 |
+| Leakage violations | 0 |
+
+Fixed 1,000U high-cost conservative:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py \
+  --out-id c_auto_v2_portfolio_backtest_fixed1000_high_cost_v1 \
+  --sizing-mode fixed \
+  --fixed-notional-capital 1000 \
+  --fee-bps-per-side 8 \
+  --slippage-bps-per-side 8 \
+  --base-risk 0.06 \
+  --max-positions 4 \
+  --min-score-quantile 0.9
+```
+
+| Metric | Value |
+|---|---:|
+| Final NAV | 2,648.21 |
+| Total return | +164.82% |
+| Max drawdown | -3.36% |
+| Trades | 2,612 |
+| Win rate | 54.44% |
+| Total costs | 366.64 |
+| Leakage violations | 0 |
+
+Fixed 1,000U baseline by year:
+
+| Slice | Final NAV | Total Return | Max DD | Trades | Win Rate |
+|---|---:|---:|---:|---:|---:|
+| 2024-04-01 to 2024-12-31 | 3,673.37 | +267.34% | -8.86% | 1,375 | 55.71% |
+| 2025-01-01 to 2025-12-31 | 3,524.42 | +252.44% | -14.19% | 1,530 | 57.78% |
+| 2026-01-01 to 2026-04-26 | 1,861.96 | +86.20% | -11.49% | 330 | 60.61% |
+
+Fixed 1,000U conservative 14-day windows:
+
+Worst observed 14-day window:
+
+```text
+2024-08-19 to 2024-09-02: -0.79%
+```
+
+Best observed 14-day window:
+
+```text
+2024-11-11 to 2024-11-25: +11.84%
+```
+
+## Fixed-Sizing Interpretation
+
+Fixed 1,000U sizing removes the compounding distortion and gives the most
+useful research view so far. The edge still survives, but the realistic
+expectation moves from thousands of percent to roughly +165% to +185% for the
+conservative fixed-notional variants over the full sample.
+
+The fixed baseline has better upside but deeper year-slice drawdowns, especially
+in 2025. The conservative fixed profile is the better candidate for paper-mode
+signal dry run.

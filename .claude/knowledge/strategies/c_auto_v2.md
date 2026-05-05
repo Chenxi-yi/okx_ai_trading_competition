@@ -222,6 +222,18 @@ The MTM check increased drawdown but did not remove the edge. The fold-leakage
 check passed for the conservative run with 6,564 checked fold references, 0
 violations, and 0 missing fold trades.
 
+Fixed 1,000U sizing:
+
+| Run | Final NAV | Return | Max DD | Leakage |
+|---|---:|---:|---:|---|
+| `c_auto_v2_portfolio_backtest_fixed1000_v1` | 7,246.86 | +624.69% | -8.86% | 0 violations |
+| `c_auto_v2_portfolio_backtest_fixed1000_conservative_v1` | 2,854.45 | +185.44% | -3.05% | 0 violations |
+| `c_auto_v2_portfolio_backtest_fixed1000_high_cost_v1` | 2,648.21 | +164.82% | -3.36% | 0 violations |
+
+Fixed sizing is the current reference view because it removes compounding from
+position sizing. The conservative fixed profile is the best paper-mode
+candidate so far.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text
