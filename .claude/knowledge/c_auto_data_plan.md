@@ -1,6 +1,6 @@
 # C-Auto Data Download Plan
 
-Last updated: 2026-05-05T00:45:00+0800
+Last updated: 2026-05-05T10:25:00+0800
 
 ## Goal
 
@@ -126,6 +126,43 @@ output: engine/data/derivatives_structure/<run_id>/*/*.parquet
 progress: engine/data/derivatives_structure/<run_id>/progress.jsonl
 ```
 
+Phase 3: higher-timeframe OHLCV/volume
+
+```text
+run_id: c_auto_universe_vol5m_1h_4h_1d_20240101_20260505
+source: OKX public via ccxt
+symbols: same 79-symbol universe
+timeframes: 1h,4h,1d
+date range: 2024-01-01 through 2026-05-05
+jobs: 237
+output: engine/data/cache/*_futures_1h.parquet, *_futures_4h.parquet, *_futures_1d.parquet
+progress: engine/data/training_history/<run_id>/progress.jsonl
+purpose: multi-scale direct features and validation against 5m resampling
+```
+
+Phase 4: market-quality snapshot
+
+```text
+run_id: c_auto_market_quality_snapshot_20260505
+source: OKX public via ccxt
+symbols: same 79-symbol universe
+kinds: instrument,ticker,orderbook,trades
+timeframe: snapshot
+jobs: 316
+output: engine/data/derivatives_structure/<run_id>/*/*.parquet
+progress: engine/data/derivatives_structure/<run_id>/progress.jsonl
+purpose: listing age, contract metadata, current spread/depth, recent trade microstructure
+```
+
+Notes:
+
+- Historical orderbook depth and full tick/trade history are not available
+  through the current broad-download path at practical cost. Use snapshot
+  quality data for live calibration and liquidity filters.
+- `open_interest` can return OKX `Illegal time range` for some symbols/date
+  windows. Keep successful OI files, then repair missing symbols with shorter
+  backfill windows if the first broad pass leaves failures.
+
 ## Frontend Progress
 
 Launcher download widget reads:
@@ -140,4 +177,3 @@ Resume uses `POST /api/download-resume`.
 
 Launcher now chooses the active run first, then the newest manifest, so c-auto
 runs are visible instead of falling back to older default data runs.
-

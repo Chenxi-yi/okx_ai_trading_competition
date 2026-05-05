@@ -63,9 +63,18 @@ def main() -> int:
     kinds = [k.strip() for k in args.kinds.split(",") if k.strip()]
     start = args.start or source_manifest.get("start") or "2024-01-01"
     end = args.end or source_manifest.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    total_jobs = len(symbols) * len(kinds)
+    timeframe = args.timeframe
+    limit = args.limit
 
     manifest = _load_json(manifest_path)
+    if manifest and not args.refresh_manifest:
+        symbols = list(manifest.get("symbols") or symbols)
+        kinds = list(manifest.get("kinds") or kinds)
+        start = str(manifest.get("start") or start)
+        end = str(manifest.get("end") or end)
+        timeframe = str(manifest.get("timeframe") or timeframe)
+        limit = int(manifest.get("limit") or limit)
+    total_jobs = len(symbols) * len(kinds)
     if args.refresh_manifest or not manifest:
         manifest = {
             "download_type": "derivatives_structure",
@@ -76,8 +85,8 @@ def main() -> int:
             "kinds": kinds,
             "start": start,
             "end": end,
-            "timeframe": args.timeframe,
-            "limit": args.limit,
+            "timeframe": timeframe,
+            "limit": limit,
             "status": "running",
             "summary": {"ok": 0, "failed": 0, "skipped_existing": 0, "total_jobs": total_jobs},
         }
@@ -109,7 +118,7 @@ def main() -> int:
         ccxt_symbol = _resolve_symbol(ex, symbol)
         for kind in kinds:
             job_index += 1
-            key = (symbol, kind, args.timeframe)
+            key = (symbol, kind, timeframe)
             if key in completed:
                 skipped += 1
                 continue
@@ -121,7 +130,7 @@ def main() -> int:
                     "status": "running",
                     "current_symbol": symbol,
                     "current_kind": kind,
-                    "current_timeframe": args.timeframe,
+                    "current_timeframe": timeframe,
                     "job_index": job_index,
                     "total_jobs": total_jobs,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -132,7 +141,7 @@ def main() -> int:
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "symbol": symbol,
                 "kind": kind,
-                "timeframe": args.timeframe,
+                "timeframe": timeframe,
                 "start": start,
                 "end": end,
             }
@@ -142,10 +151,10 @@ def main() -> int:
                     kind=kind,
                     symbol=symbol,
                     ccxt_symbol=ccxt_symbol,
-                    timeframe=args.timeframe,
+                    timeframe=timeframe,
                     since_ms=since_ms,
                     end_ms=end_ms,
-                    limit=args.limit,
+                    limit=limit,
                     attempts=args.retry_attempts,
                     retry_sleep_sec=args.retry_sleep_sec,
                 )
@@ -236,6 +245,14 @@ def _fetch_with_retries(
                 return _fetch_open_interest(ex, symbol, ccxt_symbol, timeframe, since_ms, end_ms, limit)
             if kind == "long_short":
                 return _fetch_long_short(ex, symbol, ccxt_symbol, timeframe, since_ms, end_ms, limit)
+            if kind == "instrument":
+                return _fetch_instrument(ex, symbol, ccxt_symbol)
+            if kind == "ticker":
+                return _fetch_ticker(ex, symbol, ccxt_symbol)
+            if kind == "orderbook":
+                return _fetch_orderbook(ex, symbol, ccxt_symbol, limit)
+            if kind == "trades":
+                return _fetch_trades(ex, symbol, ccxt_symbol, since_ms, end_ms, limit)
             raise ValueError(f"unsupported kind: {kind}")
         except Exception as exc:
             last_exc = exc
@@ -349,6 +366,109 @@ def _fetch_long_short(ex, symbol: str, ccxt_symbol: str, timeframe: str, since_m
     return _indexed(rows)
 
 
+def _fetch_instrument(ex, symbol: str, ccxt_symbol: str) -> pd.DataFrame:
+    market = ex.market(ccxt_symbol)
+    info = market.get("info") or {}
+    row = {
+        "timestamp": pd.Timestamp.now(tz="UTC"),
+        "symbol": symbol,
+        "ccxt_symbol": ccxt_symbol,
+        "inst_id": market.get("id"),
+        "base": market.get("base"),
+        "quote": market.get("quote"),
+        "settle": market.get("settle"),
+        "contract": bool(market.get("contract")),
+        "linear": bool(market.get("linear")),
+        "contract_size": _as_float(market.get("contractSize")),
+        "min_amount": _nested_value(market, ("limits", "amount", "min")),
+        "price_tick": _nested_value(market, ("precision", "price")),
+        "amount_tick": _nested_value(market, ("precision", "amount")),
+        "max_leverage": _as_float(info.get("lever")),
+        "listed_time": _timestamp_from_ms(info.get("listTime")),
+    }
+    return pd.DataFrame([row]).set_index("timestamp").sort_index()
+
+
+def _fetch_ticker(ex, symbol: str, ccxt_symbol: str) -> pd.DataFrame:
+    ticker = ex.fetch_ticker(ccxt_symbol)
+    info = ticker.get("info") or {}
+    ts = _timestamp_from_ms(ticker.get("timestamp")) or pd.Timestamp.now(tz="UTC")
+    row = {
+        "timestamp": ts,
+        "symbol": symbol,
+        "bid": _as_float(ticker.get("bid")),
+        "ask": _as_float(ticker.get("ask")),
+        "last": _as_float(ticker.get("last")),
+        "base_volume": _as_float(ticker.get("baseVolume") or info.get("volCcy24h")),
+        "quote_volume": _as_float(ticker.get("quoteVolume") or info.get("volCcyQuote24h")),
+        "open_24h": _as_float(info.get("open24h")),
+        "high_24h": _as_float(info.get("high24h")),
+        "low_24h": _as_float(info.get("low24h")),
+    }
+    mid = _mid(row.get("bid"), row.get("ask"))
+    row["mid"] = mid
+    row["spread"] = row["ask"] - row["bid"] if row.get("ask") is not None and row.get("bid") is not None else None
+    row["spread_bps"] = (row["spread"] / mid * 10_000.0) if row.get("spread") is not None and mid else None
+    return pd.DataFrame([row]).set_index("timestamp").sort_index()
+
+
+def _fetch_orderbook(ex, symbol: str, ccxt_symbol: str, limit: int) -> pd.DataFrame:
+    book = ex.fetch_order_book(ccxt_symbol, limit=limit)
+    ts = _timestamp_from_ms(book.get("timestamp")) or pd.Timestamp.now(tz="UTC")
+    bids = book.get("bids") or []
+    asks = book.get("asks") or []
+    row: Dict[str, Any] = {"timestamp": ts, "symbol": symbol}
+    bid_notional = 0.0
+    ask_notional = 0.0
+    max_levels = max(1, min(int(limit), 100))
+    for i in range(max_levels):
+        bid_px, bid_sz = _book_price_size(bids[i]) if i < len(bids) else (None, None)
+        ask_px, ask_sz = _book_price_size(asks[i]) if i < len(asks) else (None, None)
+        level = i + 1
+        row[f"bid_px_{level}"] = bid_px
+        row[f"bid_sz_{level}"] = bid_sz
+        row[f"ask_px_{level}"] = ask_px
+        row[f"ask_sz_{level}"] = ask_sz
+        if bid_px is not None and bid_sz is not None:
+            bid_notional += bid_px * bid_sz
+        if ask_px is not None and ask_sz is not None:
+            ask_notional += ask_px * ask_sz
+    best_bid = row.get("bid_px_1")
+    best_ask = row.get("ask_px_1")
+    mid = _mid(best_bid, best_ask)
+    spread = best_ask - best_bid if best_bid is not None and best_ask is not None else None
+    total_depth = bid_notional + ask_notional
+    row["mid"] = mid
+    row["spread"] = spread
+    row["spread_bps"] = (spread / mid * 10_000.0) if spread is not None and mid else None
+    row["bid_notional_top"] = bid_notional
+    row["ask_notional_top"] = ask_notional
+    row["depth_notional_top"] = total_depth
+    row["depth_imbalance"] = (bid_notional - ask_notional) / total_depth if total_depth else None
+    return pd.DataFrame([row]).set_index("timestamp").sort_index()
+
+
+def _fetch_trades(ex, symbol: str, ccxt_symbol: str, since_ms: int, end_ms: int, limit: int) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    trades = ex.fetch_trades(ccxt_symbol, since=since_ms, limit=max(1, min(int(limit), 1000)))
+    for trade in trades or []:
+        ts_ms = trade.get("timestamp")
+        if ts_ms is None or ts_ms > end_ms:
+            continue
+        rows.append(
+            {
+                "timestamp": _timestamp_from_ms(ts_ms),
+                "symbol": symbol,
+                "id": trade.get("id"),
+                "side": trade.get("side"),
+                "price": _as_float(trade.get("price")),
+                "amount": _as_float(trade.get("amount")),
+                "cost": _as_float(trade.get("cost")),
+            }
+        )
+    return _indexed(rows)
+
+
 def _completed(path: Path) -> set[tuple[str, str, str]]:
     done = set()
     if not path.exists():
@@ -447,6 +567,9 @@ def _to_ms(value: str, end_of_day: bool = False) -> int:
     ts = pd.Timestamp(value, tz="UTC")
     if end_of_day and len(value) == 10:
         ts = ts + pd.Timedelta(days=1)
+    now = pd.Timestamp.now(tz="UTC")
+    if ts > now:
+        ts = now
     return int(ts.timestamp() * 1000)
 
 
@@ -466,6 +589,27 @@ def _as_float(value) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _nested_value(data: Dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    cur: Any = data
+    for key in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return _as_float(cur)
+
+
+def _book_price_size(level) -> tuple[float | None, float | None]:
+    if not level or len(level) < 2:
+        return None, None
+    return _as_float(level[0]), _as_float(level[1])
+
+
+def _mid(bid: float | None, ask: float | None) -> float | None:
+    if bid is None or ask is None:
+        return None
+    return (bid + ask) / 2.0
 
 
 def _info_value(item: Dict[str, Any], key: str):

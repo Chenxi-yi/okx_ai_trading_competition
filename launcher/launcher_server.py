@@ -909,6 +909,8 @@ def resume_download(run_id: str | None = None) -> dict[str, Any]:
             "--retry-sleep-sec",
             "8",
         ]
+        if manifest.get("source_manifest"):
+            cmd.extend(["--symbols-manifest", str(ROOT_DIR / manifest["source_manifest"])])
     else:
         timeframes = ",".join(manifest.get("timeframes") or ["1h"])
         cmd = [
@@ -1073,10 +1075,12 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 self.send_json(200, self.handle_stop())
                 return
             if path == "/api/download-pause":
-                self.send_json(200, pause_download())
+                payload = self.read_json_body()
+                self.send_json(200, pause_download(payload.get("run_id")))
                 return
             if path == "/api/download-resume":
-                self.send_json(200, resume_download())
+                payload = self.read_json_body()
+                self.send_json(200, resume_download(payload.get("run_id")))
                 return
             if path == "/api/monster-refresh":
                 self.send_json(200, refresh_monster())
