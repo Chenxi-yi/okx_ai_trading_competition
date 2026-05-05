@@ -60,3 +60,16 @@ to clear fees, slippage, and adverse path risk.
 - Newly listed symbols can pass ranks with too little history.
 - 1h OHLCV does not capture liquidation cascades or spread blowouts.
 - Cross-sectional tails can become crowded during market-wide deleveraging.
+
+## V2 Research Direction
+
+The v1 default parameter set is now treated as a baseline, not the target
+architecture. Current research for 1,000 USDT capital scale points toward a
+BTC-regime-conditioned alt cross-sectional model:
+
+```text
+BTC regime -> regime-specific feature selection -> alt long/short ranking
+```
+
+See `.claude/knowledge/strategies/c_auto_v2.md` for the active thesis and
+research results.
