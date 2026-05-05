@@ -1,6 +1,6 @@
 # C-Auto Data Download Plan
 
-Last updated: 2026-05-05T16:51:00+0800
+Last updated: 2026-05-05T17:44:00+0800
 
 ## Goal
 
@@ -231,6 +231,64 @@ Implication:
 - Do not merge `bull` and `strong_bull` by default.
 - Add BTC regime/state columns to the next feature store and run
   regime-specific feature selection.
+
+Regime-aware feature store:
+
+```text
+dataset_id: c_auto_feature_store_v2
+output: engine/data/features/c_auto_feature_store_v2/
+rows: 1,087,371
+features: 88
+labels: 40
+btc state/regime features: 22
+validation: warn:excessive_feature_nan
+```
+
+Regime feature selection:
+
+```text
+experiment_id: c_auto_regime_feature_selection_v1
+dataset_id: c_auto_feature_store_v2
+output: engine/data/research/c_auto/c_auto_regime_feature_selection_v1/
+regime column: btc_regime_6
+top_n: 20 per regime
+```
+
+First regime model smoke tests:
+
+```text
+experiment_id: c_auto_v2_strong_bull_top20_allfold
+regime: strong_bull
+folds with samples: 5
+rows: 47,045
+spearman_ic: +0.1570
+long_short_spread: +0.03359
+long_tail_mean_return: +0.02242
+short_tail_mean_return: -0.01117
+```
+
+```text
+experiment_id: c_auto_v2_bear_top20_allfold
+regime: bear
+folds with samples: 36
+rows: 220,693
+spearman_ic: +0.1975
+long_short_spread: +0.02315
+long_tail_mean_return: +0.00954
+short_tail_mean_return: -0.01361
+```
+
+Interpretation:
+
+- Regime-aware feature selection materially improves rank signal versus the old
+  mixed default baseline.
+- `strong_bull` supports a long-biased model, but only 5 folds currently carry
+  samples, so this needs more careful backtest handling.
+- `bear` has more samples and a strong long/short rank spread. It should be
+  treated as a two-sided or short-tail-priority regime, not simply "always
+  short everything".
+- Current experiments still use fallback linear scoring because local sklearn is
+  unavailable. Re-run with sklearn/LightGBM before final promotion.
 
 ## Frontend Progress
 

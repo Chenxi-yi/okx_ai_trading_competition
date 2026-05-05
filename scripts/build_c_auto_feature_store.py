@@ -58,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--wf-test-bars", type=int, default=24 * 14)
     p.add_argument("--wf-purge-bars", type=int, default=24)
     p.add_argument("--ic-max-timestamps", type=int, default=3000, help="Sampled timestamps for first-pass IC diagnostics")
+    p.add_argument("--no-btc-state", action="store_true", help="Do not attach BTC regime/state columns")
     p.add_argument("--register-catalog", action="store_true")
     return p.parse_args()
 
@@ -94,6 +95,9 @@ def main() -> int:
     extra_features = extra_features.reindex(base_features.index)
     features = pd.concat([base_features, extra_features], axis=1).sort_index()
     features = _attach_quality_flags(features, quality, min_train_1h_rows=args.min_train_1h_rows)
+    btc_state_columns: list[str] = []
+    if not args.no_btc_state:
+        features, btc_state_columns = _attach_btc_state(features)
     labels = build_label_panel(
         price_data,
         horizons=(1, 3, 6, 12, 24),
@@ -104,6 +108,8 @@ def main() -> int:
 
     feature_registry = build_default_feature_registry(frequency="1h")
     feature_registry.update(_extra_feature_registry())
+    if btc_state_columns:
+        feature_registry.update(_btc_state_feature_registry(btc_state_columns))
     feature_registry_dict = registry_to_dict(feature_registry)
     label_registry = build_default_label_registry()
     label_registry_dict = label_registry_to_dict(label_registry)
@@ -145,6 +151,7 @@ def main() -> int:
         "features": int(features.shape[1]),
         "labels": int(labels.shape[1]),
         "train_eligible_90d_symbols": int(quality["train_eligible_90d"].sum()),
+        "btc_state_features": btc_state_columns,
         "validation_status": report.status,
         "cost_assumptions": {
             "fee_bps": args.fee_bps,
@@ -348,6 +355,87 @@ def _attach_quality_flags(features: pd.DataFrame, quality: pd.DataFrame, min_tra
     return out
 
 
+def _attach_btc_state(features: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    if "BTC/USDT" not in features.index.get_level_values("symbol"):
+        return features, []
+    btc_state = _build_btc_state(features)
+    target_ts = features.index.get_level_values("timestamp")
+    state = btc_state.reindex(target_ts).set_index(features.index)
+    out = pd.concat([features, state], axis=1)
+    return out, list(state.columns)
+
+
+def _build_btc_state(features: pd.DataFrame) -> pd.DataFrame:
+    btc = features.xs("BTC/USDT", level="symbol").sort_index()
+    close = pd.to_numeric(btc["close"], errors="coerce")
+    ret_1h = close.pct_change(1)
+    ret_4h = close.pct_change(4)
+    ret_24h = close.pct_change(24)
+    ret_7d = close.pct_change(24 * 7)
+    ret_30d = close.pct_change(24 * 30)
+    ema_20d = close.ewm(span=24 * 20, min_periods=24 * 5, adjust=False).mean()
+    ema_60d = close.ewm(span=24 * 60, min_periods=24 * 10, adjust=False).mean()
+    rv_24h = ret_1h.rolling(24, min_periods=8).std()
+    rv_7d = ret_1h.rolling(24 * 7, min_periods=24).std()
+    high_30d = close.rolling(24 * 30, min_periods=24 * 7).max()
+    drawdown_30d = close / high_30d - 1.0
+    out = pd.DataFrame(
+        {
+            "btc_ret_1h": ret_1h,
+            "btc_ret_4h": ret_4h,
+            "btc_ret_24h": ret_24h,
+            "btc_ret_7d": ret_7d,
+            "btc_ret_30d": ret_30d,
+            "btc_ema20_gt_ema60": (ema_20d > ema_60d).astype(float),
+            "btc_above_ema20": (close > ema_20d).astype(float),
+            "btc_above_ema60": (close > ema_60d).astype(float),
+            "btc_rv_24h": rv_24h,
+            "btc_rv_7d": rv_7d,
+            "btc_drawdown_30d": drawdown_30d,
+        },
+        index=btc.index,
+    )
+    regime_6 = _classify_btc_regime(out)
+    out["btc_regime_6"] = regime_6
+    out["btc_regime_3"] = regime_6.map(
+        {
+            "deep_bear": "risk_off",
+            "bear": "risk_off",
+            "chop_short": "neutral",
+            "chop_long": "neutral",
+            "bull": "risk_on",
+            "strong_bull": "risk_on",
+        }
+    )
+    for regime in ("deep_bear", "bear", "chop_short", "chop_long", "bull", "strong_bull"):
+        out[f"btc_regime_is_{regime}"] = (out["btc_regime_6"] == regime).astype(float)
+    for regime in ("risk_off", "neutral", "risk_on"):
+        out[f"btc_regime3_is_{regime}"] = (out["btc_regime_3"] == regime).astype(float)
+    return out
+
+
+def _classify_btc_regime(state: pd.DataFrame) -> pd.Series:
+    high_vol = state["btc_rv_7d"] >= state["btc_rv_7d"].rolling(24 * 90, min_periods=24 * 14).quantile(0.75)
+    below_both = (state["btc_above_ema20"] < 0.5) & (state["btc_above_ema60"] < 0.5)
+    above_both = (state["btc_above_ema20"] > 0.5) & (state["btc_above_ema60"] > 0.5)
+    regime = pd.Series("chop_short", index=state.index, dtype=object)
+    deep_bear = (
+        (state["btc_ret_30d"] <= -0.20)
+        | (state["btc_drawdown_30d"] <= -0.25)
+        | (below_both & high_vol & (state["btc_ret_7d"] < 0))
+    )
+    bear = below_both & ((state["btc_ret_7d"] < 0) | (state["btc_ret_30d"] < 0))
+    strong_bull = (state["btc_ret_30d"] >= 0.20) & above_both & (state["btc_drawdown_30d"] >= -0.08)
+    bull = above_both & ((state["btc_ret_7d"] > 0) | (state["btc_ret_30d"] > 0))
+    chop_long = ~deep_bear & ~bear & ~strong_bull & ~bull & (state["btc_above_ema20"] > 0.5)
+    regime.loc[chop_long] = "chop_long"
+    regime.loc[bull] = "bull"
+    regime.loc[strong_bull] = "strong_bull"
+    regime.loc[bear] = "bear"
+    regime.loc[deep_bear] = "deep_bear"
+    return regime
+
+
 def _extra_feature_registry() -> dict[str, FeatureSpec]:
     specs: dict[str, FeatureSpec] = {}
     for name, family, source, lookback, desc in [
@@ -379,6 +467,25 @@ def _extra_feature_registry() -> dict[str, FeatureSpec]:
         ("sample_age_frac_90d", "quality", ["quality"], 0, "Available 1h sample fraction capped at 90 days."),
     ]:
         specs[name] = FeatureSpec(name, family, source, lookback, "1h", True, min(lookback, 24), desc)
+    return specs
+
+
+def _btc_state_feature_registry(columns: list[str]) -> dict[str, FeatureSpec]:
+    specs: dict[str, FeatureSpec] = {}
+    categorical = {"btc_regime_6", "btc_regime_3"}
+    for col in columns:
+        family = "btc_regime" if col.startswith("btc_regime") else "btc_state"
+        lookback = 24 * 60 if col in {"btc_ret_30d", "btc_drawdown_30d", "btc_ema20_gt_ema60"} else 24 * 7
+        specs[col] = FeatureSpec(
+            col,
+            family,
+            ["BTC/USDT 1h close"],
+            0 if col in categorical else lookback,
+            "1h",
+            True,
+            24 * 10 if col in {"btc_ret_30d", "btc_drawdown_30d", "btc_ema20_gt_ema60"} else 24,
+            "BTC state/regime feature for C-Auto regime-aware modeling.",
+        )
     return specs
 
 

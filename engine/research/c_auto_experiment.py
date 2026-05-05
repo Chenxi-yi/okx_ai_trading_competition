@@ -48,6 +48,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--register-performance", action="store_true")
     p.add_argument("--notes", default="")
     p.add_argument("--max-folds", type=int, default=0, help="Optional cap for quick smoke runs")
+    p.add_argument("--feature-columns", default="", help="Optional comma-separated feature override")
+    p.add_argument("--regime-col", default="", help="Optional feature column used to filter rows before training")
+    p.add_argument("--regime-value", default="", help="Optional regime value to keep before training")
     return p.parse_args()
 
 
@@ -68,11 +71,23 @@ def main() -> int:
     if args.label_col not in labels.columns:
         raise KeyError(f"Label column {args.label_col!r} not found in {dataset_dir}")
 
-    feature_cols = [col for col in params.get("feature_columns", []) if col in features.columns]
+    if args.regime_col and args.regime_value:
+        if args.regime_col not in features.columns:
+            raise KeyError(f"Regime column {args.regime_col!r} not found in {dataset_dir}")
+        features = features.loc[features[args.regime_col] == args.regime_value].copy()
+        labels = labels.loc[labels.index.intersection(features.index)].copy()
+
+    configured_features = (
+        [col.strip() for col in args.feature_columns.split(",") if col.strip()]
+        if args.feature_columns
+        else list(params.get("feature_columns", []))
+    )
+    feature_cols = [col for col in configured_features if col in features.columns]
     if not feature_cols:
         raise RuntimeError("No configured c-auto feature columns exist in the dataset")
 
-    panel = features[feature_cols].join(labels[[args.label_col]], how="inner")
+    panel = features[feature_cols].select_dtypes(include=["number"]).join(labels[[args.label_col]], how="inner")
+    feature_cols = [col for col in feature_cols if col in panel.columns]
     folds = _load_folds(dataset_dir)
     if args.max_folds and args.max_folds > 0:
         folds = folds[: args.max_folds]
@@ -102,6 +117,11 @@ def main() -> int:
         "dataset_dir": str(dataset_dir),
         "label_col": args.label_col,
         "feature_columns": feature_cols,
+        "feature_override": bool(args.feature_columns),
+        "regime_filter": {
+            "column": args.regime_col,
+            "value": args.regime_value,
+        } if args.regime_col and args.regime_value else None,
         "fold_count": len(folds),
         "model_backend": "sklearn_ridge" if Ridge is not None and StandardScaler is not None and make_pipeline is not None else "fallback_linear_score",
         "sklearn_import_error": str(SKLEARN_IMPORT_ERROR) if SKLEARN_IMPORT_ERROR else None,
