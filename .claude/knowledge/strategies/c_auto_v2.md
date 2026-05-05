@@ -210,6 +210,18 @@ still a research simulator. Before paper trading, add mark-to-market open PnL,
 fixed-notional or volatility-targeted sizing, and stricter fold-boundary
 leakage checks.
 
+MTM and fold-leakage follow-up:
+
+| Run | Final NAV | Return | Max DD | Leakage |
+|---|---:|---:|---:|---|
+| `c_auto_v2_portfolio_backtest_mtm_v1` | 380,367.55 | +37,936.75% | -19.21% | 0 violations |
+| `c_auto_v2_portfolio_backtest_mtm_conservative_v1` | 6,222.14 | +522.21% | -6.46% | 0 violations |
+| `c_auto_v2_portfolio_backtest_mtm_high_cost_v1` | 5,065.34 | +406.53% | -6.71% | 0 violations |
+
+The MTM check increased drawdown but did not remove the edge. The fold-leakage
+check passed for the conservative run with 6,564 checked fold references, 0
+violations, and 0 missing fold trades.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text

@@ -34,6 +34,7 @@ class Position:
     entry_price: float
     notional: float
     horizon_hours: int
+    fold_ids: dict[str, int]
 
 
 def parse_args() -> argparse.Namespace:
@@ -92,12 +93,14 @@ def main() -> int:
     )
     predictions = _build_portfolio_scores(predictions)
 
+    folds = _load_folds(dataset_dir)
     result = _simulate(predictions, args)
     equity = pd.DataFrame(result["equity"])
     trades = pd.DataFrame(result["trades"])
     metrics = _metrics(equity, trades, args)
     by_regime = _group_metrics(trades, "regime")
     by_side = _group_metrics(trades, "side")
+    leakage = _leakage_check(trades, folds)
 
     _write_frame(equity, out_dir / "equity_curve.parquet")
     _write_frame(trades, out_dir / "trades.parquet")
@@ -126,6 +129,7 @@ def main() -> int:
         "metrics": metrics,
         "by_regime": by_regime,
         "by_side": by_side,
+        "leakage_check": leakage,
         "artifacts": {
             "equity_curve": "equity_curve.csv",
             "trades": "trades.csv",
@@ -144,6 +148,23 @@ def _read_frame(parquet: Path, pkl: Path) -> pd.DataFrame:
     if pkl.exists():
         return pd.read_pickle(pkl)
     raise FileNotFoundError(f"Missing {parquet} or {pkl}")
+
+
+def _load_folds(dataset_dir: Path) -> dict[int, dict[str, pd.Timestamp]]:
+    path = dataset_dir / "walk_forward_folds.json"
+    if not path.exists():
+        return {}
+    raw = json.loads(path.read_text())
+    out: dict[int, dict[str, pd.Timestamp]] = {}
+    for row in raw:
+        fold = int(row["fold"])
+        out[fold] = {
+            "train_start": pd.Timestamp(row["train_start"]),
+            "train_end": pd.Timestamp(row["train_end"]),
+            "test_start": pd.Timestamp(row["test_start"]),
+            "test_end": pd.Timestamp(row["test_end"]),
+        }
+    return out
 
 
 def _slice_ts(df: pd.DataFrame, *, start: str, end: str) -> pd.DataFrame:
@@ -168,7 +189,10 @@ def _load_policy_predictions(policy: dict[str, Any]) -> pd.DataFrame:
                 continue
             pred = _read_frame(path, alt)
             col = _score_col(sleeve_id, str(exp["regime"]), str(exp["label_col"]))
-            frame = pred[["prediction"]].rename(columns={"prediction": col})
+            keep = ["prediction"]
+            if "fold" in pred.columns:
+                keep.append("fold")
+            frame = pred[keep].rename(columns={"prediction": col, "fold": f"{col}__fold"})
             frames.append(frame)
     if not frames:
         return pd.DataFrame()
@@ -261,14 +285,15 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
     active: dict[str, Position] = {}
     trades: list[dict[str, Any]] = []
     equity: list[dict[str, Any]] = []
-    nav = float(args.initial_capital)
+    realized_nav = float(args.initial_capital)
     fee_slip_rate = 2.0 * (args.fee_bps_per_side + args.slippage_bps_per_side) / 10000.0
 
     for ts in score_ts:
         if ts not in timeline:
             continue
-        nav, closed = _close_due(ts, active, close, nav, fee_slip_rate)
+        realized_nav, closed = _close_due(ts, active, close, realized_nav, fee_slip_rate)
         trades.extend(closed)
+        mtm_nav = _mark_to_market_nav(ts, active, close, realized_nav, fee_slip_rate)
         if _is_rebalance_ts(ts, args.rebalance_hours):
             group = scores.xs(ts, level="timestamp", drop_level=False)
             candidates = _select_candidates(ts, group, close, active, args)
@@ -286,7 +311,7 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
                 exit_price = _price(close, exit_ts, symbol)
                 if not _valid_price(entry_price) or not _valid_price(exit_price):
                     continue
-                notional = nav * float(args.base_risk) * float(row["risk_scalar"])
+                notional = mtm_nav * float(args.base_risk) * float(row["risk_scalar"])
                 if notional <= 0:
                     continue
                 active[symbol] = Position(
@@ -300,11 +325,17 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
                     entry_price=float(entry_price),
                     notional=float(notional),
                     horizon_hours=int(row["horizon_hours"]),
+                    fold_ids=dict(row["fold_ids"]),
                 )
+                mtm_nav = _mark_to_market_nav(ts, active, close, realized_nav, fee_slip_rate)
+        mtm_nav = _mark_to_market_nav(ts, active, close, realized_nav, fee_slip_rate)
         equity.append(
             {
                 "ts": ts.isoformat(),
-                "nav": nav,
+                "nav": mtm_nav,
+                "nav_mtm": mtm_nav,
+                "realized_nav": realized_nav,
+                "unrealized_pnl": mtm_nav - realized_nav,
                 "open_positions": len(active),
                 "gross_exposure": sum(pos.notional for pos in active.values()),
             }
@@ -312,12 +343,15 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
 
     if len(timeline):
         final_ts = timeline[-1]
-        nav, closed = _close_due(final_ts, active, close, nav, fee_slip_rate, force=True)
+        realized_nav, closed = _close_due(final_ts, active, close, realized_nav, fee_slip_rate, force=True)
         trades.extend(closed)
         equity.append(
             {
                 "ts": final_ts.isoformat(),
-                "nav": nav,
+                "nav": realized_nav,
+                "nav_mtm": realized_nav,
+                "realized_nav": realized_nav,
+                "unrealized_pnl": 0.0,
                 "open_positions": len(active),
                 "gross_exposure": sum(pos.notional for pos in active.values()),
             }
@@ -366,6 +400,7 @@ def _select_candidates(
     g = g.sort_values("score", ascending=False)
     rows = []
     for _, row in g.iterrows():
+        fold_ids = _row_fold_ids(row)
         rows.append(
             {
                 "symbol": str(row["symbol"]),
@@ -374,9 +409,21 @@ def _select_candidates(
                 "score": float(row["score"]),
                 "horizon_hours": int(row["horizon_hours"]),
                 "risk_scalar": float(row["risk_scalar"]),
+                "fold_ids": fold_ids,
             }
         )
     return rows
+
+
+def _row_fold_ids(row: pd.Series) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for key, value in row.items():
+        if not str(key).endswith("__fold"):
+            continue
+        if pd.isna(value):
+            continue
+        out[str(key).removesuffix("__fold")] = int(value)
+    return out
 
 
 def _close_due(
@@ -415,6 +462,7 @@ def _close_due(
                 "entry_price": pos.entry_price,
                 "exit_price": float(exit_price),
                 "notional": pos.notional,
+                "fold_ids": json.dumps(pos.fold_ids, sort_keys=True),
                 "gross_return": gross_ret,
                 "net_return": net_ret,
                 "pnl": pnl,
@@ -424,6 +472,24 @@ def _close_due(
         )
         active.pop(symbol)
     return nav, closed
+
+
+def _mark_to_market_nav(
+    ts: pd.Timestamp,
+    active: dict[str, Position],
+    close: pd.DataFrame,
+    realized_nav: float,
+    fee_slip_rate: float,
+) -> float:
+    nav = float(realized_nav)
+    for pos in active.values():
+        px = _price(close, ts, pos.symbol)
+        if not _valid_price(px):
+            continue
+        raw = float(px) / pos.entry_price - 1.0
+        gross_ret = raw if pos.side == "long" else -raw
+        nav += pos.notional * (gross_ret - fee_slip_rate)
+    return nav
 
 
 def _price(close: pd.DataFrame, ts: pd.Timestamp, symbol: str) -> float:
@@ -443,7 +509,8 @@ def _metrics(equity: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespac
     eq = equity.copy()
     eq["ts"] = pd.to_datetime(eq["ts"], utc=True)
     eq = eq.sort_values("ts")
-    nav = pd.to_numeric(eq["nav"], errors="coerce")
+    nav_col = "nav_mtm" if "nav_mtm" in eq.columns else "nav"
+    nav = pd.to_numeric(eq[nav_col], errors="coerce")
     peak = nav.cummax()
     dd = nav / peak - 1.0
     rets = nav.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
@@ -480,6 +547,7 @@ def _metrics(equity: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespac
         "days": float(days),
         "initial_nav": float(args.initial_capital),
         "final_nav": float(nav.iloc[-1]),
+        "final_realized_nav": float(pd.to_numeric(eq.get("realized_nav", nav), errors="coerce").iloc[-1]),
         "total_return": total_return,
         "annualized_return": float(annualized),
         "max_drawdown": float(dd.min()),
@@ -487,6 +555,52 @@ def _metrics(equity: pd.DataFrame, trades: pd.DataFrame, args: argparse.Namespac
         "avg_open_positions": float(pd.to_numeric(eq["open_positions"], errors="coerce").mean()),
         "max_open_positions": int(pd.to_numeric(eq["open_positions"], errors="coerce").max()),
         **trade_metrics,
+    }
+
+
+def _leakage_check(trades: pd.DataFrame, folds: dict[int, dict[str, pd.Timestamp]]) -> dict[str, Any]:
+    if trades.empty:
+        return {"status": "empty", "checked_trades": 0, "violations": 0}
+    if not folds:
+        return {"status": "missing_folds", "checked_trades": 0, "violations": 0}
+    checked = 0
+    missing_fold = 0
+    violations: list[dict[str, Any]] = []
+    for _, row in trades.iterrows():
+        signal_ts = pd.Timestamp(row["signal_ts"])
+        try:
+            fold_ids = json.loads(row.get("fold_ids", "{}"))
+        except Exception:
+            fold_ids = {}
+        if not fold_ids:
+            missing_fold += 1
+            continue
+        for source, fold_raw in fold_ids.items():
+            checked += 1
+            fold = int(fold_raw)
+            meta = folds.get(fold)
+            if meta is None:
+                violations.append({"source": source, "fold": fold, "signal_ts": signal_ts.isoformat(), "reason": "unknown_fold"})
+                continue
+            if not (meta["test_start"] <= signal_ts <= meta["test_end"]):
+                violations.append(
+                    {
+                        "source": source,
+                        "fold": fold,
+                        "signal_ts": signal_ts.isoformat(),
+                        "test_start": meta["test_start"].isoformat(),
+                        "test_end": meta["test_end"].isoformat(),
+                        "reason": "signal_outside_test_window",
+                    }
+                )
+    status = "ok" if not violations and missing_fold == 0 else "warn"
+    return {
+        "status": status,
+        "checked_trades": int(len(trades)),
+        "checked_fold_refs": checked,
+        "missing_fold_trades": missing_fold,
+        "violations": len(violations),
+        "violation_examples": violations[:20],
     }
 
 
@@ -530,6 +644,7 @@ def _summary_markdown(manifest: dict[str, Any]) -> str:
         f"- Win rate: {m.get('win_rate', 0):.2%}",
         f"- Avg net return/trade: {m.get('avg_net_return', 0):.4%}",
         f"- Total costs: {m.get('total_cost_usd', 0):.2f}",
+        f"- Leakage check: {manifest.get('leakage_check', {}).get('status', 'unknown')}",
         "",
         "## By Regime",
         "",

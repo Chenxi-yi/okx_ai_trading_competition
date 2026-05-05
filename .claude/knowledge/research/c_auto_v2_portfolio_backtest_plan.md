@@ -1,7 +1,7 @@
 # C-Auto v2 Portfolio Backtest Plan
 
 Created: 2026-05-05
-Status: first delayed-execution pass completed
+Status: MTM and fold-leakage checks completed
 
 ## Objective
 
@@ -153,3 +153,101 @@ entry and explicit round-trip costs, but equity is marked mainly on realized
 position exits. The next validation step should add mark-to-market open PnL,
 fixed-notional or volatility-targeted sizing, and stricter leakage checks
 around prediction fold boundaries.
+
+## MTM And Fold-Leakage Checks
+
+The backtest runner now records:
+
+- `nav_mtm`: realized NAV plus marked-to-market open PnL,
+- `realized_nav`: closed-trade NAV only,
+- `unrealized_pnl`: current open PnL,
+- `fold_ids`: prediction fold references used by each trade.
+
+Metrics now use `nav_mtm` for total return and drawdown. Each trade is checked
+against `walk_forward_folds.json`; every prediction fold used by the trade must
+place `signal_ts` inside that fold's test window.
+
+MTM baseline:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py --out-id c_auto_v2_portfolio_backtest_mtm_v1
+```
+
+| Metric | Previous Realized-Only | MTM |
+|---|---:|---:|
+| Final NAV | 383,989.70 | 380,367.55 |
+| Total return | +38,298.97% | +37,936.75% |
+| Max drawdown | -14.89% | -19.21% |
+| Trades | 3,265 | 3,265 |
+| Leakage violations | n/a | 0 |
+
+MTM conservative:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py \
+  --out-id c_auto_v2_portfolio_backtest_mtm_conservative_v1 \
+  --base-risk 0.06 \
+  --max-positions 4 \
+  --min-score-quantile 0.9
+```
+
+| Metric | Previous Realized-Only | MTM |
+|---|---:|---:|
+| Final NAV | 6,227.26 | 6,222.14 |
+| Total return | +522.73% | +522.21% |
+| Max drawdown | -4.67% | -6.46% |
+| Trades | 2,612 | 2,612 |
+| Leakage checked fold refs | n/a | 6,564 |
+| Leakage violations | n/a | 0 |
+| Missing fold trades | n/a | 0 |
+
+MTM high-cost conservative:
+
+```text
+python3 scripts/backtest_c_auto_v2_portfolio.py \
+  --out-id c_auto_v2_portfolio_backtest_mtm_high_cost_v1 \
+  --fee-bps-per-side 8 \
+  --slippage-bps-per-side 8 \
+  --base-risk 0.06 \
+  --max-positions 4 \
+  --min-score-quantile 0.9
+```
+
+| Metric | MTM |
+|---|---:|
+| Final NAV | 5,065.34 |
+| Total return | +406.53% |
+| Max drawdown | -6.71% |
+| Trades | 2,612 |
+| Win rate | 54.44% |
+| Leakage violations | 0 |
+
+Conservative MTM 14-day windows:
+
+Worst observed 14-day window:
+
+```text
+2026-02-02 to 2026-02-16: -1.63%
+```
+
+Best observed 14-day window:
+
+```text
+2024-11-11 to 2024-11-25: +19.63%
+```
+
+## Updated Interpretation
+
+The two checks did not break the edge:
+
+- MTM made drawdown meaningfully worse, as expected, but did not remove the
+  conservative or high-cost conservative profitability.
+- Fold-leakage checking passed: 6,564 fold references checked, 0 violations,
+  0 missing fold trades in the conservative run.
+
+Remaining blockers before paper trading:
+
+- Add fixed-notional or volatility-targeted sizing to reduce compounding
+  sensitivity.
+- Add a stricter symbol listing-age mask for newly listed instruments.
+- Run a paper-mode dry deployment that emits signals without placing orders.
