@@ -6,6 +6,7 @@ const state = {
 };
 
 let launchOptions = { strategies: [] };
+let cAutoPaperAvailable = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -141,9 +142,12 @@ function renderStatus(data) {
   $('dashboardState').textContent = dashboard.alive ? `running #${dashboard.pid}` : 'stopped';
   $('strategyState').textContent = running.length ? `${running.length} running` : 'stopped';
   const pro = data.pro_paper || {};
+  const cauto = data.c_auto_v2_paper || {};
+  cAutoPaperAvailable = Boolean(cauto.available);
   const scheduler = pro.scheduler || {};
   $('proPaperState').textContent = pro.running ? `running #${(pro.processes || [])[0]?.pid || '-'}` : (pro.available ? (scheduler.scheduler_status || 'idle') : 'idle');
   $('proPaperCycles').textContent = scheduler.cycles === undefined ? '--' : String(scheduler.cycles);
+  if (cAutoPaperAvailable) renderPaperPanel(cauto);
 
   const nav = summaryNav(data.summary);
   const pnl = summaryPnl(data.summary);
@@ -157,10 +161,17 @@ function renderStatus(data) {
       <b>alive</b>
     </div>
   `);
-  if (!strategies.length && !proRows.length) {
+  const cautoRows = (data.pids?.c_auto_v2_paper || []).map((item) => `
+    <div class="run-row">
+      <span>c-auto-v2 / ${item.environment || 'personal'} / paper / pid ${item.pid}</span>
+      <b>alive</b>
+    </div>
+  `);
+  if (!strategies.length && !proRows.length && !cautoRows.length) {
     list.innerHTML = '<div class="run-row stale"><span>暂无策略 pid 文件</span><b>idle</b></div>';
   } else {
     list.innerHTML = [
+      ...cautoRows,
       ...proRows,
       ...strategies.map((item) => `
       <div class="run-row ${item.alive ? '' : 'stale'}">
@@ -317,7 +328,7 @@ function renderPaperStatus(data) {
   const riskText = Number.isFinite(risk) ? ` risk ${risk.toFixed(0)}` : '';
   const posText = names.length ? ` pos ${names.join(', ')}` : ' pos none';
   $('monsterPaperStatus').textContent = `纸面 lottery：${running} / ${data.state_id || '--'}${navText}${riskText}${gate}${posText}`;
-  renderPaperPanel(data);
+  if (!cAutoPaperAvailable) renderPaperPanel(data);
 }
 
 function renderPaperPanel(data) {
@@ -362,19 +373,20 @@ function renderPaperPosition(symbol, pos) {
   const score = Number(pos.score);
   const risk = Number(pos.risk_budget);
   const entry = Number(pos.entry_price);
-  const stop = Number(pos.stop_price);
-  const tp1 = Number(pos.tp1_price);
-  const tp2 = Number(pos.tp2_price);
+  const stop = pos.stop_price === null || pos.stop_price === undefined ? NaN : Number(pos.stop_price);
+  const tp1 = pos.tp1_price === null || pos.tp1_price === undefined ? NaN : Number(pos.tp1_price);
+  const tp2 = pos.tp2_price === null || pos.tp2_price === undefined ? NaN : Number(pos.tp2_price);
   const oi = Number(pos.live_open_interest_value);
   const funding = Number(pos.live_funding_rate);
   const lsr = Number(pos.live_long_short_ratio);
+  const regime = pos.regime ? ` / ${pos.regime}` : '';
   return `
     <div class="paper-row">
       <div class="paper-row-head">
         <strong>${symbol}</strong>
         <b>${side}</b>
       </div>
-      <span>score ${Number.isFinite(score) ? score.toFixed(3) : '--'} / risk ${Number.isFinite(risk) ? risk.toFixed(0) : '--'}</span>
+      <span>score ${Number.isFinite(score) ? score.toFixed(3) : '--'} / risk ${Number.isFinite(risk) ? risk.toFixed(0) : '--'}${regime}</span>
       <span>entry ${Number.isFinite(entry) ? entry.toPrecision(6) : '--'} / stop ${Number.isFinite(stop) ? stop.toPrecision(6) : '--'}</span>
       <span>tp1 ${Number.isFinite(tp1) ? tp1.toPrecision(6) : '--'} / tp2 ${Number.isFinite(tp2) ? tp2.toPrecision(6) : '--'}</span>
       <span>oi ${compactNumber(oi)} / funding ${Number.isFinite(funding) ? (funding * 100).toFixed(4) + '%' : '--'} / l/s ${Number.isFinite(lsr) ? lsr.toFixed(2) : '--'}</span>

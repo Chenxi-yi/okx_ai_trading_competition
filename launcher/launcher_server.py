@@ -28,6 +28,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONTROL_DIR = ROOT_DIR / "engine" / "control"
 LOGS_DIR = ROOT_DIR / "engine" / "logs"
 PRO_PAPER_DIR = LOGS_DIR / "pro_paper"
+C_AUTO_V2_PAPER_DIR = LOGS_DIR / "c_auto_v2_paper"
 TRAINING_HISTORY_DIR = ROOT_DIR / "engine" / "data" / "training_history"
 DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structure"
 MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
@@ -43,6 +44,7 @@ DEFAULT_DASHBOARD_PORT = 8080
 DEFAULT_DOWNLOAD_RUN_ID = "train_hist_vol1m_1h_20240101_20260424"
 DEFAULT_DERIVATIVES_RUN_ID = "deriv_struct_132_5m_20240101_20260424"
 DEFAULT_MONSTER_WATCHLIST_ID = "monster_watchlist_5m_live_gated_20260426"
+C_AUTO_V2_STRATEGY_ID = "c_auto_v2_fixed1000_conservative"
 
 
 def read_text(path: Path) -> str | None:
@@ -101,11 +103,27 @@ def pid_snapshot() -> dict[str, Any]:
         },
         "strategies": strategies,
         "pro_paper": find_pro_paper_processes(),
+        "c_auto_v2_paper": find_c_auto_v2_paper_processes(),
     }
 
 
 def strategy_options() -> list[dict[str, Any]]:
-    options: list[dict[str, Any]] = []
+    options: list[dict[str, Any]] = [
+        {
+            "strategy_id": C_AUTO_V2_STRATEGY_ID,
+            "name": "C-Auto v2 Fixed1000 Conservative",
+            "book": "core",
+            "status": "paper-candidate",
+            "kind": "c_auto_v2",
+            "description": "BTC regime + alt rank + high-beta booster, fixed 1000U notional paper-dry runner.",
+            "live_enabled": False,
+            "live_allocation_pct": 0.0,
+            "default_parameter_set_id": "c_auto_v2.fixed1000_conservative",
+            "paper_supported": True,
+            "real_supported": False,
+            "primary": True,
+        }
+    ]
     try:
         registry = StrategyRegistry()
         for record in registry.list_strategies():
@@ -122,7 +140,7 @@ def strategy_options() -> list[dict[str, Any]]:
                     "default_parameter_set_id": record.default_parameter_set_id,
                     "paper_supported": True,
                     "real_supported": bool(record.live_enabled and record.status == "live"),
-                    "primary": record.strategy_id == "core_c_auto_h24_regression_v1",
+                    "primary": False,
                 }
             )
     except Exception:
@@ -210,6 +228,40 @@ def find_pro_paper_processes(strategy_id: str | None = None) -> list[dict[str, A
     return matches
 
 
+def find_c_auto_v2_paper_processes(state_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/run_c_auto_v2_paper.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        found_state = _command_arg(command, "--state-id")
+        found_env = _command_arg(command, "--environment")
+        if state_id and found_state != state_id:
+            continue
+        matches.append({"pid": pid, "command": command, "state_id": found_state, "environment": found_env})
+    return matches
+
+
 def _command_arg(command: str, key: str) -> str | None:
     parts = command.split()
     for i, part in enumerate(parts):
@@ -274,6 +326,56 @@ def start_pro_paper(strategy_id: str, environment: str) -> dict[str, Any]:
     return result
 
 
+def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment: str = "personal") -> dict[str, Any]:
+    prefix = f"{state_id}_{environment}"
+    state_path = C_AUTO_V2_PAPER_DIR / f"{prefix}.json"
+    scheduler_path = C_AUTO_V2_PAPER_DIR / f"{prefix}_scheduler.json"
+    state = read_json(state_path) or {}
+    scheduler = read_json(scheduler_path) or {}
+    processes = find_c_auto_v2_paper_processes(state_id)
+    if not state and not scheduler and not processes:
+        return {"available": False, "state_id": state_id, "message": "no c-auto v2 paper state found"}
+    out = dict(state)
+    out.update(
+        {
+            "available": True,
+            "running": bool(processes),
+            "processes": processes,
+            "scheduler": scheduler,
+            "state_path": str(state_path.relative_to(ROOT_DIR)) if state_path.exists() else None,
+            "scheduler_status_path": str(scheduler_path.relative_to(ROOT_DIR)) if scheduler_path.exists() else None,
+        }
+    )
+    return out
+
+
+def start_c_auto_v2_paper(environment: str) -> dict[str, Any]:
+    existing = find_c_auto_v2_paper_processes("fixed1000_conservative")
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": c_auto_v2_paper_status(environment=environment)}
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_c_auto_v2_paper.py",
+            "--state-id",
+            "fixed1000_conservative",
+            "--environment",
+            environment,
+            "--source-backtest",
+            "c_auto_v2_portfolio_backtest_fixed1000_conservative_v1",
+            "--initial-capital",
+            "1000",
+            "--start-from-latest",
+            "--loop",
+            "--interval-sec",
+            "60",
+        ],
+        f"c_auto_v2_paper_fixed1000_{environment}",
+    )
+    result.update({"ok": True, "strategy": C_AUTO_V2_STRATEGY_ID, "environment": environment, "mode": "paper"})
+    return result
+
+
 def stop_pro_paper() -> dict[str, Any]:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stopped: list[int] = []
@@ -282,6 +384,24 @@ def stop_pro_paper() -> dict[str, Any]:
         strategy_id = proc.get("strategy_id") or "unknown"
         environment = proc.get("environment") or "personal"
         stop_path = CONTROL_DIR / f"pro_paper_{strategy_id}_{environment}.stop"
+        stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files}
+
+
+def stop_c_auto_v2_paper() -> dict[str, Any]:
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    stopped: list[int] = []
+    stop_files: list[str] = []
+    for proc in find_c_auto_v2_paper_processes():
+        state_id = proc.get("state_id") or "fixed1000_conservative"
+        environment = proc.get("environment") or "personal"
+        stop_path = CONTROL_DIR / f"c_auto_v2_paper_{state_id}_{environment}.stop"
         stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
         try:
@@ -1032,12 +1152,15 @@ class LauncherHandler(BaseHTTPRequestHandler):
                             {"id": "paper", "label": "纸面交易"},
                             {"id": "real", "label": "真实交易"},
                         ],
-                        "primary_strategy_id": "core_c_auto_h24_regression_v1",
+                        "primary_strategy_id": C_AUTO_V2_STRATEGY_ID,
                     },
                 )
                 return
             if path == "/api/pro-paper":
                 self.send_json(200, {"ok": True, **pro_paper_status()})
+                return
+            if path == "/api/c-auto-v2-paper":
+                self.send_json(200, {"ok": True, **c_auto_v2_paper_status()})
                 return
             if path == "/api/download-status":
                 self.send_json(200, download_status())
@@ -1131,6 +1254,11 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 raise ValueError("该 professional 策略尚未通过 live gate，不能启动真实交易")
             raise ValueError("professional live runner 尚未接入 launcher")
 
+        if option["kind"] == "c_auto_v2":
+            if mode == "paper":
+                return start_c_auto_v2_paper(env)
+            raise ValueError("C-Auto v2 还没有通过 live gate，不能启动真实交易")
+
         if mode == "paper":
             raise ValueError("legacy 策略没有接入纸面交易模式；请选择 professional 策略")
 
@@ -1156,7 +1284,8 @@ class LauncherHandler(BaseHTTPRequestHandler):
     def handle_stop(self) -> dict[str, Any]:
         result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
         pro = stop_pro_paper()
-        result.update({"ok": True, "pro_paper": pro})
+        c_auto_v2 = stop_c_auto_v2_paper()
+        result.update({"ok": True, "pro_paper": pro, "c_auto_v2_paper": c_auto_v2})
         return result
 
     def status_payload(self) -> dict[str, Any]:
@@ -1171,6 +1300,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "summary": summary,
             "pids": pids,
             "pro_paper": pro_paper_status(),
+            "c_auto_v2_paper": c_auto_v2_paper_status(),
             "launcher_logs": latest_launcher_logs(),
         }
 
