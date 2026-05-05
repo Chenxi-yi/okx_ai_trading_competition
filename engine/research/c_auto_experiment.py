@@ -52,10 +52,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    if Ridge is None or StandardScaler is None or make_pipeline is None:
-        print(f"ERROR: scikit-learn is required for c-auto experiments: {SKLEARN_IMPORT_ERROR}")
-        return 1
-
     args = parse_args()
     registry = StrategyRegistry()
     params = dict(registry.get_parameter_set(args.parameter_set_id).params)
@@ -107,6 +103,8 @@ def main() -> int:
         "label_col": args.label_col,
         "feature_columns": feature_cols,
         "fold_count": len(folds),
+        "model_backend": "sklearn_ridge" if Ridge is not None and StandardScaler is not None and make_pipeline is not None else "fallback_linear_score",
+        "sklearn_import_error": str(SKLEARN_IMPORT_ERROR) if SKLEARN_IMPORT_ERROR else None,
         "params": params,
         "metrics": metrics,
         "notes": args.notes,
@@ -193,11 +191,17 @@ def _run_folds(
 
         x_test = test[feature_cols].apply(pd.to_numeric, errors="coerce")
         x_test = x_test.replace([np.inf, -np.inf], np.nan).fillna(medians).fillna(0.0)
-        model = make_pipeline(StandardScaler(), Ridge(alpha=ridge_alpha))
-        model.fit(x_train.to_numpy(dtype=float), y_train.to_numpy(dtype=float))
-
         pred = test[[label_col]].copy()
-        pred["prediction"] = model.predict(x_test.to_numpy(dtype=float))
+        if Ridge is not None and StandardScaler is not None and make_pipeline is not None:
+            model = make_pipeline(StandardScaler(), Ridge(alpha=ridge_alpha))
+            model.fit(x_train.to_numpy(dtype=float), y_train.to_numpy(dtype=float))
+            pred["prediction"] = model.predict(x_test.to_numpy(dtype=float))
+        else:
+            corr = x_train.corrwith(y_train).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            score = (x_test - x_train.mean()).divide(x_train.std().replace(0, np.nan)).fillna(0.0)
+            fallback_pred = score.mul(corr, axis=1).sum(axis=1).to_numpy(dtype=float)
+            fallback_pred = fallback_pred / max(1.0, float(len(feature_cols))) * max(float(y_train.std() or 0.0), 0.001)
+            pred["prediction"] = fallback_pred
         pred["fold"] = int(fold.get("fold", len(rows)))
         pred["rank_pct"] = pred.groupby(level="timestamp")["prediction"].rank(pct=True, method="average")
         rows.append(pred)
@@ -280,7 +284,13 @@ def _timestamps(df: pd.DataFrame) -> pd.DatetimeIndex:
 
 
 def _safe_corr(a: pd.Series, b: pd.Series, method: str) -> float:
-    value = a.corr(b, method=method)
+    left = pd.to_numeric(a, errors="coerce")
+    right = pd.to_numeric(b, errors="coerce")
+    if method == "spearman":
+        left = left.rank(method="average")
+        right = right.rank(method="average")
+        method = "pearson"
+    value = left.corr(right, method=method)
     return 0.0 if value is None or not np.isfinite(value) else float(value)
 
 

@@ -1,6 +1,6 @@
 # C-Auto Data Download Plan
 
-Last updated: 2026-05-05T10:25:00+0800
+Last updated: 2026-05-05T16:51:00+0800
 
 ## Goal
 
@@ -162,6 +162,56 @@ Notes:
 - `open_interest` can return OKX `Illegal time range` for some symbols/date
   windows. Keep successful OI files, then repair missing symbols with shorter
   backfill windows if the first broad pass leaves failures.
+
+## Feature Pipeline Artifacts
+
+Quality dataset:
+
+```text
+dataset_id: c_auto_dataset_quality_v1
+output: engine/data/quality/c_auto_dataset_quality_v1/
+symbols: 79
+core-ready symbols: 79
+train eligible 90d: 72
+train eligible 180d: 67
+status: warn
+reason: 10 higher-timeframe jobs are short-history failures for new/listed-late symbols
+```
+
+Feature store:
+
+```text
+dataset_id: c_auto_feature_store_v1
+output: engine/data/features/c_auto_feature_store_v1/
+rows: 1,087,371
+features: 66
+labels: 40
+frequency: 1h
+walk-forward folds: 54
+validation: warn:excessive_feature_nan
+reason: derivatives/OI/long-short history is naturally shorter than OHLCV
+```
+
+Point-in-time rule:
+
+- Historical feature rows may use OHLCV, funding, OI, long/short, higher
+  timeframe bars, contract metadata, listing age, and quality flags.
+- Current orderbook/ticker/trades snapshots must not be spread backward across
+  historical rows. Use them only for latest live liquidity filters and execution
+  gates.
+
+First baseline:
+
+```text
+experiment_id: c_auto_feature_store_v1_baseline_12fold
+backend: fallback_linear_score (local sklearn/scipy unavailable)
+folds: 12
+spearman_ic: -0.0428
+directional_accuracy: 0.5095
+long_short_spread: -0.00130
+verdict: default legacy feature set is not promotable; build a new feature set
+from IC-ranked multi-timeframe/regime features before backtesting.
+```
 
 ## Frontend Progress
 

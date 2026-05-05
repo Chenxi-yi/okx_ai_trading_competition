@@ -53,6 +53,7 @@ engine/data/derivatives_structure/
 engine/data/features/
 engine/data/microstructure/
 engine/data/monster_events/
+engine/data/quality/
 engine/data/research/
 engine/data/training_history/
 engine/results/
