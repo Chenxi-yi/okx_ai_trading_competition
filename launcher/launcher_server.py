@@ -115,7 +115,7 @@ def strategy_options() -> list[dict[str, Any]]:
             "book": "core",
             "status": "paper-candidate",
             "kind": "c_auto_v2",
-            "description": "BTC regime + alt rank + high-beta booster, fixed 1000U notional paper-dry runner.",
+            "description": "BTC regime + alt rank + high-beta booster, fixed 1000U notional live-paper runner.",
             "live_enabled": False,
             "live_allocation_pct": 0.0,
             "default_parameter_set_id": "c_auto_v2.fixed1000_conservative",
@@ -256,9 +256,18 @@ def find_c_auto_v2_paper_processes(state_id: str | None = None) -> list[dict[str
             continue
         found_state = _command_arg(command, "--state-id")
         found_env = _command_arg(command, "--environment")
+        source_mode = _command_arg(command, "--source-mode") or "replay"
         if state_id and found_state != state_id:
             continue
-        matches.append({"pid": pid, "command": command, "state_id": found_state, "environment": found_env})
+        matches.append(
+            {
+                "pid": pid,
+                "command": command,
+                "state_id": found_state,
+                "environment": found_env,
+                "source_mode": source_mode,
+            }
+        )
     return matches
 
 
@@ -352,23 +361,40 @@ def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment
 def start_c_auto_v2_paper(environment: str) -> dict[str, Any]:
     existing = find_c_auto_v2_paper_processes("fixed1000_conservative")
     if existing:
-        return {"ok": True, "already_running": True, "processes": existing, "status": c_auto_v2_paper_status(environment=environment)}
+        live_existing = [proc for proc in existing if proc.get("source_mode") == "live"]
+        stale_existing = [proc for proc in existing if proc.get("source_mode") != "live"]
+        if live_existing:
+            return {"ok": True, "already_running": True, "processes": live_existing, "status": c_auto_v2_paper_status(environment=environment)}
+        for proc in stale_existing:
+            try:
+                os.kill(int(proc["pid"]), 15)
+            except OSError:
+                pass
     result = run_script(
         [
             "python3",
             "scripts/run_c_auto_v2_paper.py",
+            "--source-mode",
+            "live",
             "--state-id",
             "fixed1000_conservative",
             "--environment",
             environment,
-            "--source-backtest",
-            "c_auto_v2_portfolio_backtest_fixed1000_conservative_v1",
             "--initial-capital",
             "1000",
-            "--start-from-latest",
+            "--fixed-notional-capital",
+            "1000",
+            "--max-symbols",
+            "80",
+            "--refresh-max-symbols",
+            "30",
+            "--lookback-days",
+            "240",
+            "--max-train-rows",
+            "250000",
             "--loop",
             "--interval-sec",
-            "60",
+            "300",
         ],
         f"c_auto_v2_paper_fixed1000_{environment}",
     )
@@ -1197,6 +1223,13 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if path == "/api/stop":
                 self.send_json(200, self.handle_stop())
                 return
+            if path == "/api/restart":
+                payload = self.read_json_body()
+                self.handle_stop()
+                self.reset_paper_state(payload)
+                time.sleep(1.0)
+                self.send_json(200, self.handle_start(payload))
+                return
             if path == "/api/download-pause":
                 payload = self.read_json_body()
                 self.send_json(200, pause_download(payload.get("run_id")))
@@ -1226,8 +1259,8 @@ class LauncherHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json(500, {"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
-    def handle_start(self) -> dict[str, Any]:
-        payload = self.read_json_body()
+    def handle_start(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload if payload is not None else self.read_json_body()
         env = str(payload.get("env", "personal")).strip()
         mode = str(payload.get("mode", "paper")).strip()
         strategy = str(payload.get("strategy", "core_c_auto_h24_regression_v1")).strip()
@@ -1287,6 +1320,20 @@ class LauncherHandler(BaseHTTPRequestHandler):
         c_auto_v2 = stop_c_auto_v2_paper()
         result.update({"ok": True, "pro_paper": pro, "c_auto_v2_paper": c_auto_v2})
         return result
+
+    def reset_paper_state(self, payload: dict[str, Any]) -> None:
+        strategy = str(payload.get("strategy", "")).strip()
+        mode = str(payload.get("mode", "paper")).strip()
+        env = str(payload.get("env", "personal")).strip()
+        if mode != "paper" or strategy != C_AUTO_V2_STRATEGY_ID:
+            return
+        prefix = f"fixed1000_conservative_{env}"
+        for suffix in (".json", "_scheduler.json", "_equity.jsonl", "_ledger.jsonl"):
+            path = C_AUTO_V2_PAPER_DIR / f"{prefix}{suffix}"
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
     def status_payload(self) -> dict[str, Any]:
         summary = read_json(ROOT_DIR / "engine" / "logs" / "summary.json") or {}

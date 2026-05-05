@@ -1,33 +1,88 @@
 #!/usr/bin/env python3
-"""Paper-dry runner for the C-Auto v2 fixed-notional portfolio stream."""
+"""Paper runner for the C-Auto v2 fixed-notional portfolio stream.
+
+The runner supports two modes:
+- live: build the latest feature row from local/incremental market data, train
+  sleeve models from the historical feature store, then update the paper book.
+- replay: step through a validated portfolio backtest stream for UI smoke tests.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE_DIR = ROOT / "engine"
+sys.path.insert(0, str(ENGINE_DIR))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from config.settings import BASE_DIR, DATA_DIR  # noqa: E402
+from features import build_feature_panel  # noqa: E402
+from build_c_auto_feature_store import (  # noqa: E402
+    DEFAULT_DERIV_RUN,
+    DEFAULT_QUALITY_ID,
+    DEFAULT_SNAPSHOT_RUN,
+    _attach_btc_state,
+    _attach_funding,
+    _attach_quality_flags,
+    _extra_features_for_symbol,
+    _read_quality,
+)
+from data.fetcher import fetch_ohlcv  # noqa: E402
+
+try:  # noqa: E402
+    from sklearn.linear_model import Ridge
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+except Exception:  # pragma: no cover - optional dependency fallback
+    Ridge = None
+    StandardScaler = None
+    make_pipeline = None
+
 PAPER_DIR = ENGINE_DIR / "logs" / "c_auto_v2_paper"
 CONTROL_DIR = ENGINE_DIR / "control"
 DEFAULT_SOURCE = "c_auto_v2_portfolio_backtest_fixed1000_conservative_v1"
+DEFAULT_POLICY = ENGINE_DIR / "strategies" / "specs" / "c_auto_v2_regime_policy.json"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run C-Auto v2 fixed1000 paper-dry stream")
+    p = argparse.ArgumentParser(description="Run C-Auto v2 fixed1000 paper stream")
     p.add_argument("--state-id", default="fixed1000_conservative")
     p.add_argument("--environment", default="personal", choices=["personal", "demo", "competition"])
+    p.add_argument("--source-mode", default="live", choices=["live", "replay"])
     p.add_argument("--source-backtest", default=DEFAULT_SOURCE)
+    p.add_argument("--policy", default=str(DEFAULT_POLICY))
+    p.add_argument("--dataset-id", default="c_auto_feature_store_v2")
+    p.add_argument("--quality-id", default=DEFAULT_QUALITY_ID)
+    p.add_argument("--deriv-run-id", default=DEFAULT_DERIV_RUN)
+    p.add_argument("--snapshot-run-id", default=DEFAULT_SNAPSHOT_RUN)
     p.add_argument("--initial-capital", type=float, default=1000.0)
+    p.add_argument("--fixed-notional-capital", type=float, default=1000.0)
+    p.add_argument("--max-symbols", type=int, default=80)
+    p.add_argument("--refresh-max-symbols", type=int, default=30)
+    p.add_argument("--lookback-days", type=int, default=240)
+    p.add_argument("--max-train-rows", type=int, default=250_000)
+    p.add_argument("--refresh-ohlcv", action="store_true")
+    p.add_argument("--max-positions", type=int, default=4)
+    p.add_argument("--rebalance-hours", type=int, default=6)
+    p.add_argument("--base-risk", type=float, default=0.06)
+    p.add_argument("--min-score-quantile", type=float, default=0.90)
+    p.add_argument("--min-volume-usd", type=float, default=100_000.0)
+    p.add_argument("--fee-bps-per-side", type=float, default=5.0)
+    p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--loop", action="store_true")
-    p.add_argument("--interval-sec", type=float, default=60.0)
+    p.add_argument("--interval-sec", type=float, default=300.0)
     p.add_argument("--max-cycles", type=int, default=0)
     p.add_argument("--start-from-latest", action="store_true")
     return p.parse_args()
@@ -43,6 +98,12 @@ def main() -> int:
     except FileNotFoundError:
         pass
 
+    if args.source_mode == "replay":
+        return _run_replay(args, stop_path)
+    return _run_live(args, stop_path)
+
+
+def _run_replay(args: argparse.Namespace, stop_path: Path) -> int:
     source_dir = ENGINE_DIR / "data" / "research" / "c_auto" / args.source_backtest
     equity = _read_frame(source_dir / "equity_curve.parquet", source_dir / "equity_curve.csv")
     trades = _read_frame(source_dir / "trades.parquet", source_dir / "trades.csv")
@@ -76,12 +137,344 @@ def main() -> int:
     return 0
 
 
+def _run_live(args: argparse.Namespace, stop_path: Path) -> int:
+    cycles = 0
+    while True:
+        if stop_path.exists():
+            _write_scheduler(args, "stopped", cycles)
+            break
+        try:
+            state = _run_live_cycle(args)
+            _append_live_outputs(args, state)
+            cycles += 1
+            _write_scheduler(args, "running", cycles, extra={"last_error": None, "source_mode": "live"})
+        except Exception as exc:
+            cycles += 1
+            _write_scheduler(args, "error", cycles, extra={"last_error": str(exc), "source_mode": "live"})
+            if not args.loop:
+                raise
+        if not args.loop:
+            break
+        if args.max_cycles > 0 and cycles >= args.max_cycles:
+            _write_scheduler(args, "completed", cycles, extra={"source_mode": "live"})
+            break
+        time.sleep(max(5.0, float(args.interval_sec)))
+    return 0
+
+
+def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
+    policy = json.loads(Path(args.policy).read_text())
+    dataset_dir = ENGINE_DIR / "data" / "features" / args.dataset_id
+    train_features = _read_frame(dataset_dir / "features.parquet", dataset_dir / "features.pkl").sort_index()
+    train_labels = _read_frame(dataset_dir / "labels.parquet", dataset_dir / "labels.pkl").sort_index()
+    latest_features = _build_latest_features(args)
+    predictions = _predict_policy(policy, train_features, train_labels, latest_features, args)
+    scored = _build_portfolio_scores(predictions)
+    now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
+    previous = _load_live_state(args)
+    positions, ledger, realized_nav = _close_due_live(previous, latest_features, now_ts, args)
+    bootstrap = (
+        not positions
+        and not previous.get("ledger_tail")
+        and abs(float(previous.get("realized_nav") or args.initial_capital) - float(args.initial_capital)) < 1e-9
+    )
+    if bootstrap or _is_rebalance_ts(now_ts, int(args.rebalance_hours)):
+        new_positions, new_events = _open_live_positions(scored, positions, now_ts, args)
+        positions.update(new_positions)
+        ledger.extend(new_events)
+    nav = _mark_live_nav(realized_nav, positions, latest_features, args)
+    equity_tail = list(previous.get("equity", []))[-239:]
+    equity_tail.append({"ts": now_ts.isoformat(), "nav": nav, "open_positions": len(positions)})
+    ledger_tail = (list(previous.get("ledger_tail", [])) + ledger)[-40:]
+    return {
+        "available": True,
+        "state_id": args.state_id,
+        "strategy_id": "c_auto_v2_fixed1000_conservative",
+        "environment": args.environment,
+        "mode": "paper",
+        "source_mode": "live",
+        "source_backtest": None,
+        "dataset_id": args.dataset_id,
+        "policy_id": policy.get("policy_id"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now_ts.isoformat(),
+        "market_age_sec": max(0.0, (datetime.now(timezone.utc) - now_ts.to_pydatetime()).total_seconds()),
+        "cash": realized_nav,
+        "nav": nav,
+        "realized_nav": realized_nav,
+        "unrealized_pnl": nav - realized_nav,
+        "realized_pnl": realized_nav - float(args.initial_capital),
+        "open_risk": sum(float(pos.get("risk_budget", 0.0)) for pos in positions.values()),
+        "positions": positions,
+        "live_gates_enabled": False,
+        "live_gate_pass_count": 0,
+        "metrics": _live_metrics(equity_tail, args.initial_capital),
+        "equity": equity_tail,
+        "ledger_tail": ledger_tail,
+        "latest_candidates": _candidate_snapshot(scored, now_ts),
+    }
+
+
 def _read_frame(parquet: Path, csv_path: Path) -> pd.DataFrame:
     if parquet.exists():
         return pd.read_parquet(parquet)
     if csv_path.exists():
+        if csv_path.suffix == ".pkl":
+            return pd.read_pickle(csv_path)
         return pd.read_csv(csv_path)
     return pd.DataFrame()
+
+
+def _build_latest_features(args: argparse.Namespace) -> pd.DataFrame:
+    quality_dir = BASE_DIR / "data" / "quality" / args.quality_id
+    quality = _read_quality(quality_dir)
+    quality = quality[quality["has_core_inputs"].astype(bool)].copy()
+    quality = quality.sort_values(["train_eligible_180d", "1h_rows"], ascending=[False, False])
+    symbols = quality["symbol"].astype(str).head(int(args.max_symbols)).tolist()
+    if "BTC/USDT" not in symbols:
+        symbols.insert(0, "BTC/USDT")
+    end = pd.Timestamp.now(tz="UTC").floor("1h")
+    start = end - pd.Timedelta(days=int(args.lookback_days))
+    price_data: dict[str, pd.DataFrame] = {}
+    extras: list[pd.DataFrame] = []
+    refresh_symbols = set(symbols[: max(0, int(args.refresh_max_symbols))])
+    refresh_symbols.add("BTC/USDT")
+    for symbol in symbols:
+        if args.refresh_ohlcv and symbol in refresh_symbols:
+            _refresh_ohlcv_cache(symbol, "1h", end)
+        one_h = _load_ohlcv_cache(symbol, "1h", start, end)
+        if one_h.empty:
+            continue
+        one_h = _attach_funding(one_h, symbol, args.deriv_run_id)
+        price_data[symbol] = one_h
+        extra = _extra_features_for_symbol(one_h, symbol, args.deriv_run_id, args.snapshot_run_id)
+        if not extra.empty:
+            extras.append(extra)
+    if not price_data:
+        raise RuntimeError("No live OHLCV cache loaded for C-Auto v2")
+    base = build_feature_panel(price_data)
+    extra = pd.concat(extras).sort_index() if extras else pd.DataFrame(index=base.index)
+    extra = extra.reindex(base.index)
+    features = pd.concat([base, extra], axis=1).sort_index()
+    features = _attach_quality_flags(features, quality, min_train_1h_rows=2160)
+    features, _ = _attach_btc_state(features)
+    latest_ts = features.index.get_level_values("timestamp").max()
+    latest = features.loc[features.index.get_level_values("timestamp") == latest_ts].copy()
+    latest = latest[latest.index.get_level_values("symbol") != "BTC/USDT"]
+    if latest.empty:
+        raise RuntimeError("No latest C-Auto v2 feature rows after BTC state attachment")
+    return latest
+
+
+def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp) -> None:
+    start = (end - pd.Timedelta(days=3)).strftime("%Y-%m-%d")
+    try:
+        fetch_ohlcv(
+            symbol,
+            start=start,
+            end=end.strftime("%Y-%m-%d"),
+            mode="futures",
+            timeframe=timeframe,
+            use_cache=True,
+            sandbox=False,
+            fallback_to_stale=True,
+            fallback_to_yfinance=False,
+            include_funding=False,
+        )
+    except Exception:
+        return
+
+
+def _load_ohlcv_cache(symbol: str, timeframe: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    safe = symbol.replace("/", "_").replace(":", "_")
+    for ext in ("parquet", "pkl"):
+        path = DATA_DIR / f"{safe}_futures_{timeframe}.{ext}"
+        if not path.exists():
+            continue
+        df = pd.read_parquet(path) if ext == "parquet" else pd.read_pickle(path)
+        df = df.copy()
+        df.index = pd.to_datetime(df.index, utc=True)
+        df = df.sort_index()
+        df = df.loc[(df.index >= start) & (df.index <= end)]
+        for col in ("open", "high", "low", "close", "volume"):
+            if col in df:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df
+    return pd.DataFrame()
+
+
+def _predict_policy(
+    policy: dict[str, Any],
+    train_features: pd.DataFrame,
+    train_labels: pd.DataFrame,
+    latest_features: pd.DataFrame,
+    args: argparse.Namespace,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for sleeve in policy.get("sleeves", []):
+        sleeve_id = str(sleeve["sleeve_id"])
+        for exp in sleeve.get("experiments", []):
+            regime = str(exp["regime"])
+            label_col = str(exp["label_col"])
+            feature_cols = [str(col) for col in exp.get("feature_columns", [])]
+            col = _score_col(sleeve_id, regime, label_col)
+            pred = _predict_experiment(
+                train_features=train_features,
+                train_labels=train_labels,
+                latest_features=latest_features,
+                regime=regime,
+                label_col=label_col,
+                feature_cols=feature_cols,
+                max_train_rows=int(args.max_train_rows),
+            )
+            if pred.empty:
+                continue
+            frames.append(pred.rename(columns={"prediction": col}))
+    if not frames:
+        raise RuntimeError("No C-Auto v2 sleeve predictions produced")
+    out = pd.concat(frames, axis=1).sort_index()
+    keep = [
+        "close",
+        "volume_usd",
+        "funding_z_24",
+        "funding_rate",
+        "oi_z_24",
+        "ls_z_24",
+        "train_eligible_90d",
+        "btc_regime_6",
+    ]
+    return out.join(latest_features[[col for col in keep if col in latest_features.columns]], how="left")
+
+
+def _predict_experiment(
+    *,
+    train_features: pd.DataFrame,
+    train_labels: pd.DataFrame,
+    latest_features: pd.DataFrame,
+    regime: str,
+    label_col: str,
+    feature_cols: list[str],
+    max_train_rows: int,
+) -> pd.DataFrame:
+    feature_cols = [col for col in feature_cols if col in train_features.columns and col in latest_features.columns]
+    if not feature_cols or label_col not in train_labels.columns:
+        return pd.DataFrame()
+    regime_mask = train_features["btc_regime_6"].astype(str) == regime if "btc_regime_6" in train_features.columns else True
+    train_idx = train_features.loc[regime_mask].index.intersection(train_labels.index)
+    if len(train_idx) == 0:
+        return pd.DataFrame()
+    train = train_features.loc[train_idx, feature_cols].join(train_labels.loc[train_idx, [label_col]], how="inner")
+    train = train.dropna(subset=[label_col])
+    if max_train_rows > 0 and len(train) > max_train_rows:
+        train = train.tail(max_train_rows)
+    latest = latest_features.loc[latest_features["btc_regime_6"].astype(str) == regime, feature_cols].copy()
+    if len(train) < 400 or latest.empty:
+        return pd.DataFrame(index=latest_features.index, data={"prediction": np.nan})
+    x_train = train[feature_cols].apply(pd.to_numeric, errors="coerce")
+    y_train = pd.to_numeric(train[label_col], errors="coerce")
+    keep = y_train.notna()
+    x_train = x_train.loc[keep]
+    y_train = y_train.loc[keep]
+    medians = x_train.median(numeric_only=True).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    x_train = x_train.replace([np.inf, -np.inf], np.nan).fillna(medians)
+    x_latest = latest.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(medians).fillna(0.0)
+    if Ridge is not None and StandardScaler is not None and make_pipeline is not None:
+        model = make_pipeline(StandardScaler(), Ridge(alpha=10.0))
+        model.fit(x_train.to_numpy(dtype=float), y_train.to_numpy(dtype=float))
+        values = model.predict(x_latest.to_numpy(dtype=float))
+    else:
+        corr = x_train.corrwith(y_train).replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        score = (x_latest - x_train.mean()).divide(x_train.std().replace(0, np.nan)).fillna(0.0)
+        values = score.mul(corr, axis=1).sum(axis=1).to_numpy(dtype=float)
+        values = values / max(1.0, float(len(feature_cols))) * max(float(y_train.std() or 0.0), 0.001)
+    out = pd.DataFrame(index=latest_features.index, data={"prediction": np.nan})
+    out.loc[x_latest.index, "prediction"] = values
+    return out
+
+
+def _score_col(sleeve_id: str, regime: str, label_col: str) -> str:
+    side = "short" if "_short_" in label_col else "long"
+    horizon = "".join(ch for ch in label_col.split("_")[-1] if ch.isdigit())
+    return f"{sleeve_id}__{regime}__{side}{horizon}"
+
+
+def _build_portfolio_scores(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    for col in (
+        "cross_section_spread__strong_bull__long24",
+        "high_beta_amplification__strong_bull__long12",
+        "small_account_rotation__strong_bull__long6",
+        "high_beta_amplification__bear__short12",
+        "cross_section_spread__bear__long24",
+        "small_account_rotation__bear__short6",
+        "cross_section_spread__chop_short__long24",
+        "small_account_rotation__chop_short__short6",
+        "cross_section_spread__bull__long24",
+    ):
+        if col not in out.columns:
+            out[col] = np.nan
+    out["side"] = ""
+    out["score"] = np.nan
+    out["horizon_hours"] = 0
+    out["risk_scalar"] = 0.0
+    out["signal_family"] = ""
+    regime = out["btc_regime_6"].astype(str)
+    strong = regime == "strong_bull"
+    out.loc[strong, "side"] = "long"
+    out.loc[strong, "horizon_hours"] = 12
+    out.loc[strong, "risk_scalar"] = 1.0
+    out.loc[strong, "signal_family"] = "cross_section_plus_high_beta"
+    out.loc[strong, "score"] = (
+        out.loc[strong, "cross_section_spread__strong_bull__long24"].fillna(0.0)
+        + 0.75 * out.loc[strong, "high_beta_amplification__strong_bull__long12"].fillna(0.0)
+        + 0.25 * out.loc[strong, "small_account_rotation__strong_bull__long6"].fillna(0.0)
+    )
+    bear = regime == "bear"
+    out.loc[bear, "side"] = "short"
+    out.loc[bear, "horizon_hours"] = 12
+    out.loc[bear, "risk_scalar"] = 1.0
+    out.loc[bear, "signal_family"] = "cross_section_plus_high_beta"
+    out.loc[bear, "score"] = (
+        out.loc[bear, "high_beta_amplification__bear__short12"].fillna(0.0)
+        - 0.50 * out.loc[bear, "cross_section_spread__bear__long24"].fillna(0.0)
+        + 0.25 * out.loc[bear, "small_account_rotation__bear__short6"].fillna(0.0)
+    )
+    chop_short = regime == "chop_short"
+    out.loc[chop_short, "side"] = "short"
+    out.loc[chop_short, "horizon_hours"] = 6
+    out.loc[chop_short, "risk_scalar"] = 0.65
+    out.loc[chop_short, "signal_family"] = "short_rotation"
+    out.loc[chop_short, "score"] = (
+        -out.loc[chop_short, "cross_section_spread__chop_short__long24"].fillna(0.0)
+        + 0.35 * out.loc[chop_short, "small_account_rotation__chop_short__short6"].fillna(0.0)
+    )
+    bull = regime == "bull"
+    out.loc[bull, "side"] = "long"
+    out.loc[bull, "horizon_hours"] = 24
+    out.loc[bull, "risk_scalar"] = 0.45
+    out.loc[bull, "signal_family"] = "selective_bull_rank"
+    out.loc[bull, "score"] = out.loc[bull, "cross_section_spread__bull__long24"].fillna(0.0)
+    out["blocked_by_crowding"] = _blocked_by_crowding(out)
+    out["eligible"] = (
+        out["score"].notna()
+        & (out["horizon_hours"] > 0)
+        & (pd.to_numeric(out["train_eligible_90d"], errors="coerce").fillna(0.0) > 0)
+        & (pd.to_numeric(out["volume_usd"], errors="coerce").fillna(0.0) >= 0.0)
+        & ~out["blocked_by_crowding"]
+    )
+    return out
+
+
+def _blocked_by_crowding(df: pd.DataFrame) -> pd.Series:
+    funding_z = pd.to_numeric(df.get("funding_z_24"), errors="coerce").fillna(0.0)
+    oi_z = pd.to_numeric(df.get("oi_z_24"), errors="coerce").fillna(0.0)
+    ls_z = pd.to_numeric(df.get("ls_z_24"), errors="coerce").fillna(0.0)
+    funding = pd.to_numeric(df.get("funding_rate"), errors="coerce").fillna(0.0)
+    side = df["side"].astype(str)
+    late_long = (side == "long") & (funding_z > 2.5) & (oi_z > 1.5) & (ls_z > 1.5)
+    crowded_short = (side == "short") & (funding_z < -2.5) & (oi_z > 1.5) & (ls_z < -1.5)
+    extreme_funding = ((side == "long") & (funding > 0.0015)) | ((side == "short") & (funding < -0.0015))
+    return late_long | crowded_short | extreme_funding
 
 
 def _write_state(args: argparse.Namespace, equity: pd.DataFrame, trades: pd.DataFrame, idx: int) -> None:
@@ -123,6 +516,203 @@ def _write_state(args: argparse.Namespace, equity: pd.DataFrame, trades: pd.Data
     _write_jsonl(PAPER_DIR / f"{prefix}_equity.jsonl", equity_tail[-1:])
     if ledger_tail:
         _write_jsonl(PAPER_DIR / f"{prefix}_ledger.jsonl", ledger_tail[-5:])
+
+
+def _load_live_state(args: argparse.Namespace) -> dict[str, Any]:
+    prefix = f"{args.state_id}_{args.environment}"
+    path = PAPER_DIR / f"{prefix}.json"
+    if not path.exists():
+        return {
+            "realized_nav": float(args.initial_capital),
+            "positions": {},
+            "ledger_tail": [],
+            "equity": [],
+        }
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {"realized_nav": float(args.initial_capital), "positions": {}, "ledger_tail": [], "equity": []}
+    if data.get("source_mode") != "live":
+        data["realized_nav"] = float(args.initial_capital)
+        data["positions"] = {}
+        data["ledger_tail"] = []
+        data["equity"] = []
+    return data
+
+
+def _close_due_live(
+    state: dict[str, Any],
+    latest_features: pd.DataFrame,
+    now_ts: pd.Timestamp,
+    args: argparse.Namespace,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], float]:
+    positions = {str(k): dict(v) for k, v in dict(state.get("positions") or {}).items()}
+    realized_nav = float(state.get("realized_nav") or args.initial_capital)
+    ledger: list[dict[str, Any]] = []
+    for symbol in list(positions):
+        pos = positions[symbol]
+        exit_ts = pd.Timestamp(pos.get("exit_ts"))
+        if now_ts < exit_ts:
+            continue
+        exit_price = _latest_price(latest_features, symbol)
+        entry_price = float(pos.get("entry_price") or 0.0)
+        notional = float(pos.get("risk_budget") or 0.0)
+        if not _valid_number(exit_price) or entry_price <= 0 or notional <= 0:
+            continue
+        net_return = _net_return(str(pos.get("side")), entry_price, exit_price, args)
+        pnl = notional * net_return
+        realized_nav += pnl
+        ledger.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "exit",
+                "symbol": symbol,
+                "side": pos.get("side"),
+                "reason": "horizon",
+                "pnl": pnl,
+                "net_return": net_return,
+            }
+        )
+        positions.pop(symbol)
+    return positions, ledger, realized_nav
+
+
+def _open_live_positions(
+    scored: pd.DataFrame,
+    positions: dict[str, dict[str, Any]],
+    now_ts: pd.Timestamp,
+    args: argparse.Namespace,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
+    group = group[group["eligible"].astype(bool)].copy()
+    group = group[~group["symbol"].isin(positions)]
+    group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
+    group = group[group["volume_usd"] >= float(args.min_volume_usd)]
+    if group.empty:
+        return {}, [
+            {
+                "ts": now_ts.isoformat(),
+                "event": "skip",
+                "symbol": None,
+                "side": None,
+                "reason": "no_eligible_candidates",
+                "pnl": None,
+                "net_return": None,
+            }
+        ]
+    threshold = group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
+    group = group[group["score"] >= threshold].sort_values("score", ascending=False)
+    opened: dict[str, dict[str, Any]] = {}
+    events: list[dict[str, Any]] = []
+    slots = max(0, int(args.max_positions) - len(positions))
+    for _, row in group.head(slots).iterrows():
+        symbol = str(row["symbol"])
+        entry = float(row["close"])
+        if not _valid_number(entry) or entry <= 0:
+            continue
+        side = str(row["side"])
+        risk_budget = float(args.fixed_notional_capital) * float(args.base_risk) * float(row["risk_scalar"])
+        horizon = int(row["horizon_hours"])
+        stop_pct = 0.025 if side == "long" else 0.025
+        target_pct = max(0.035, abs(float(row["score"]) or 0.0))
+        opened[symbol] = {
+            "side": side,
+            "score": float(row["score"]),
+            "risk_budget": risk_budget,
+            "entry_price": entry,
+            "stop_price": entry * (1.0 - stop_pct) if side == "long" else entry * (1.0 + stop_pct),
+            "tp1_price": entry * (1.0 + target_pct) if side == "long" else entry * (1.0 - target_pct),
+            "tp2_price": entry * (1.0 + target_pct * 1.75) if side == "long" else entry * (1.0 - target_pct * 1.75),
+            "regime": row.get("btc_regime_6"),
+            "signal_family": row.get("signal_family"),
+            "entry_ts": now_ts.isoformat(),
+            "exit_ts": (now_ts + pd.Timedelta(hours=horizon)).isoformat(),
+            "horizon_hours": horizon,
+        }
+        events.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "entry",
+                "symbol": symbol,
+                "side": side,
+                "reason": str(row.get("btc_regime_6")),
+                "pnl": None,
+                "net_return": None,
+            }
+        )
+    return opened, events
+
+
+def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> float:
+    nav = float(realized_nav)
+    for symbol, pos in positions.items():
+        mark = _latest_price(latest_features, symbol)
+        entry = float(pos.get("entry_price") or 0.0)
+        notional = float(pos.get("risk_budget") or 0.0)
+        if not _valid_number(mark) or entry <= 0 or notional <= 0:
+            continue
+        nav += notional * _net_return(str(pos.get("side")), entry, mark, args)
+    return nav
+
+
+def _latest_price(latest_features: pd.DataFrame, symbol: str) -> float:
+    try:
+        ts = latest_features.index.get_level_values("timestamp").max()
+        return float(latest_features.loc[(ts, symbol), "close"])
+    except Exception:
+        return float("nan")
+
+
+def _net_return(side: str, entry_price: float, exit_price: float, args: argparse.Namespace) -> float:
+    raw = float(exit_price) / float(entry_price) - 1.0
+    gross = raw if side == "long" else -raw
+    fee_slip = 2.0 * (float(args.fee_bps_per_side) + float(args.slippage_bps_per_side)) / 10000.0
+    return gross - fee_slip
+
+
+def _append_live_outputs(args: argparse.Namespace, state: dict[str, Any]) -> None:
+    prefix = f"{args.state_id}_{args.environment}"
+    (PAPER_DIR / f"{prefix}.json").write_text(json.dumps(state, indent=2, sort_keys=True))
+    _write_jsonl(PAPER_DIR / f"{prefix}_equity.jsonl", state.get("equity", [])[-1:])
+    ledger = state.get("ledger_tail", [])
+    if ledger:
+        _write_jsonl(PAPER_DIR / f"{prefix}_ledger.jsonl", ledger[-5:])
+
+
+def _live_metrics(equity_tail: list[dict[str, Any]], initial_capital: float) -> dict[str, Any]:
+    navs = pd.Series([float(row.get("nav", initial_capital) or initial_capital) for row in equity_tail])
+    if navs.empty:
+        return {"initial_nav": initial_capital, "current_nav": initial_capital}
+    peak = navs.cummax()
+    dd = navs / peak - 1.0
+    return {
+        "initial_nav": float(initial_capital),
+        "current_nav": float(navs.iloc[-1]),
+        "total_return": float(navs.iloc[-1] / initial_capital - 1.0),
+        "max_drawdown": float(dd.min()),
+        "equity_points": int(len(navs)),
+    }
+
+
+def _candidate_snapshot(scored: pd.DataFrame, now_ts: pd.Timestamp) -> list[dict[str, Any]]:
+    try:
+        group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
+    except Exception:
+        return []
+    group = group.sort_values("score", ascending=False).head(12)
+    out = []
+    for _, row in group.iterrows():
+        out.append(
+            {
+                "symbol": str(row.get("symbol")),
+                "side": str(row.get("side")),
+                "regime": str(row.get("btc_regime_6")),
+                "score": _json_float(row.get("score")),
+                "eligible": bool(row.get("eligible", False)),
+                "blocked_by_crowding": bool(row.get("blocked_by_crowding", False)),
+            }
+        )
+    return out
 
 
 def _open_trades(trades: pd.DataFrame, ts: pd.Timestamp) -> pd.DataFrame:
@@ -216,7 +806,7 @@ def _metrics(equity: pd.DataFrame, initial_capital: float) -> dict[str, Any]:
     }
 
 
-def _write_scheduler(args: argparse.Namespace, status: str, cycles: int) -> None:
+def _write_scheduler(args: argparse.Namespace, status: str, cycles: int, extra: dict[str, Any] | None = None) -> None:
     prefix = f"{args.state_id}_{args.environment}"
     payload = {
         "scheduler_status": status,
@@ -225,7 +815,10 @@ def _write_scheduler(args: argparse.Namespace, status: str, cycles: int) -> None
         "interval_sec": args.interval_sec,
         "state_id": args.state_id,
         "environment": args.environment,
+        "source_mode": args.source_mode,
     }
+    if extra:
+        payload.update(extra)
     (PAPER_DIR / f"{prefix}_scheduler.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
 
 
@@ -233,6 +826,26 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("a") as fh:
         for row in rows:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def _is_rebalance_ts(ts: pd.Timestamp, rebalance_hours: int) -> bool:
+    if rebalance_hours <= 1:
+        return True
+    return int(ts.hour) % rebalance_hours == 0
+
+
+def _valid_number(value: float) -> bool:
+    return math.isfinite(float(value)) and not pd.isna(value)
+
+
+def _json_float(value: Any) -> float | None:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
 
 
 if __name__ == "__main__":

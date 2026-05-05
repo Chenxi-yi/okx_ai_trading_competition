@@ -592,6 +592,27 @@ async function stopSystem() {
   setTimeout(refreshStatus, 1200);
 }
 
+async function restartSystem() {
+  state.port = Number($('portInput').value || 8080);
+  applySelection();
+  $('lastAction').textContent = '重新开始中...';
+  const result = await api('/api/restart', {
+    method: 'POST',
+    body: JSON.stringify({
+      env: state.env,
+      mode: state.mode,
+      strategy: state.strategy,
+      port: state.port,
+      confirm_real: $('realConfirm').checked,
+      confirm_competition: $('competitionConfirm').checked,
+    }),
+  });
+  $('lastAction').textContent = `重新开始已提交 pid=${result.pid}`;
+  $('openYolo').href = result.yolo_url || yoloUrl();
+  $('yoloFrame').src = result.yolo_url || yoloUrl();
+  setTimeout(refreshStatus, 1500);
+}
+
 async function pauseDownload() {
   $('downloadState').textContent = 'pausing';
   await api('/api/download-pause', { method: 'POST', body: '{}' });
@@ -634,6 +655,12 @@ $('startBtn').addEventListener('click', () => {
 
 $('stopBtn').addEventListener('click', () => {
   stopSystem().catch((err) => {
+    $('lastAction').textContent = err.message;
+  });
+});
+
+$('restartBtn').addEventListener('click', () => {
+  restartSystem().catch((err) => {
     $('lastAction').textContent = err.message;
   });
 });
