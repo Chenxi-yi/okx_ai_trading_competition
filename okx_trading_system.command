@@ -6,6 +6,17 @@ LOG_DIR="$ROOT_DIR/engine/logs"
 CONTROL_DIR="$ROOT_DIR/engine/control"
 PORT="${OKX_TRADING_SYSTEM_PORT:-8788}"
 URL="http://127.0.0.1:${PORT}/"
+PYTHON_BIN="${OKX_TRADING_SYSTEM_PYTHON:-/Library/Developer/CommandLineTools/usr/bin/python3}"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  PYTHON_BIN="$(command -v python3)"
+fi
+
+PYTHON_USER_SITE="$("$PYTHON_BIN" -m site --user-site 2>/dev/null || true)"
+if [[ -n "$PYTHON_USER_SITE" ]]; then
+  export PYTHONPATH="${PYTHON_USER_SITE}${PYTHONPATH:+:$PYTHONPATH}"
+fi
+export OKX_TRADING_SYSTEM_PYTHON="$PYTHON_BIN"
 
 mkdir -p "$LOG_DIR" "$CONTROL_DIR"
 cd "$ROOT_DIR"
@@ -33,7 +44,7 @@ fi
 stamp="$(date +%Y%m%d_%H%M%S)"
 log_path="$LOG_DIR/launcher_double_click_${stamp}.log"
 echo "Starting OKX trading launcher on ${URL}"
-nohup python3 launcher/launcher_server.py --port "$PORT" > "$log_path" 2>&1 < /dev/null &
+nohup "$PYTHON_BIN" launcher/launcher_server.py --port "$PORT" > "$log_path" 2>&1 < /dev/null &
 launcher_pid="$!"
 echo "$launcher_pid" > "$CONTROL_DIR/launcher.pid"
 sleep 2
@@ -48,7 +59,7 @@ fi
 stamp="$(date +%Y%m%d_%H%M%S)"
 log_path="$LOG_DIR/data_refresh_double_click_${stamp}.log"
 echo "Starting unified data refresh: every 15 minutes"
-nohup python3 engine/data/refresh_scheduler.py \
+nohup "$PYTHON_BIN" engine/data/refresh_scheduler.py \
   --interval-sec 900 \
   --max-symbols 30 \
   --timeframes 1h \
@@ -62,6 +73,7 @@ open "$URL"
 echo ""
 echo "OKX Trading System 已启动。"
 echo "前端: ${URL}"
+echo "Python: ${PYTHON_BIN}"
 echo "Launcher pid: ${launcher_pid:-unknown}"
 echo "Data refresh pid: $(tr -d '[:space:]' < "$CONTROL_DIR/data_refresh.pid" 2>/dev/null || echo unknown)"
 echo ""

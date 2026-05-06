@@ -12,6 +12,7 @@ import json
 import mimetypes
 import os
 import signal
+import site
 import subprocess
 import sys
 import time
@@ -34,6 +35,7 @@ DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structur
 MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
 MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
 DATA_REFRESH_DIR = LOGS_DIR / "data_refresh"
+PYTHON_BIN = os.environ.get("OKX_TRADING_SYSTEM_PYTHON", sys.executable)
 
 from registry import StrategyRegistry
 
@@ -337,13 +339,24 @@ def start_pro_paper(strategy_id: str, environment: str) -> dict[str, Any]:
     return result
 
 
-def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment: str = "personal") -> dict[str, Any]:
+def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment: str | None = None) -> dict[str, Any]:
+    processes = find_c_auto_v2_paper_processes(state_id)
+    if environment is None:
+        live_envs = [str(proc.get("environment") or "") for proc in processes if proc.get("source_mode") == "live"]
+        environment = next((env for env in live_envs if env in ALLOWED_ENVS), None)
+    if environment is None:
+        candidates = sorted(C_AUTO_V2_PAPER_DIR.glob(f"{state_id}_*_scheduler.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for path in candidates:
+            suffix = path.name.removeprefix(f"{state_id}_").removesuffix("_scheduler.json")
+            if suffix in ALLOWED_ENVS:
+                environment = suffix
+                break
+    environment = environment or "personal"
     prefix = f"{state_id}_{environment}"
     state_path = C_AUTO_V2_PAPER_DIR / f"{prefix}.json"
     scheduler_path = C_AUTO_V2_PAPER_DIR / f"{prefix}_scheduler.json"
     state = read_json(state_path) or {}
     scheduler = read_json(scheduler_path) or {}
-    processes = find_c_auto_v2_paper_processes(state_id)
     if not state and not scheduler and not processes:
         return {"available": False, "state_id": state_id, "message": "no c-auto v2 paper state found"}
     out = dict(state)
@@ -426,18 +439,64 @@ def stop_c_auto_v2_paper() -> dict[str, Any]:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stopped: list[int] = []
     stop_files: list[str] = []
+    flattened: list[str] = []
     for proc in find_c_auto_v2_paper_processes():
         state_id = proc.get("state_id") or "fixed1000_conservative"
         environment = proc.get("environment") or "personal"
         stop_path = CONTROL_DIR / f"c_auto_v2_paper_{state_id}_{environment}.stop"
         stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
+        flattened_path = flatten_c_auto_v2_paper_state(state_id, environment, "launcher_stop")
+        if flattened_path:
+            flattened.append(flattened_path)
         try:
             os.kill(int(proc["pid"]), 15)
             stopped.append(int(proc["pid"]))
         except OSError:
             continue
-    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files}
+    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files, "flattened_state_files": flattened}
+
+
+def flatten_c_auto_v2_paper_state(state_id: str, environment: str, reason: str) -> str | None:
+    state_path = C_AUTO_V2_PAPER_DIR / f"{state_id}_{environment}.json"
+    state = read_json(state_path)
+    if not isinstance(state, dict):
+        return None
+    positions = dict(state.get("positions") or {})
+    if not positions:
+        state["positions"] = {}
+        state["open_risk"] = 0.0
+        state["unrealized_pnl"] = 0.0
+    else:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        forced_events = []
+        for symbol, pos in positions.items():
+            forced_events.append(
+                {
+                    "event": "forced_stop_flatten",
+                    "symbol": symbol,
+                    "side": pos.get("side"),
+                    "reason": reason,
+                    "ts": now,
+                    "pnl": 0.0,
+                    "net_return": 0.0,
+                }
+            )
+        ledger_tail = list(state.get("ledger_tail", []))
+        state["ledger_tail"] = (ledger_tail + forced_events)[-40:]
+        state["positions"] = {}
+        state["open_risk"] = 0.0
+        state["unrealized_pnl"] = 0.0
+    realized_nav = float(state.get("realized_nav") or state.get("nav") or state.get("cash") or 1000.0)
+    state["nav"] = realized_nav
+    state["cash"] = realized_nav
+    metrics = dict(state.get("metrics") or {})
+    metrics["current_nav"] = realized_nav
+    state["metrics"] = metrics
+    state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    state["runner_status"] = "stopped_flat"
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n")
+    return str(state_path.relative_to(ROOT_DIR))
 
 
 def iter_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -1205,10 +1264,22 @@ def run_script(args: list[str], prefix: str) -> dict[str, Any]:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     log_path = LOGS_DIR / f"launcher_{prefix}_{stamp}.log"
     log = log_path.open("a", buffering=1)
+    cmd = list(args)
+    if cmd and cmd[0] == "python3":
+        cmd[0] = PYTHON_BIN
     log.write(f"$ {' '.join(args)}\n")
+    env = os.environ.copy()
+    user_site = site.getusersitepackages()
+    pythonpath_parts = [user_site]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        pythonpath_parts.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(pythonpath_parts))
+    env["OKX_TRADING_SYSTEM_PYTHON"] = PYTHON_BIN
     proc = subprocess.Popen(
-        args,
+        cmd,
         cwd=str(ROOT_DIR),
+        env=env,
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
