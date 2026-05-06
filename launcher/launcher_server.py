@@ -33,6 +33,7 @@ TRAINING_HISTORY_DIR = ROOT_DIR / "engine" / "data" / "training_history"
 DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structure"
 MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
 MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
+DATA_REFRESH_DIR = LOGS_DIR / "data_refresh"
 
 from registry import StrategyRegistry
 
@@ -104,6 +105,7 @@ def pid_snapshot() -> dict[str, Any]:
         "strategies": strategies,
         "pro_paper": find_pro_paper_processes(),
         "c_auto_v2_paper": find_c_auto_v2_paper_processes(),
+        "data_refresh": find_data_refresh_processes(),
     }
 
 
@@ -492,6 +494,89 @@ def find_download_processes(run_id: str | None = None) -> list[dict[str, Any]]:
             continue
         matches.append({"pid": pid, "command": command, "run_id": _run_id_from_command(command)})
     return matches
+
+
+def find_data_refresh_processes() -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "engine/data/refresh_scheduler.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        matches.append({"pid": pid, "command": command})
+    return matches
+
+
+def data_refresh_status() -> dict[str, Any]:
+    status_path = DATA_REFRESH_DIR / "status.json"
+    progress_path = DATA_REFRESH_DIR / "progress.jsonl"
+    status = read_json(status_path) or {}
+    processes = find_data_refresh_processes()
+    if not status and not processes:
+        return {"available": False, "running": False, "message": "no data refresh scheduler found"}
+    return {
+        "available": True,
+        "running": bool(processes),
+        "processes": processes,
+        "status": status,
+        "progress_tail": iter_jsonl(progress_path)[-20:],
+        "status_path": str(status_path.relative_to(ROOT_DIR)) if status_path.exists() else None,
+    }
+
+
+def start_data_refresh() -> dict[str, Any]:
+    existing = find_data_refresh_processes()
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": data_refresh_status()}
+    result = run_script(
+        [
+            "python3",
+            "engine/data/refresh_scheduler.py",
+            "--interval-sec",
+            "900",
+            "--max-symbols",
+            "30",
+            "--timeframes",
+            "1h",
+            "--lookback-days",
+            "3",
+            "--sleep-sec",
+            "0.4",
+        ],
+        "data_refresh",
+    )
+    result.update({"ok": True, "service": "data_refresh"})
+    return result
+
+
+def stop_data_refresh() -> dict[str, Any]:
+    stopped: list[int] = []
+    for proc in find_data_refresh_processes():
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped}
 
 
 def _run_id_from_command(command: str) -> str | None:
@@ -1188,6 +1273,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if path == "/api/c-auto-v2-paper":
                 self.send_json(200, {"ok": True, **c_auto_v2_paper_status()})
                 return
+            if path == "/api/data-refresh":
+                self.send_json(200, {"ok": True, **data_refresh_status()})
+                return
             if path == "/api/download-status":
                 self.send_json(200, download_status())
                 return
@@ -1261,6 +1349,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
     def handle_start(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = payload if payload is not None else self.read_json_body()
+        data_refresh = start_data_refresh()
         env = str(payload.get("env", "personal")).strip()
         mode = str(payload.get("mode", "paper")).strip()
         strategy = str(payload.get("strategy", "core_c_auto_h24_regression_v1")).strip()
@@ -1282,14 +1371,18 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
         if option["kind"] == "professional":
             if mode == "paper":
-                return start_pro_paper(strategy, env)
+                result = start_pro_paper(strategy, env)
+                result["data_refresh"] = data_refresh
+                return result
             if not option.get("real_supported"):
                 raise ValueError("该 professional 策略尚未通过 live gate，不能启动真实交易")
             raise ValueError("professional live runner 尚未接入 launcher")
 
         if option["kind"] == "c_auto_v2":
             if mode == "paper":
-                return start_c_auto_v2_paper(env)
+                result = start_c_auto_v2_paper(env)
+                result["data_refresh"] = data_refresh
+                return result
             raise ValueError("C-Auto v2 还没有通过 live gate，不能启动真实交易")
 
         if mode == "paper":
@@ -1310,6 +1403,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "dashboard_port": port,
                 "dashboard_url": f"http://127.0.0.1:{port}/",
                 "yolo_url": f"http://127.0.0.1:{port}/yolo",
+                "data_refresh": data_refresh,
             }
         )
         return result
@@ -1318,7 +1412,8 @@ class LauncherHandler(BaseHTTPRequestHandler):
         result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
         pro = stop_pro_paper()
         c_auto_v2 = stop_c_auto_v2_paper()
-        result.update({"ok": True, "pro_paper": pro, "c_auto_v2_paper": c_auto_v2})
+        data_refresh = stop_data_refresh()
+        result.update({"ok": True, "pro_paper": pro, "c_auto_v2_paper": c_auto_v2, "data_refresh": data_refresh})
         return result
 
     def reset_paper_state(self, payload: dict[str, Any]) -> None:
@@ -1348,6 +1443,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "pids": pids,
             "pro_paper": pro_paper_status(),
             "c_auto_v2_paper": c_auto_v2_paper_status(),
+            "data_refresh": data_refresh_status(),
             "launcher_logs": latest_launcher_logs(),
         }
 

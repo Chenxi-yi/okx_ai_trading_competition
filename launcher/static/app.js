@@ -143,10 +143,16 @@ function renderStatus(data) {
   $('strategyState').textContent = running.length ? `${running.length} running` : 'stopped';
   const pro = data.pro_paper || {};
   const cauto = data.c_auto_v2_paper || {};
+  const dataRefresh = data.data_refresh || {};
+  const dataRefreshStatus = dataRefresh.status || {};
   cAutoPaperAvailable = Boolean(cauto.available);
   const scheduler = pro.scheduler || {};
   $('proPaperState').textContent = pro.running ? `running #${(pro.processes || [])[0]?.pid || '-'}` : (pro.available ? (scheduler.scheduler_status || 'idle') : 'idle');
   $('proPaperCycles').textContent = scheduler.cycles === undefined ? '--' : String(scheduler.cycles);
+  $('dataRefreshState').textContent = dataRefresh.running
+    ? `running #${(dataRefresh.processes || [])[0]?.pid || '-'}`
+    : (dataRefresh.available ? (dataRefreshStatus.scheduler_status || 'idle') : 'idle');
+  $('dataRefreshCycle').textContent = dataRefreshStatus.cycle === undefined ? '--' : String(dataRefreshStatus.cycle);
   if (cAutoPaperAvailable) renderPaperPanel(cauto);
 
   const nav = summaryNav(data.summary);
@@ -167,10 +173,17 @@ function renderStatus(data) {
       <b>alive</b>
     </div>
   `);
-  if (!strategies.length && !proRows.length && !cautoRows.length) {
+  const dataRows = (data.pids?.data_refresh || []).map((item) => `
+    <div class="run-row">
+      <span>data-refresh / pid ${item.pid}</span>
+      <b>alive</b>
+    </div>
+  `);
+  if (!strategies.length && !proRows.length && !cautoRows.length && !dataRows.length) {
     list.innerHTML = '<div class="run-row stale"><span>暂无策略 pid 文件</span><b>idle</b></div>';
   } else {
     list.innerHTML = [
+      ...dataRows,
       ...cautoRows,
       ...proRows,
       ...strategies.map((item) => `
