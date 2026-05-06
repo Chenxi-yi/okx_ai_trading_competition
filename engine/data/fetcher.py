@@ -157,7 +157,7 @@ def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
     if sandbox:
         ex = create_exchange(mode=mode, sandbox=True)
     else:
-        ex = ccxt.okx({"enableRateLimit": True, "options": options})
+        ex = ccxt.okx({"enableRateLimit": True, "timeout": 20_000, "options": options})
     ex.load_markets()
     return ex
 
