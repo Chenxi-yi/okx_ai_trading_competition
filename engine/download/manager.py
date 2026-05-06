@@ -48,6 +48,7 @@ class DownloadStartRequest:
     retry_sleep_sec: float = 8.0
     min_coverage: float = 0.8
     min_rows: int = 100
+    skip_funding: bool = False
     refresh_universe: bool = False
     discover_only: bool = False
 
@@ -71,6 +72,7 @@ class DownloadStartRequest:
             retry_sleep_sec=float(payload.get("retry_sleep_sec", 8.0)),
             min_coverage=float(payload.get("min_coverage", 0.8)),
             min_rows=int(payload.get("min_rows", 100)),
+            skip_funding=bool(payload.get("skip_funding", False)),
             refresh_universe=bool(payload.get("refresh_universe", False)),
             discover_only=bool(payload.get("discover_only", False)),
         )
@@ -236,6 +238,7 @@ class DataDownloadManager:
                 retry_attempts=4,
                 retry_sleep_sec=8.0,
                 min_rows=100,
+                skip_funding=bool(manifest.get("skip_funding", False)),
             )
             cmd = self._training_history_command(request, selected_run_id)
         elif dataset_type == "derivatives_structure":
@@ -415,6 +418,8 @@ class DataDownloadManager:
             cmd.append("--refresh-universe")
         if request.discover_only:
             cmd.append("--discover-only")
+        if request.skip_funding:
+            cmd.append("--skip-funding")
         return cmd
 
     def _derivatives_structure_command(self, request: DownloadStartRequest, run_id: str) -> list[str]:

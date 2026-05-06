@@ -158,6 +158,7 @@ async function startDownload(event) {
     max_symbols: Number(valueOf('maxSymbolsInput') || 250),
     sleep_sec: Number(valueOf('sleepInput') || 0.5),
     min_rows: Number(valueOf('minRowsInput') || 100),
+    skip_funding: $('skipFundingInput').checked,
     refresh_universe: $('refreshUniverseInput').checked,
     discover_only: $('discoverOnlyInput').checked,
   };
