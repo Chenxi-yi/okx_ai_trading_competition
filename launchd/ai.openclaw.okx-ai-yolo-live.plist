@@ -7,17 +7,17 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/scripts/start_yolo_live.sh</string>
+    <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage/scripts/start_yolo_live.sh</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
   <true/>
   <key>WorkingDirectory</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage</string>
   <key>StandardOutPath</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/launchd-yolo-live.out.log</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage/engine/logs/launchd-yolo-live.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/launchd-yolo-live.err.log</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage/engine/logs/launchd-yolo-live.err.log</string>
 </dict>
 </plist>

@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 MODE="${1:-momentum}"
 if [[ "$MODE" != "momentum" && "$MODE" != "orchestrator" ]]; then
   MODE="momentum"

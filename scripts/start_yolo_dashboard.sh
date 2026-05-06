@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 
-ROOT="/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENGINE_DIR="$ROOT/engine"
 CONTROL_DIR="$ENGINE_DIR/control"
 

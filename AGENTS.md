@@ -17,7 +17,7 @@ Goal: maximise ROI. All orders via Agent Trade Kit CLI — never raw ccxt.
 
 ## Common Commands
 
-All Python commands run from project root. Working directory: `/opt/quant_trade_competition`.
+All Python commands run from project root. Working directory: `/Users/yichenxi/Desktop/okx_ai_skill_challenage`.
 
 ```bash
 # Install dependencies
@@ -60,7 +60,7 @@ There are no unit tests or linters configured in this repository.
 ## Architecture
 
 ```
-/opt/quant_trade_competition/
+/Users/yichenxi/Desktop/okx_ai_skill_challenage/
   AGENTS.md                          ← this file
   index.ts                           MCP tool server (TypeScript, exposes engine CLI to Codex)
   engine/                            All Python code lives here

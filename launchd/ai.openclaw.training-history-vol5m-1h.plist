@@ -8,14 +8,14 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>cd /Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage &amp;&amp; /usr/bin/env PYTHONPYCACHEPREFIX=/tmp/okx_pycache python3 scripts/fetch_training_history.py --run-id train_hist_vol5m_1h_20240101_20260424 --min-volume-usd 5000000 --max-symbols 300 --start 2024-01-01 --end 2026-04-24 --timeframes 1h --sleep-sec 4 --retry-attempts 8 --retry-sleep-sec 20 --min-rows 100</string>
+    <string>cd /Users/yichenxi/Desktop/okx_ai_skill_challenage &amp;&amp; /usr/bin/env PYTHONPYCACHEPREFIX=/tmp/okx_pycache python3 scripts/fetch_training_history.py --run-id train_hist_vol5m_1h_20240101_20260424 --min-volume-usd 5000000 --max-symbols 300 --start 2024-01-01 --end 2026-04-24 --timeframes 1h --sleep-sec 4 --retry-attempts 8 --retry-sleep-sec 20 --min-rows 100</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage</string>
   <key>StandardOutPath</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/training_history_vol5m_1h.out</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage/engine/logs/training_history_vol5m_1h.out</string>
   <key>StandardErrorPath</key>
-  <string>/Users/yichenxi/.openclaw/workspace/okx_ai_skill_challenage/engine/logs/training_history_vol5m_1h.err</string>
+  <string>/Users/yichenxi/Desktop/okx_ai_skill_challenage/engine/logs/training_history_vol5m_1h.err</string>
   <key>RunAtLoad</key>
   <false/>
   <key>KeepAlive</key>
