@@ -36,6 +36,7 @@ MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
 MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
 DATA_REFRESH_DIR = LOGS_DIR / "data_refresh"
 PYTHON_BIN = os.environ.get("OKX_TRADING_SYSTEM_PYTHON", sys.executable)
+KILL_SWITCH_PATH = CONTROL_DIR / "kill.switch"
 
 from registry import StrategyRegistry
 
@@ -668,6 +669,200 @@ def stop_data_refresh() -> dict[str, Any]:
         except OSError:
             continue
     return {"ok": True, "stopped_pids": stopped}
+
+
+def activate_kill_switch(reason: str = "launcher stop all") -> dict[str, Any]:
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "active": True,
+        "reason": reason,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    KILL_SWITCH_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    return {"active": True, "path": str(KILL_SWITCH_PATH.relative_to(ROOT_DIR)), "reason": reason}
+
+
+def clear_launcher_kill_switch() -> dict[str, Any]:
+    if not KILL_SWITCH_PATH.exists():
+        return {"active": False, "cleared": False}
+    current = read_json(KILL_SWITCH_PATH) or {}
+    reason = str(current.get("reason") or "")
+    if reason != "launcher pause all":
+        return {"active": True, "cleared": False, "reason": reason}
+    KILL_SWITCH_PATH.unlink()
+    return {"active": False, "cleared": True, "reason": reason}
+
+
+def kill_switch_status() -> dict[str, Any]:
+    if not KILL_SWITCH_PATH.exists():
+        return {"active": False}
+    current = read_json(KILL_SWITCH_PATH) or {}
+    return {
+        "active": True,
+        "path": str(KILL_SWITCH_PATH.relative_to(ROOT_DIR)),
+        "reason": str(current.get("reason") or KILL_SWITCH_PATH.read_text().strip()),
+        "created_at": current.get("created_at"),
+    }
+
+
+def cancel_all_open_swap_orders() -> dict[str, Any]:
+    profiles = _okx_cancel_profiles()
+    results = [_cancel_profile_open_swap_orders(profile) for profile in profiles]
+    return {
+        "ok": True,
+        "profiles": results,
+        "orders_found": sum(int(item.get("orders_found", 0) or 0) for item in results),
+        "orders_cancelled": sum(int(item.get("orders_cancelled", 0) or 0) for item in results),
+        "orders_failed": sum(int(item.get("orders_failed", 0) or 0) for item in results),
+    }
+
+
+def _okx_cancel_profiles() -> list[str]:
+    configured: list[str] = []
+    try:
+        from config.settings import get_okx_profiles
+
+        profiles = get_okx_profiles()
+        configured = [str(name) for name in profiles.keys()]
+    except Exception:
+        configured = []
+
+    preferred = ["demo", "live", "personal"]
+    merged = preferred + configured
+    out: list[str] = []
+    for profile in merged:
+        if profile and profile not in out:
+            out.append(profile)
+    return out
+
+
+def _cancel_profile_open_swap_orders(profile: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "profile": profile,
+        "orders_found": 0,
+        "orders_cancelled": 0,
+        "orders_failed": 0,
+        "errors": [],
+        "cancelled": [],
+    }
+    orders = _list_open_swap_orders(profile)
+    if orders is None:
+        result["errors"].append("unable to list open orders")
+        return result
+    result["orders_found"] = len(orders)
+    for order in orders:
+        inst_id = str(order.get("instId") or order.get("inst_id") or "").strip()
+        ord_id = str(order.get("ordId") or order.get("ord_id") or order.get("orderId") or "").strip()
+        if not inst_id or not ord_id:
+            result["orders_failed"] += 1
+            result["errors"].append(f"missing instId/ordId in order: {order}")
+            continue
+        cancel = _run_okx_json(["okx", "--profile", profile, "swap", "cancel", inst_id, "--ordId", ord_id])
+        if cancel["returncode"] == 0:
+            result["orders_cancelled"] += 1
+            result["cancelled"].append({"instId": inst_id, "ordId": ord_id})
+        else:
+            result["orders_failed"] += 1
+            result["errors"].append(cancel["message"])
+    return result
+
+
+def _list_open_swap_orders(profile: str) -> list[dict[str, Any]] | None:
+    direct = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "orders", "--status", "open"])
+    if direct["returncode"] == 0:
+        return _as_order_list(direct["data"])
+
+    orders: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    had_success = False
+    candidates = _candidate_swap_inst_ids(profile)[:20]
+    for inst_id in candidates:
+        resp = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
+        if resp["returncode"] != 0:
+            continue
+        had_success = True
+        for order in _as_order_list(resp["data"]):
+            ord_id = str(order.get("ordId") or order.get("ord_id") or order.get("orderId") or "")
+            key = (str(order.get("instId") or inst_id), ord_id)
+            if ord_id and key not in seen:
+                seen.add(key)
+                if not order.get("instId"):
+                    order["instId"] = inst_id
+                orders.append(order)
+    if orders:
+        return orders
+    return [] if had_success else None
+
+
+def _candidate_swap_inst_ids(profile: str) -> list[str]:
+    inst_ids: list[str] = []
+    positions = _run_okx_json(["okx", "--profile", profile, "--json", "account", "positions"])
+    if positions["returncode"] == 0:
+        for item in _as_order_list(positions["data"]):
+            inst_id = str(item.get("instId") or item.get("inst_id") or "").strip()
+            if inst_id:
+                inst_ids.append(inst_id)
+
+    try:
+        catalog = read_json(ENGINE_DIR / "data" / "catalog.json") or {}
+        for dataset in catalog.get("datasets", []):
+            for symbol in dataset.get("symbols", []):
+                inst_ids.append(_symbol_to_swap_inst_id(str(symbol)))
+    except Exception:
+        pass
+
+    cache_dir = ENGINE_DIR / "data" / "cache"
+    if cache_dir.exists():
+        for path in cache_dir.glob("*_USDT_futures_*"):
+            parts = path.name.split("_USDT_futures_", 1)
+            if parts and parts[0]:
+                inst_ids.append(f"{parts[0]}-USDT-SWAP")
+
+    out: list[str] = []
+    for inst_id in inst_ids:
+        clean = inst_id.strip()
+        if clean and clean not in out:
+            out.append(clean)
+    return out
+
+
+def _symbol_to_swap_inst_id(symbol: str) -> str:
+    if symbol.endswith("-USDT-SWAP"):
+        return symbol
+    base = symbol.split("/", 1)[0].replace("_", "-").strip()
+    return f"{base}-USDT-SWAP"
+
+
+def _run_okx_json(cmd: list[str]) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(cmd, cwd=str(ROOT_DIR), capture_output=True, text=True, timeout=20)
+    except Exception as exc:
+        return {"returncode": 1, "data": None, "message": f"{cmd[:4]} failed: {exc}"}
+    stdout = proc.stdout.strip()
+    stderr = proc.stderr.strip()
+    data = None
+    if stdout:
+        try:
+            data = json.loads(stdout)
+        except Exception:
+            data = None
+    return {
+        "returncode": proc.returncode,
+        "data": data,
+        "message": (stderr or stdout or f"exit={proc.returncode}")[:500],
+    }
+
+
+def _as_order_list(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("data", "orders", "result"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return [data]
+    return []
 
 
 def _run_id_from_command(command: str) -> str | None:
@@ -1471,11 +1666,13 @@ class LauncherHandler(BaseHTTPRequestHandler):
             raise ValueError("真实交易模式需要明确确认")
         if env == "competition" and mode == "real" and not confirm_competition:
             raise ValueError("比赛真实交易环境需要明确确认")
+        kill_switch = clear_launcher_kill_switch()
 
         if option["kind"] == "professional":
             if mode == "paper":
                 result = start_pro_paper(strategy, env)
                 result["data_refresh"] = data_refresh
+                result["kill_switch"] = kill_switch
                 return result
             if not option.get("real_supported"):
                 raise ValueError("该 professional 策略尚未通过 live gate，不能启动真实交易")
@@ -1485,6 +1682,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if mode == "paper":
                 result = start_c_auto_v2_paper(env)
                 result["data_refresh"] = data_refresh
+                result["kill_switch"] = kill_switch
                 return result
             raise ValueError("C-Auto v2 还没有通过 live gate，不能启动真实交易")
 
@@ -1507,16 +1705,28 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "dashboard_url": f"http://127.0.0.1:{port}/",
                 "yolo_url": f"http://127.0.0.1:{port}/yolo",
                 "data_refresh": data_refresh,
+                "kill_switch": kill_switch,
             }
         )
         return result
 
     def handle_stop(self) -> dict[str, Any]:
+        kill_switch = activate_kill_switch("launcher pause all")
         result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
         pro = stop_pro_paper()
         c_auto_v2 = stop_c_auto_v2_paper()
         data_refresh = stop_data_refresh()
-        result.update({"ok": True, "pro_paper": pro, "c_auto_v2_paper": c_auto_v2, "data_refresh": data_refresh})
+        order_cancel = cancel_all_open_swap_orders()
+        result.update(
+            {
+                "ok": True,
+                "kill_switch": kill_switch,
+                "order_cancel": order_cancel,
+                "pro_paper": pro,
+                "c_auto_v2_paper": c_auto_v2,
+                "data_refresh": data_refresh,
+            }
+        )
         return result
 
     def reset_paper_state(self, payload: dict[str, Any]) -> None:
@@ -1546,6 +1756,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "pro_paper": pro_paper_status(),
             "c_auto_v2_paper": c_auto_v2_paper_status(),
             "data_refresh": data_refresh_status(),
+            "kill_switch": kill_switch_status(),
             "launcher_logs": latest_launcher_logs(),
         }
 

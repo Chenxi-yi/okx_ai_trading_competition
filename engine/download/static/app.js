@@ -40,7 +40,8 @@ function renderDownloadStatus(data) {
 
   state.selectedRunId = data.run_id;
   $('downloadRunId').textContent = data.run_id;
-  $('downloadState').textContent = data.running ? 'running' : (data.remaining === 0 ? 'completed' : 'paused');
+  const typeLabel = data.dataset_type ? `${data.dataset_type} / ` : '';
+  $('downloadState').textContent = `${typeLabel}${data.running ? 'running' : (data.remaining === 0 ? 'completed' : 'paused')}`;
   $('downloadTotal').textContent = String(data.total_jobs ?? '--');
   $('downloadDone').textContent = String(data.downloaded ?? '--');
   $('downloadFailed').textContent = String(data.failed_latest ?? '--');
@@ -143,13 +144,16 @@ async function startDownload(event) {
   event.preventDefault();
   $('downloadState').textContent = 'starting';
   const payload = {
-    dataset_type: 'training_history',
+    dataset_type: valueOf('datasetTypeInput') || 'training_history',
     run_id: valueOf('runIdInput'),
     symbols: valueOf('symbolsInput'),
     symbols_manifest: valueOf('manifestInput'),
     start: valueOf('startInput') || '2024-01-01',
     end: valueOf('endInput'),
     timeframes: valueOf('timeframesInput') || '1h',
+    timeframe: valueOf('timeframeInput') || '5m',
+    kinds: valueOf('kindsInput') || 'funding,open_interest,long_short',
+    limit: Number(valueOf('limitInput') || 100),
     min_volume_usd: Number(valueOf('minVolumeInput') || 30000000),
     max_symbols: Number(valueOf('maxSymbolsInput') || 250),
     sleep_sec: Number(valueOf('sleepInput') || 0.5),

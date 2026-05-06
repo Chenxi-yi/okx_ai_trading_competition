@@ -162,7 +162,8 @@ def main() -> int:
                 if not df.empty:
                     symbol_dir = out_dir / _safe_symbol(symbol)
                     symbol_dir.mkdir(parents=True, exist_ok=True)
-                    artifact = _write_frame(df, symbol_dir / f"{kind}_{args.timeframe}.parquet", out_dir)
+                    suffix = "snapshot" if kind in {"instrument", "ticker", "orderbook", "trades"} else args.timeframe
+                    artifact = _write_frame(df, symbol_dir / f"{kind}_{suffix}.parquet", out_dir)
                 record.update(
                     {
                         "status": "ok",

@@ -40,6 +40,9 @@ class DownloadStartRequest:
     start: str = "2024-01-01"
     end: str | None = None
     timeframes: str = "1h"
+    timeframe: str = "5m"
+    kinds: str = "funding,open_interest,long_short"
+    limit: int = 100
     sleep_sec: float = 0.5
     retry_attempts: int = 4
     retry_sleep_sec: float = 8.0
@@ -60,6 +63,9 @@ class DownloadStartRequest:
             start=str(payload.get("start") or "2024-01-01"),
             end=_clean_optional_str(payload.get("end")),
             timeframes=str(payload.get("timeframes") or "1h"),
+            timeframe=str(payload.get("timeframe") or payload.get("timeframes") or "5m"),
+            kinds=str(payload.get("kinds") or "funding,open_interest,long_short"),
+            limit=int(payload.get("limit", 100)),
             sleep_sec=float(payload.get("sleep_sec", 0.5)),
             retry_attempts=int(payload.get("retry_attempts", 4)),
             retry_sleep_sec=float(payload.get("retry_sleep_sec", 8.0)),
@@ -183,13 +189,17 @@ class DataDownloadManager:
         return {"ok": True, "runs": runs}
 
     def start(self, request: DownloadStartRequest) -> dict[str, Any]:
-        if request.dataset_type != "training_history":
-            raise ValueError("only training_history downloads are supported by this module for now")
+        if request.dataset_type not in {"training_history", "derivatives_structure"}:
+            raise ValueError("dataset_type must be training_history or derivatives_structure")
         run_id = request.normalized_run_id()
         existing = self.find_processes(run_id)
         if existing:
             return {"ok": True, "already_running": True, "run_id": run_id, "processes": existing, "status": self.status(run_id)}
-        cmd = self._training_history_command(request, run_id)
+        cmd = (
+            self._training_history_command(request, run_id)
+            if request.dataset_type == "training_history"
+            else self._derivatives_structure_command(request, run_id)
+        )
         process = self._spawn(cmd, run_id)
         return {"ok": True, "run_id": run_id, "pid": process.pid, "command": cmd, "status": self.status(run_id)}
 
@@ -211,23 +221,41 @@ class DataDownloadManager:
         if not run_dir:
             raise ValueError(f"download manifest not found for run_id={selected_run_id}")
         manifest = read_json(run_dir / "manifest.json") or {}
-        if self._dataset_type(manifest, run_dir) != "training_history":
-            raise ValueError("resume currently supports training_history runs only")
-        request = DownloadStartRequest(
-            dataset_type="training_history",
-            run_id=selected_run_id,
-            symbols_manifest=manifest.get("source_manifest"),
-            min_volume_usd=float(manifest.get("min_volume_usd", 30_000_000.0)),
-            max_symbols=int(manifest.get("max_symbols", len(manifest.get("symbols") or []) or 250)),
-            start=str(manifest.get("start") or "2024-01-01"),
-            end=str(manifest.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")),
-            timeframes=",".join(manifest.get("timeframes") or ["1h"]),
-            sleep_sec=0.5,
-            retry_attempts=4,
-            retry_sleep_sec=8.0,
-            min_rows=100,
-        )
-        cmd = self._training_history_command(request, selected_run_id)
+        dataset_type = self._dataset_type(manifest, run_dir)
+        if dataset_type == "training_history":
+            request = DownloadStartRequest(
+                dataset_type="training_history",
+                run_id=selected_run_id,
+                symbols_manifest=manifest.get("source_manifest"),
+                min_volume_usd=float(manifest.get("min_volume_usd", 30_000_000.0)),
+                max_symbols=int(manifest.get("max_symbols", len(manifest.get("symbols") or []) or 250)),
+                start=str(manifest.get("start") or "2024-01-01"),
+                end=str(manifest.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                timeframes=",".join(manifest.get("timeframes") or ["1h"]),
+                sleep_sec=0.5,
+                retry_attempts=4,
+                retry_sleep_sec=8.0,
+                min_rows=100,
+            )
+            cmd = self._training_history_command(request, selected_run_id)
+        elif dataset_type == "derivatives_structure":
+            request = DownloadStartRequest(
+                dataset_type="derivatives_structure",
+                run_id=selected_run_id,
+                symbols_manifest=manifest.get("source_manifest"),
+                symbols=",".join(manifest.get("symbols") or []),
+                start=str(manifest.get("start") or "2024-01-01"),
+                end=str(manifest.get("end") or datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                timeframe=str(manifest.get("timeframe") or "5m"),
+                kinds=",".join(manifest.get("kinds") or ["funding", "open_interest", "long_short"]),
+                limit=int(manifest.get("limit") or 100),
+                sleep_sec=1.0,
+                retry_attempts=4,
+                retry_sleep_sec=8.0,
+            )
+            cmd = self._derivatives_structure_command(request, selected_run_id)
+        else:
+            raise ValueError(f"resume does not support dataset_type={dataset_type}")
         process = self._spawn(cmd, selected_run_id)
         return {"ok": True, "run_id": selected_run_id, "pid": process.pid, "command": cmd, "status": self.status(selected_run_id)}
 
@@ -385,6 +413,42 @@ class DataDownloadManager:
             cmd.extend(["--min-volume-usd", str(request.min_volume_usd), "--max-symbols", str(request.max_symbols)])
         if request.refresh_universe:
             cmd.append("--refresh-universe")
+        if request.discover_only:
+            cmd.append("--discover-only")
+        return cmd
+
+    def _derivatives_structure_command(self, request: DownloadStartRequest, run_id: str) -> list[str]:
+        end = request.end or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        cmd = [
+            "python3",
+            "scripts/fetch_derivatives_structure.py",
+            "--run-id",
+            run_id,
+            "--start",
+            request.start,
+            "--end",
+            end,
+            "--timeframe",
+            request.timeframe,
+            "--kinds",
+            request.kinds,
+            "--limit",
+            str(request.limit),
+            "--sleep-sec",
+            str(request.sleep_sec),
+            "--retry-attempts",
+            str(request.retry_attempts),
+            "--retry-sleep-sec",
+            str(request.retry_sleep_sec),
+        ]
+        if request.symbols:
+            cmd.extend(["--symbols", request.symbols])
+        elif request.symbols_manifest:
+            cmd.extend(["--symbols-manifest", self._resolve_path_arg(request.symbols_manifest)])
+        else:
+            raise ValueError("derivatives_structure downloads require symbols or symbols_manifest")
+        if request.refresh_universe:
+            cmd.append("--refresh-manifest")
         if request.discover_only:
             cmd.append("--discover-only")
         return cmd

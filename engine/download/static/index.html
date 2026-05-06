@@ -56,12 +56,21 @@
       <section class="config-panel">
         <h2>启动下载</h2>
         <form id="startForm">
+          <label>数据类型
+            <select id="datasetTypeInput" name="dataset_type">
+              <option value="training_history">training_history / OHLCV</option>
+              <option value="derivatives_structure">derivatives_structure / 衍生品与快照</option>
+            </select>
+          </label>
           <label>run_id <input id="runIdInput" name="run_id" placeholder="留空自动生成"></label>
           <label>symbols <input id="symbolsInput" name="symbols" placeholder="BTC/USDT:USDT,ETH/USDT:USDT"></label>
           <label>symbols_manifest <input id="manifestInput" name="symbols_manifest" placeholder="engine/data/training_history/.../manifest.json"></label>
           <label>开始日期 <input id="startInput" name="start" value="2024-01-01"></label>
           <label>结束日期 <input id="endInput" name="end" placeholder="留空使用今天"></label>
           <label>周期 <input id="timeframesInput" name="timeframes" value="1h"></label>
+          <label>衍生品周期 <input id="timeframeInput" name="timeframe" value="5m"></label>
+          <label>衍生品/快照类型 <input id="kindsInput" name="kinds" value="funding,open_interest,long_short"></label>
+          <label>limit <input id="limitInput" name="limit" type="number" value="100"></label>
           <label>最小成交额USD <input id="minVolumeInput" name="min_volume_usd" type="number" value="30000000"></label>
           <label>最多币种 <input id="maxSymbolsInput" name="max_symbols" type="number" value="250"></label>
           <label>请求间隔秒 <input id="sleepInput" name="sleep_sec" type="number" step="0.1" value="0.5"></label>

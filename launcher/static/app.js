@@ -133,7 +133,8 @@ function summaryPnl(summary) {
 
 function renderStatus(data) {
   $('rootPath').textContent = data.root || '';
-  $('launcherStatus').textContent = 'ready';
+  const killSwitch = data.kill_switch || {};
+  $('launcherStatus').textContent = killSwitch.active ? `paused: ${killSwitch.reason || 'kill switch'}` : 'ready';
   $('updatedAt').textContent = new Date().toLocaleTimeString();
 
   const dashboard = data.pids?.dashboard || {};
@@ -601,7 +602,8 @@ async function startSystem() {
 async function stopSystem() {
   $('lastAction').textContent = '暂停中...';
   const result = await api('/api/stop', { method: 'POST', body: '{}' });
-  $('lastAction').textContent = `暂停请求已提交 pid=${result.pid}`;
+  const cancel = result.order_cancel || {};
+  $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
   setTimeout(refreshStatus, 1200);
 }
 

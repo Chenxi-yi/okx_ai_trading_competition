@@ -1,0 +1,1886 @@
+{
+  "capped_out": [
+    {
+      "base": "AERO",
+      "instId": "AERO-USDT-SWAP",
+      "last": 0.463,
+      "quote_volume_usd_24h": 2018258.6700000002,
+      "symbol": "AERO/USDT",
+      "volCcy24h": 4359090.0
+    }
+  ],
+  "capped_out_count": 1,
+  "count": 181,
+  "created_at": "2026-05-06T16:14:37.078253+00:00",
+  "current_matches_count": 182,
+  "download_count": 181,
+  "end": "2026-05-07",
+  "excluded": [
+    {
+      "base": "XAG",
+      "instId": "XAG-USDT-SWAP",
+      "quote_volume_usd_24h": 76832852.7587
+    },
+    {
+      "base": "XAU",
+      "instId": "XAU-USDT-SWAP",
+      "quote_volume_usd_24h": 319917625.75299996
+    }
+  ],
+  "excluded_count": 2,
+  "inst_ids": [
+    "ETH-USDT-SWAP",
+    "BTC-USDT-SWAP",
+    "LAB-USDT-SWAP",
+    "ZEC-USDT-SWAP",
+    "DOGE-USDT-SWAP",
+    "SOL-USDT-SWAP",
+    "TON-USDT-SWAP",
+    "CL-USDT-SWAP",
+    "PEPE-USDT-SWAP",
+    "FIL-USDT-SWAP",
+    "XRP-USDT-SWAP",
+    "RAVE-USDT-SWAP",
+    "HYPE-USDT-SWAP",
+    "BSB-USDT-SWAP",
+    "DASH-USDT-SWAP",
+    "WIF-USDT-SWAP",
+    "BZ-USDT-SWAP",
+    "TAO-USDT-SWAP",
+    "SUI-USDT-SWAP",
+    "ADA-USDT-SWAP",
+    "BILL-USDT-SWAP",
+    "BNB-USDT-SWAP",
+    "BCH-USDT-SWAP",
+    "ICP-USDT-SWAP",
+    "PENGU-USDT-SWAP",
+    "NOT-USDT-SWAP",
+    "NEAR-USDT-SWAP",
+    "LINK-USDT-SWAP",
+    "UB-USDT-SWAP",
+    "AI-USDT-SWAP",
+    "PUMP-USDT-SWAP",
+    "TRUMP-USDT-SWAP",
+    "ORDI-USDT-SWAP",
+    "LTC-USDT-SWAP",
+    "WLD-USDT-SWAP",
+    "JTO-USDT-SWAP",
+    "SNDK-USDT-SWAP",
+    "AVAX-USDT-SWAP",
+    "XPL-USDT-SWAP",
+    "ONDO-USDT-SWAP",
+    "AR-USDT-SWAP",
+    "WLFI-USDT-SWAP",
+    "BASED-USDT-SWAP",
+    "STX-USDT-SWAP",
+    "AAVE-USDT-SWAP",
+    "ENA-USDT-SWAP",
+    "GALA-USDT-SWAP",
+    "INTC-USDT-SWAP",
+    "SHIB-USDT-SWAP",
+    "CFX-USDT-SWAP",
+    "UNI-USDT-SWAP",
+    "BIO-USDT-SWAP",
+    "DOT-USDT-SWAP",
+    "VIRTUAL-USDT-SWAP",
+    "APT-USDT-SWAP",
+    "FARTCOIN-USDT-SWAP",
+    "CRCL-USDT-SWAP",
+    "OKB-USDT-SWAP",
+    "MON-USDT-SWAP",
+    "AMD-USDT-SWAP",
+    "ZEN-USDT-SWAP",
+    "CHIP-USDT-SWAP",
+    "OP-USDT-SWAP",
+    "ASTER-USDT-SWAP",
+    "PIPPIN-USDT-SWAP",
+    "MU-USDT-SWAP",
+    "MEGA-USDT-SWAP",
+    "ETC-USDT-SWAP",
+    "IP-USDT-SWAP",
+    "GIGGLE-USDT-SWAP",
+    "CHZ-USDT-SWAP",
+    "LUNA-USDT-SWAP",
+    "RIVER-USDT-SWAP",
+    "PENDLE-USDT-SWAP",
+    "EIGEN-USDT-SWAP",
+    "PI-USDT-SWAP",
+    "CRV-USDT-SWAP",
+    "ARB-USDT-SWAP",
+    "NVDA-USDT-SWAP",
+    "STRK-USDT-SWAP",
+    "PROS-USDT-SWAP",
+    "HBAR-USDT-SWAP",
+    "BONK-USDT-SWAP",
+    "MERL-USDT-SWAP",
+    "XLM-USDT-SWAP",
+    "APE-USDT-SWAP",
+    "TRX-USDT-SWAP",
+    "EDGE-USDT-SWAP",
+    "BABY-USDT-SWAP",
+    "MOODENG-USDT-SWAP",
+    "ATOM-USDT-SWAP",
+    "PNUT-USDT-SWAP",
+    "ONT-USDT-SWAP",
+    "BLEND-USDT-SWAP",
+    "PIEVERSE-USDT-SWAP",
+    "MSTR-USDT-SWAP",
+    "RENDER-USDT-SWAP",
+    "TRIA-USDT-SWAP",
+    "ARKM-USDT-SWAP",
+    "HMSTR-USDT-SWAP",
+    "OPG-USDT-SWAP",
+    "ALGO-USDT-SWAP",
+    "LDO-USDT-SWAP",
+    "RESOLV-USDT-SWAP",
+    "LIT-USDT-SWAP",
+    "TSLA-USDT-SWAP",
+    "ZBT-USDT-SWAP",
+    "JUP-USDT-SWAP",
+    "ZIL-USDT-SWAP",
+    "ZRO-USDT-SWAP",
+    "ETHFI-USDT-SWAP",
+    "AXS-USDT-SWAP",
+    "OFC-USDT-SWAP",
+    "TIA-USDT-SWAP",
+    "KAT-USDT-SWAP",
+    "LPT-USDT-SWAP",
+    "NEIRO-USDT-SWAP",
+    "AIXBT-USDT-SWAP",
+    "GRASS-USDT-SWAP",
+    "PEOPLE-USDT-SWAP",
+    "H-USDT-SWAP",
+    "ZK-USDT-SWAP",
+    "BEAT-USDT-SWAP",
+    "SPACE-USDT-SWAP",
+    "DYDX-USDT-SWAP",
+    "NIGHT-USDT-SWAP",
+    "MORPHO-USDT-SWAP",
+    "CORE-USDT-SWAP",
+    "OL-USDT-SWAP",
+    "TRB-USDT-SWAP",
+    "BLUR-USDT-SWAP",
+    "ENSO-USDT-SWAP",
+    "BOME-USDT-SWAP",
+    "PARTI-USDT-SWAP",
+    "SAND-USDT-SWAP",
+    "GOOGL-USDT-SWAP",
+    "INJ-USDT-SWAP",
+    "TURBO-USDT-SWAP",
+    "POL-USDT-SWAP",
+    "QQQ-USDT-SWAP",
+    "FOGO-USDT-SWAP",
+    "ATH-USDT-SWAP",
+    "ACT-USDT-SWAP",
+    "POPCAT-USDT-SWAP",
+    "ENJ-USDT-SWAP",
+    "ARM-USDT-SWAP",
+    "SPY-USDT-SWAP",
+    "KAITO-USDT-SWAP",
+    "BERA-USDT-SWAP",
+    "EWY-USDT-SWAP",
+    "SPK-USDT-SWAP",
+    "KITE-USDT-SWAP",
+    "ORCL-USDT-SWAP",
+    "OPN-USDT-SWAP",
+    "SAHARA-USDT-SWAP",
+    "LINEA-USDT-SWAP",
+    "IOTA-USDT-SWAP",
+    "RLS-USDT-SWAP",
+    "USELESS-USDT-SWAP",
+    "SOON-USDT-SWAP",
+    "COIN-USDT-SWAP",
+    "2Z-USDT-SWAP",
+    "YGG-USDT-SWAP",
+    "HOOD-USDT-SWAP",
+    "MEME-USDT-SWAP",
+    "ROBO-USDT-SWAP",
+    "WET-USDT-SWAP",
+    "W-USDT-SWAP",
+    "EGLD-USDT-SWAP",
+    "TSM-USDT-SWAP",
+    "ACU-USDT-SWAP",
+    "PYTH-USDT-SWAP",
+    "ENS-USDT-SWAP",
+    "XPT-USDT-SWAP",
+    "CRO-USDT-SWAP",
+    "SPX-USDT-SWAP",
+    "SEI-USDT-SWAP",
+    "PLTR-USDT-SWAP",
+    "FLOKI-USDT-SWAP",
+    "AMZN-USDT-SWAP",
+    "NG-USDT-SWAP"
+  ],
+  "planned_downloads": [
+    {
+      "dataset_type": "training_history",
+      "run_id": "rebuild_181_ohlcv_5m_15m_1h_4h_1d_20230101_20260507",
+      "timeframes": [
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "dataset_type": "derivatives_structure",
+      "kinds": [
+        "funding",
+        "open_interest",
+        "long_short"
+      ],
+      "run_id": "rebuild_181_derivatives_5m_20230101_20260507",
+      "timeframe": "5m"
+    },
+    {
+      "dataset_type": "derivatives_structure",
+      "kinds": [
+        "instrument",
+        "ticker",
+        "orderbook",
+        "trades"
+      ],
+      "run_id": "rebuild_181_market_snapshot_20260507",
+      "timeframe": "5m"
+    }
+  ],
+  "run_id": "okx_usdt_swap_ge2m_20260507",
+  "selection_rule": "USDT-SWAP and volCcy24h * last >= 2,000,000 USD; project stablecoin/exclude list removed; capped to top 181 by 24h quote volume for this run",
+  "source": "OKX /api/v5/market/tickers?instType=SWAP",
+  "start": "2023-01-01",
+  "symbols": [
+    "ETH/USDT",
+    "BTC/USDT",
+    "LAB/USDT",
+    "ZEC/USDT",
+    "DOGE/USDT",
+    "SOL/USDT",
+    "TON/USDT",
+    "CL/USDT",
+    "PEPE/USDT",
+    "FIL/USDT",
+    "XRP/USDT",
+    "RAVE/USDT",
+    "HYPE/USDT",
+    "BSB/USDT",
+    "DASH/USDT",
+    "WIF/USDT",
+    "BZ/USDT",
+    "TAO/USDT",
+    "SUI/USDT",
+    "ADA/USDT",
+    "BILL/USDT",
+    "BNB/USDT",
+    "BCH/USDT",
+    "ICP/USDT",
+    "PENGU/USDT",
+    "NOT/USDT",
+    "NEAR/USDT",
+    "LINK/USDT",
+    "UB/USDT",
+    "AI/USDT",
+    "PUMP/USDT",
+    "TRUMP/USDT",
+    "ORDI/USDT",
+    "LTC/USDT",
+    "WLD/USDT",
+    "JTO/USDT",
+    "SNDK/USDT",
+    "AVAX/USDT",
+    "XPL/USDT",
+    "ONDO/USDT",
+    "AR/USDT",
+    "WLFI/USDT",
+    "BASED/USDT",
+    "STX/USDT",
+    "AAVE/USDT",
+    "ENA/USDT",
+    "GALA/USDT",
+    "INTC/USDT",
+    "SHIB/USDT",
+    "CFX/USDT",
+    "UNI/USDT",
+    "BIO/USDT",
+    "DOT/USDT",
+    "VIRTUAL/USDT",
+    "APT/USDT",
+    "FARTCOIN/USDT",
+    "CRCL/USDT",
+    "OKB/USDT",
+    "MON/USDT",
+    "AMD/USDT",
+    "ZEN/USDT",
+    "CHIP/USDT",
+    "OP/USDT",
+    "ASTER/USDT",
+    "PIPPIN/USDT",
+    "MU/USDT",
+    "MEGA/USDT",
+    "ETC/USDT",
+    "IP/USDT",
+    "GIGGLE/USDT",
+    "CHZ/USDT",
+    "LUNA/USDT",
+    "RIVER/USDT",
+    "PENDLE/USDT",
+    "EIGEN/USDT",
+    "PI/USDT",
+    "CRV/USDT",
+    "ARB/USDT",
+    "NVDA/USDT",
+    "STRK/USDT",
+    "PROS/USDT",
+    "HBAR/USDT",
+    "BONK/USDT",
+    "MERL/USDT",
+    "XLM/USDT",
+    "APE/USDT",
+    "TRX/USDT",
+    "EDGE/USDT",
+    "BABY/USDT",
+    "MOODENG/USDT",
+    "ATOM/USDT",
+    "PNUT/USDT",
+    "ONT/USDT",
+    "BLEND/USDT",
+    "PIEVERSE/USDT",
+    "MSTR/USDT",
+    "RENDER/USDT",
+    "TRIA/USDT",
+    "ARKM/USDT",
+    "HMSTR/USDT",
+    "OPG/USDT",
+    "ALGO/USDT",
+    "LDO/USDT",
+    "RESOLV/USDT",
+    "LIT/USDT",
+    "TSLA/USDT",
+    "ZBT/USDT",
+    "JUP/USDT",
+    "ZIL/USDT",
+    "ZRO/USDT",
+    "ETHFI/USDT",
+    "AXS/USDT",
+    "OFC/USDT",
+    "TIA/USDT",
+    "KAT/USDT",
+    "LPT/USDT",
+    "NEIRO/USDT",
+    "AIXBT/USDT",
+    "GRASS/USDT",
+    "PEOPLE/USDT",
+    "H/USDT",
+    "ZK/USDT",
+    "BEAT/USDT",
+    "SPACE/USDT",
+    "DYDX/USDT",
+    "NIGHT/USDT",
+    "MORPHO/USDT",
+    "CORE/USDT",
+    "OL/USDT",
+    "TRB/USDT",
+    "BLUR/USDT",
+    "ENSO/USDT",
+    "BOME/USDT",
+    "PARTI/USDT",
+    "SAND/USDT",
+    "GOOGL/USDT",
+    "INJ/USDT",
+    "TURBO/USDT",
+    "POL/USDT",
+    "QQQ/USDT",
+    "FOGO/USDT",
+    "ATH/USDT",
+    "ACT/USDT",
+    "POPCAT/USDT",
+    "ENJ/USDT",
+    "ARM/USDT",
+    "SPY/USDT",
+    "KAITO/USDT",
+    "BERA/USDT",
+    "EWY/USDT",
+    "SPK/USDT",
+    "KITE/USDT",
+    "ORCL/USDT",
+    "OPN/USDT",
+    "SAHARA/USDT",
+    "LINEA/USDT",
+    "IOTA/USDT",
+    "RLS/USDT",
+    "USELESS/USDT",
+    "SOON/USDT",
+    "COIN/USDT",
+    "2Z/USDT",
+    "YGG/USDT",
+    "HOOD/USDT",
+    "MEME/USDT",
+    "ROBO/USDT",
+    "WET/USDT",
+    "W/USDT",
+    "EGLD/USDT",
+    "TSM/USDT",
+    "ACU/USDT",
+    "PYTH/USDT",
+    "ENS/USDT",
+    "XPT/USDT",
+    "CRO/USDT",
+    "SPX/USDT",
+    "SEI/USDT",
+    "PLTR/USDT",
+    "FLOKI/USDT",
+    "AMZN/USDT",
+    "NG/USDT"
+  ],
+  "threshold_usd_24h": 2000000,
+  "tickers": [
+    {
+      "base": "ETH",
+      "instId": "ETH-USDT-SWAP",
+      "last": 2363.3,
+      "quote_volume_usd_24h": 10077835234.767801,
+      "symbol": "ETH/USDT",
+      "volCcy24h": 4264306.366
+    },
+    {
+      "base": "BTC",
+      "instId": "BTC-USDT-SWAP",
+      "last": 81731.2,
+      "quote_volume_usd_24h": 8459234033.462079,
+      "symbol": "BTC/USDT",
+      "volCcy24h": 103500.6709
+    },
+    {
+      "base": "LAB",
+      "instId": "LAB-USDT-SWAP",
+      "last": 4.1354,
+      "quote_volume_usd_24h": 1489975356.704,
+      "symbol": "LAB/USDT",
+      "volCcy24h": 360297760.0
+    },
+    {
+      "base": "ZEC",
+      "instId": "ZEC-USDT-SWAP",
+      "last": 583.19,
+      "quote_volume_usd_24h": 1253100918.6943002,
+      "symbol": "ZEC/USDT",
+      "volCcy24h": 2148700.97
+    },
+    {
+      "base": "DOGE",
+      "instId": "DOGE-USDT-SWAP",
+      "last": 0.11329,
+      "quote_volume_usd_24h": 884461409.3599,
+      "symbol": "DOGE/USDT",
+      "volCcy24h": 7807056310.0
+    },
+    {
+      "base": "SOL",
+      "instId": "SOL-USDT-SWAP",
+      "last": 89.03,
+      "quote_volume_usd_24h": 873753809.2217001,
+      "symbol": "SOL/USDT",
+      "volCcy24h": 9814150.39
+    },
+    {
+      "base": "TON",
+      "instId": "TON-USDT-SWAP",
+      "last": 2.336,
+      "quote_volume_usd_24h": 649687201.056,
+      "symbol": "TON/USDT",
+      "volCcy24h": 278119521.0
+    },
+    {
+      "base": "CL",
+      "instId": "CL-USDT-SWAP",
+      "last": 95.25,
+      "quote_volume_usd_24h": 413514940.05,
+      "symbol": "CL/USDT",
+      "volCcy24h": 4341364.2
+    },
+    {
+      "base": "PEPE",
+      "instId": "PEPE-USDT-SWAP",
+      "last": 4.165e-06,
+      "quote_volume_usd_24h": 277860165.625,
+      "symbol": "PEPE/USDT",
+      "volCcy24h": 66713125000000.0
+    },
+    {
+      "base": "FIL",
+      "instId": "FIL-USDT-SWAP",
+      "last": 1.0702,
+      "quote_volume_usd_24h": 256606272.96282,
+      "symbol": "FIL/USDT",
+      "volCcy24h": 239774129.1
+    },
+    {
+      "base": "XRP",
+      "instId": "XRP-USDT-SWAP",
+      "last": 1.431,
+      "quote_volume_usd_24h": 231249735.94500002,
+      "symbol": "XRP/USDT",
+      "volCcy24h": 161600095.0
+    },
+    {
+      "base": "RAVE",
+      "instId": "RAVE-USDT-SWAP",
+      "last": 0.6573,
+      "quote_volume_usd_24h": 155475499.22667,
+      "symbol": "RAVE/USDT",
+      "volCcy24h": 236536587.9
+    },
+    {
+      "base": "HYPE",
+      "instId": "HYPE-USDT-SWAP",
+      "last": 43.65,
+      "quote_volume_usd_24h": 139299620.805,
+      "symbol": "HYPE/USDT",
+      "volCcy24h": 3191285.7
+    },
+    {
+      "base": "BSB",
+      "instId": "BSB-USDT-SWAP",
+      "last": 0.5562,
+      "quote_volume_usd_24h": 132628782.24000001,
+      "symbol": "BSB/USDT",
+      "volCcy24h": 238455200.0
+    },
+    {
+      "base": "DASH",
+      "instId": "DASH-USDT-SWAP",
+      "last": 55.44,
+      "quote_volume_usd_24h": 128840362.9128,
+      "symbol": "DASH/USDT",
+      "volCcy24h": 2323960.37
+    },
+    {
+      "base": "WIF",
+      "instId": "WIF-USDT-SWAP",
+      "last": 0.2202,
+      "quote_volume_usd_24h": 120205770.0594,
+      "symbol": "WIF/USDT",
+      "volCcy24h": 545893597.0
+    },
+    {
+      "base": "BZ",
+      "instId": "BZ-USDT-SWAP",
+      "last": 102.08,
+      "quote_volume_usd_24h": 104812425.3792,
+      "symbol": "BZ/USDT",
+      "volCcy24h": 1026767.49
+    },
+    {
+      "base": "TAO",
+      "instId": "TAO-USDT-SWAP",
+      "last": 315.2,
+      "quote_volume_usd_24h": 91838925.68,
+      "symbol": "TAO/USDT",
+      "volCcy24h": 291367.15
+    },
+    {
+      "base": "SUI",
+      "instId": "SUI-USDT-SWAP",
+      "last": 0.994,
+      "quote_volume_usd_24h": 88236639.47,
+      "symbol": "SUI/USDT",
+      "volCcy24h": 88769255.0
+    },
+    {
+      "base": "ADA",
+      "instId": "ADA-USDT-SWAP",
+      "last": 0.2675,
+      "quote_volume_usd_24h": 86674392.35000001,
+      "symbol": "ADA/USDT",
+      "volCcy24h": 324016420.0
+    },
+    {
+      "base": "BILL",
+      "instId": "BILL-USDT-SWAP",
+      "last": 0.06285,
+      "quote_volume_usd_24h": 79692128.19,
+      "symbol": "BILL/USDT",
+      "volCcy24h": 1267973400.0
+    },
+    {
+      "base": "BNB",
+      "instId": "BNB-USDT-SWAP",
+      "last": 649.6,
+      "quote_volume_usd_24h": 75835154.976,
+      "symbol": "BNB/USDT",
+      "volCcy24h": 116741.31
+    },
+    {
+      "base": "BCH",
+      "instId": "BCH-USDT-SWAP",
+      "last": 470.2,
+      "quote_volume_usd_24h": 74066101.484,
+      "symbol": "BCH/USDT",
+      "volCcy24h": 157520.42
+    },
+    {
+      "base": "ICP",
+      "instId": "ICP-USDT-SWAP",
+      "last": 2.979,
+      "quote_volume_usd_24h": 64909212.40098,
+      "symbol": "ICP/USDT",
+      "volCcy24h": 21788926.62
+    },
+    {
+      "base": "PENGU",
+      "instId": "PENGU-USDT-SWAP",
+      "last": 0.010955,
+      "quote_volume_usd_24h": 62570432.298499994,
+      "symbol": "PENGU/USDT",
+      "volCcy24h": 5711586700.0
+    },
+    {
+      "base": "NOT",
+      "instId": "NOT-USDT-SWAP",
+      "last": 0.0005388,
+      "quote_volume_usd_24h": 62200630.85616,
+      "symbol": "NOT/USDT",
+      "volCcy24h": 115442893200.0
+    },
+    {
+      "base": "NEAR",
+      "instId": "NEAR-USDT-SWAP",
+      "last": 1.517,
+      "quote_volume_usd_24h": 61841425.819,
+      "symbol": "NEAR/USDT",
+      "volCcy24h": 40765607.0
+    },
+    {
+      "base": "LINK",
+      "instId": "LINK-USDT-SWAP",
+      "last": 10.066,
+      "quote_volume_usd_24h": 58687365.955400005,
+      "symbol": "LINK/USDT",
+      "volCcy24h": 5830256.9
+    },
+    {
+      "base": "UB",
+      "instId": "UB-USDT-SWAP",
+      "last": 0.13656,
+      "quote_volume_usd_24h": 57501933.71999999,
+      "symbol": "UB/USDT",
+      "volCcy24h": 421074500.0
+    },
+    {
+      "base": "AI",
+      "instId": "AI-USDT-SWAP",
+      "last": 0.03283,
+      "quote_volume_usd_24h": 48328412.664,
+      "symbol": "AI/USDT",
+      "volCcy24h": 1472080800.0
+    },
+    {
+      "base": "PUMP",
+      "instId": "PUMP-USDT-SWAP",
+      "last": 0.001988,
+      "quote_volume_usd_24h": 48040662.124000005,
+      "symbol": "PUMP/USDT",
+      "volCcy24h": 24165323000.0
+    },
+    {
+      "base": "TRUMP",
+      "instId": "TRUMP-USDT-SWAP",
+      "last": 2.372,
+      "quote_volume_usd_24h": 46776094.989999995,
+      "symbol": "TRUMP/USDT",
+      "volCcy24h": 19720107.5
+    },
+    {
+      "base": "ORDI",
+      "instId": "ORDI-USDT-SWAP",
+      "last": 5.368,
+      "quote_volume_usd_24h": 44711028.5776,
+      "symbol": "ORDI/USDT",
+      "volCcy24h": 8329178.2
+    },
+    {
+      "base": "LTC",
+      "instId": "LTC-USDT-SWAP",
+      "last": 57.12,
+      "quote_volume_usd_24h": 39912931.296000004,
+      "symbol": "LTC/USDT",
+      "volCcy24h": 698755.8
+    },
+    {
+      "base": "WLD",
+      "instId": "WLD-USDT-SWAP",
+      "last": 0.2584,
+      "quote_volume_usd_24h": 39823083.440000005,
+      "symbol": "WLD/USDT",
+      "volCcy24h": 154114100.0
+    },
+    {
+      "base": "JTO",
+      "instId": "JTO-USDT-SWAP",
+      "last": 0.4312,
+      "quote_volume_usd_24h": 38206591.5616,
+      "symbol": "JTO/USDT",
+      "volCcy24h": 88605268.0
+    },
+    {
+      "base": "SNDK",
+      "instId": "SNDK-USDT-SWAP",
+      "last": 1400.8,
+      "quote_volume_usd_24h": 36756179.536,
+      "symbol": "SNDK/USDT",
+      "volCcy24h": 26239.42
+    },
+    {
+      "base": "AVAX",
+      "instId": "AVAX-USDT-SWAP",
+      "last": 9.652,
+      "quote_volume_usd_24h": 36098295.6468,
+      "symbol": "AVAX/USDT",
+      "volCcy24h": 3739980.9
+    },
+    {
+      "base": "XPL",
+      "instId": "XPL-USDT-SWAP",
+      "last": 0.10075,
+      "quote_volume_usd_24h": 35525134.0925,
+      "symbol": "XPL/USDT",
+      "volCcy24h": 352606790.0
+    },
+    {
+      "base": "ONDO",
+      "instId": "ONDO-USDT-SWAP",
+      "last": 0.3316,
+      "quote_volume_usd_24h": 35473626.256,
+      "symbol": "ONDO/USDT",
+      "volCcy24h": 106977160.0
+    },
+    {
+      "base": "AR",
+      "instId": "AR-USDT-SWAP",
+      "last": 2.583,
+      "quote_volume_usd_24h": 32027883.961500004,
+      "symbol": "AR/USDT",
+      "volCcy24h": 12399490.5
+    },
+    {
+      "base": "WLFI",
+      "instId": "WLFI-USDT-SWAP",
+      "last": 0.06795,
+      "quote_volume_usd_24h": 31835670.354,
+      "symbol": "WLFI/USDT",
+      "volCcy24h": 468516120.0
+    },
+    {
+      "base": "BASED",
+      "instId": "BASED-USDT-SWAP",
+      "last": 0.09146,
+      "quote_volume_usd_24h": 31482657.5304,
+      "symbol": "BASED/USDT",
+      "volCcy24h": 344223240.0
+    },
+    {
+      "base": "STX",
+      "instId": "STX-USDT-SWAP",
+      "last": 0.2478,
+      "quote_volume_usd_24h": 31367929.026,
+      "symbol": "STX/USDT",
+      "volCcy24h": 126585670.0
+    },
+    {
+      "base": "AAVE",
+      "instId": "AAVE-USDT-SWAP",
+      "last": 93.68,
+      "quote_volume_usd_24h": 31325970.901600003,
+      "symbol": "AAVE/USDT",
+      "volCcy24h": 334393.37
+    },
+    {
+      "base": "ENA",
+      "instId": "ENA-USDT-SWAP",
+      "last": 0.11824,
+      "quote_volume_usd_24h": 29173450.9744,
+      "symbol": "ENA/USDT",
+      "volCcy24h": 246730810.0
+    },
+    {
+      "base": "GALA",
+      "instId": "GALA-USDT-SWAP",
+      "last": 0.00368,
+      "quote_volume_usd_24h": 29047122.0224,
+      "symbol": "GALA/USDT",
+      "volCcy24h": 7893239680.0
+    },
+    {
+      "base": "INTC",
+      "instId": "INTC-USDT-SWAP",
+      "last": 111.89,
+      "quote_volume_usd_24h": 28974228.792,
+      "symbol": "INTC/USDT",
+      "volCcy24h": 258952.8
+    },
+    {
+      "base": "SHIB",
+      "instId": "SHIB-USDT-SWAP",
+      "last": 6.391e-06,
+      "quote_volume_usd_24h": 28874341.7963,
+      "symbol": "SHIB/USDT",
+      "volCcy24h": 4517969300000.0
+    },
+    {
+      "base": "CFX",
+      "instId": "CFX-USDT-SWAP",
+      "last": 0.06366,
+      "quote_volume_usd_24h": 27924403.615799997,
+      "symbol": "CFX/USDT",
+      "volCcy24h": 438649130.0
+    },
+    {
+      "base": "UNI",
+      "instId": "UNI-USDT-SWAP",
+      "last": 3.486,
+      "quote_volume_usd_24h": 26547329.718000002,
+      "symbol": "UNI/USDT",
+      "volCcy24h": 7615413.0
+    },
+    {
+      "base": "BIO",
+      "instId": "BIO-USDT-SWAP",
+      "last": 0.04873,
+      "quote_volume_usd_24h": 25535260.890920002,
+      "symbol": "BIO/USDT",
+      "volCcy24h": 524015204.0
+    },
+    {
+      "base": "DOT",
+      "instId": "DOT-USDT-SWAP",
+      "last": 1.312,
+      "quote_volume_usd_24h": 24601384.16,
+      "symbol": "DOT/USDT",
+      "volCcy24h": 18751055.0
+    },
+    {
+      "base": "VIRTUAL",
+      "instId": "VIRTUAL-USDT-SWAP",
+      "last": 0.8682,
+      "quote_volume_usd_24h": 23589514.919999998,
+      "symbol": "VIRTUAL/USDT",
+      "volCcy24h": 27170600.0
+    },
+    {
+      "base": "APT",
+      "instId": "APT-USDT-SWAP",
+      "last": 1.0205,
+      "quote_volume_usd_24h": 22471109.972999997,
+      "symbol": "APT/USDT",
+      "volCcy24h": 22019706.0
+    },
+    {
+      "base": "FARTCOIN",
+      "instId": "FARTCOIN-USDT-SWAP",
+      "last": 0.2542,
+      "quote_volume_usd_24h": 21889904.0098,
+      "symbol": "FARTCOIN/USDT",
+      "volCcy24h": 86112919.0
+    },
+    {
+      "base": "CRCL",
+      "instId": "CRCL-USDT-SWAP",
+      "last": 119.82,
+      "quote_volume_usd_24h": 21451434.509999998,
+      "symbol": "CRCL/USDT",
+      "volCcy24h": 179030.5
+    },
+    {
+      "base": "OKB",
+      "instId": "OKB-USDT-SWAP",
+      "last": 87.44,
+      "quote_volume_usd_24h": 21404900.1576,
+      "symbol": "OKB/USDT",
+      "volCcy24h": 244795.29
+    },
+    {
+      "base": "MON",
+      "instId": "MON-USDT-SWAP",
+      "last": 0.03267,
+      "quote_volume_usd_24h": 20285195.04,
+      "symbol": "MON/USDT",
+      "volCcy24h": 620912000.0
+    },
+    {
+      "base": "AMD",
+      "instId": "AMD-USDT-SWAP",
+      "last": 414.86,
+      "quote_volume_usd_24h": 19502398.5074,
+      "symbol": "AMD/USDT",
+      "volCcy24h": 47009.59
+    },
+    {
+      "base": "ZEN",
+      "instId": "ZEN-USDT-SWAP",
+      "last": 7.554,
+      "quote_volume_usd_24h": 19071817.2186,
+      "symbol": "ZEN/USDT",
+      "volCcy24h": 2524730.9
+    },
+    {
+      "base": "CHIP",
+      "instId": "CHIP-USDT-SWAP",
+      "last": 0.055,
+      "quote_volume_usd_24h": 18118457.5,
+      "symbol": "CHIP/USDT",
+      "volCcy24h": 329426500.0
+    },
+    {
+      "base": "OP",
+      "instId": "OP-USDT-SWAP",
+      "last": 0.1366,
+      "quote_volume_usd_24h": 17969190.5666,
+      "symbol": "OP/USDT",
+      "volCcy24h": 131546051.0
+    },
+    {
+      "base": "ASTER",
+      "instId": "ASTER-USDT-SWAP",
+      "last": 0.6813,
+      "quote_volume_usd_24h": 17491281.2883,
+      "symbol": "ASTER/USDT",
+      "volCcy24h": 25673391.0
+    },
+    {
+      "base": "PIPPIN",
+      "instId": "PIPPIN-USDT-SWAP",
+      "last": 0.02443,
+      "quote_volume_usd_24h": 17249734.2374,
+      "symbol": "PIPPIN/USDT",
+      "volCcy24h": 706088180.0
+    },
+    {
+      "base": "MU",
+      "instId": "MU-USDT-SWAP",
+      "last": 662.8,
+      "quote_volume_usd_24h": 17246394.027999997,
+      "symbol": "MU/USDT",
+      "volCcy24h": 26020.51
+    },
+    {
+      "base": "MEGA",
+      "instId": "MEGA-USDT-SWAP",
+      "last": 0.1247,
+      "quote_volume_usd_24h": 17036850.69,
+      "symbol": "MEGA/USDT",
+      "volCcy24h": 136622700.0
+    },
+    {
+      "base": "ETC",
+      "instId": "ETC-USDT-SWAP",
+      "last": 9.47,
+      "quote_volume_usd_24h": 16587060.125000002,
+      "symbol": "ETC/USDT",
+      "volCcy24h": 1751537.5
+    },
+    {
+      "base": "IP",
+      "instId": "IP-USDT-SWAP",
+      "last": 0.5264,
+      "quote_volume_usd_24h": 16518742.0496,
+      "symbol": "IP/USDT",
+      "volCcy24h": 31380589.0
+    },
+    {
+      "base": "GIGGLE",
+      "instId": "GIGGLE-USDT-SWAP",
+      "last": 35.57,
+      "quote_volume_usd_24h": 15783358.719,
+      "symbol": "GIGGLE/USDT",
+      "volCcy24h": 443726.7
+    },
+    {
+      "base": "CHZ",
+      "instId": "CHZ-USDT-SWAP",
+      "last": 0.04248,
+      "quote_volume_usd_24h": 15621351.7896,
+      "symbol": "CHZ/USDT",
+      "volCcy24h": 367734270.0
+    },
+    {
+      "base": "LUNA",
+      "instId": "LUNA-USDT-SWAP",
+      "last": 0.07325,
+      "quote_volume_usd_24h": 15451600.827,
+      "symbol": "LUNA/USDT",
+      "volCcy24h": 210943356.0
+    },
+    {
+      "base": "RIVER",
+      "instId": "RIVER-USDT-SWAP",
+      "last": 5.99,
+      "quote_volume_usd_24h": 15042556.418000001,
+      "symbol": "RIVER/USDT",
+      "volCcy24h": 2511278.2
+    },
+    {
+      "base": "PENDLE",
+      "instId": "PENDLE-USDT-SWAP",
+      "last": 1.897,
+      "quote_volume_usd_24h": 14894253.766,
+      "symbol": "PENDLE/USDT",
+      "volCcy24h": 7851478.0
+    },
+    {
+      "base": "EIGEN",
+      "instId": "EIGEN-USDT-SWAP",
+      "last": 0.2031,
+      "quote_volume_usd_24h": 14779683.8787,
+      "symbol": "EIGEN/USDT",
+      "volCcy24h": 72770477.0
+    },
+    {
+      "base": "PI",
+      "instId": "PI-USDT-SWAP",
+      "last": 0.1835,
+      "quote_volume_usd_24h": 14774290.9245,
+      "symbol": "PI/USDT",
+      "volCcy24h": 80513847.0
+    },
+    {
+      "base": "CRV",
+      "instId": "CRV-USDT-SWAP",
+      "last": 0.2481,
+      "quote_volume_usd_24h": 14218105.620299999,
+      "symbol": "CRV/USDT",
+      "volCcy24h": 57307963.0
+    },
+    {
+      "base": "ARB",
+      "instId": "ARB-USDT-SWAP",
+      "last": 0.12447,
+      "quote_volume_usd_24h": 14081073.40197,
+      "symbol": "ARB/USDT",
+      "volCcy24h": 113128251.0
+    },
+    {
+      "base": "NVDA",
+      "instId": "NVDA-USDT-SWAP",
+      "last": 205.76,
+      "quote_volume_usd_24h": 14044895.708800001,
+      "symbol": "NVDA/USDT",
+      "volCcy24h": 68258.63
+    },
+    {
+      "base": "STRK",
+      "instId": "STRK-USDT-SWAP",
+      "last": 0.04156,
+      "quote_volume_usd_24h": 13033191.23024,
+      "symbol": "STRK/USDT",
+      "volCcy24h": 313599404.0
+    },
+    {
+      "base": "PROS",
+      "instId": "PROS-USDT-SWAP",
+      "last": 0.6409,
+      "quote_volume_usd_24h": 12885180.4198,
+      "symbol": "PROS/USDT",
+      "volCcy24h": 20104822.0
+    },
+    {
+      "base": "HBAR",
+      "instId": "HBAR-USDT-SWAP",
+      "last": 0.0919,
+      "quote_volume_usd_24h": 12494977.644,
+      "symbol": "HBAR/USDT",
+      "volCcy24h": 135962760.0
+    },
+    {
+      "base": "BONK",
+      "instId": "BONK-USDT-SWAP",
+      "last": 6.773e-06,
+      "quote_volume_usd_24h": 12229124.9327,
+      "symbol": "BONK/USDT",
+      "volCcy24h": 1805569900000.0
+    },
+    {
+      "base": "MERL",
+      "instId": "MERL-USDT-SWAP",
+      "last": 0.03767,
+      "quote_volume_usd_24h": 11917804.24795,
+      "symbol": "MERL/USDT",
+      "volCcy24h": 316373885.0
+    },
+    {
+      "base": "XLM",
+      "instId": "XLM-USDT-SWAP",
+      "last": 0.1612,
+      "quote_volume_usd_24h": 11746621.432,
+      "symbol": "XLM/USDT",
+      "volCcy24h": 72869860.0
+    },
+    {
+      "base": "APE",
+      "instId": "APE-USDT-SWAP",
+      "last": 0.16034,
+      "quote_volume_usd_24h": 11718920.860790001,
+      "symbol": "APE/USDT",
+      "volCcy24h": 73087943.5
+    },
+    {
+      "base": "TRX",
+      "instId": "TRX-USDT-SWAP",
+      "last": 0.3452,
+      "quote_volume_usd_24h": 11181894.452,
+      "symbol": "TRX/USDT",
+      "volCcy24h": 32392510.0
+    },
+    {
+      "base": "EDGE",
+      "instId": "EDGE-USDT-SWAP",
+      "last": 1.3295,
+      "quote_volume_usd_24h": 10859209.754999999,
+      "symbol": "EDGE/USDT",
+      "volCcy24h": 8167890.0
+    },
+    {
+      "base": "BABY",
+      "instId": "BABY-USDT-SWAP",
+      "last": 0.01737,
+      "quote_volume_usd_24h": 10069251.4296,
+      "symbol": "BABY/USDT",
+      "volCcy24h": 579692080.0
+    },
+    {
+      "base": "MOODENG",
+      "instId": "MOODENG-USDT-SWAP",
+      "last": 0.06454,
+      "quote_volume_usd_24h": 9692883.1048,
+      "symbol": "MOODENG/USDT",
+      "volCcy24h": 150184120.0
+    },
+    {
+      "base": "ATOM",
+      "instId": "ATOM-USDT-SWAP",
+      "last": 1.919,
+      "quote_volume_usd_24h": 9504714.888,
+      "symbol": "ATOM/USDT",
+      "volCcy24h": 4952952.0
+    },
+    {
+      "base": "PNUT",
+      "instId": "PNUT-USDT-SWAP",
+      "last": 0.06222,
+      "quote_volume_usd_24h": 8983463.594999999,
+      "symbol": "PNUT/USDT",
+      "volCcy24h": 144382250.0
+    },
+    {
+      "base": "ONT",
+      "instId": "ONT-USDT-SWAP",
+      "last": 0.06313,
+      "quote_volume_usd_24h": 8911692.7895,
+      "symbol": "ONT/USDT",
+      "volCcy24h": 141164150.0
+    },
+    {
+      "base": "BLEND",
+      "instId": "BLEND-USDT-SWAP",
+      "last": 0.1189,
+      "quote_volume_usd_24h": 8872886.342,
+      "symbol": "BLEND/USDT",
+      "volCcy24h": 74624780.0
+    },
+    {
+      "base": "PIEVERSE",
+      "instId": "PIEVERSE-USDT-SWAP",
+      "last": 0.771,
+      "quote_volume_usd_24h": 8737349.790000001,
+      "symbol": "PIEVERSE/USDT",
+      "volCcy24h": 11332490.0
+    },
+    {
+      "base": "MSTR",
+      "instId": "MSTR-USDT-SWAP",
+      "last": 185.15,
+      "quote_volume_usd_24h": 8458074.142,
+      "symbol": "MSTR/USDT",
+      "volCcy24h": 45682.28
+    },
+    {
+      "base": "RENDER",
+      "instId": "RENDER-USDT-SWAP",
+      "last": 1.971,
+      "quote_volume_usd_24h": 8227162.926,
+      "symbol": "RENDER/USDT",
+      "volCcy24h": 4174106.0
+    },
+    {
+      "base": "TRIA",
+      "instId": "TRIA-USDT-SWAP",
+      "last": 0.04383,
+      "quote_volume_usd_24h": 8203424.4180000005,
+      "symbol": "TRIA/USDT",
+      "volCcy24h": 187164600.0
+    },
+    {
+      "base": "ARKM",
+      "instId": "ARKM-USDT-SWAP",
+      "last": 0.13275,
+      "quote_volume_usd_24h": 8041660.7355,
+      "symbol": "ARKM/USDT",
+      "volCcy24h": 60577482.0
+    },
+    {
+      "base": "HMSTR",
+      "instId": "HMSTR-USDT-SWAP",
+      "last": 0.0001809,
+      "quote_volume_usd_24h": 7955051.323770001,
+      "symbol": "HMSTR/USDT",
+      "volCcy24h": 43974855300.0
+    },
+    {
+      "base": "OPG",
+      "instId": "OPG-USDT-SWAP",
+      "last": 0.2523,
+      "quote_volume_usd_24h": 7894287.867000001,
+      "symbol": "OPG/USDT",
+      "volCcy24h": 31289290.0
+    },
+    {
+      "base": "ALGO",
+      "instId": "ALGO-USDT-SWAP",
+      "last": 0.11994,
+      "quote_volume_usd_24h": 7852313.4792,
+      "symbol": "ALGO/USDT",
+      "volCcy24h": 65468680.0
+    },
+    {
+      "base": "LDO",
+      "instId": "LDO-USDT-SWAP",
+      "last": 0.3886,
+      "quote_volume_usd_24h": 7787226.9024,
+      "symbol": "LDO/USDT",
+      "volCcy24h": 20039184.0
+    },
+    {
+      "base": "RESOLV",
+      "instId": "RESOLV-USDT-SWAP",
+      "last": 0.03157,
+      "quote_volume_usd_24h": 7695652.8418000005,
+      "symbol": "RESOLV/USDT",
+      "volCcy24h": 243764740.0
+    },
+    {
+      "base": "LIT",
+      "instId": "LIT-USDT-SWAP",
+      "last": 0.9484,
+      "quote_volume_usd_24h": 7447656.2176,
+      "symbol": "LIT/USDT",
+      "volCcy24h": 7852864.0
+    },
+    {
+      "base": "TSLA",
+      "instId": "TSLA-USDT-SWAP",
+      "last": 395.77,
+      "quote_volume_usd_24h": 7084817.289499999,
+      "symbol": "TSLA/USDT",
+      "volCcy24h": 17901.35
+    },
+    {
+      "base": "ZBT",
+      "instId": "ZBT-USDT-SWAP",
+      "last": 0.18752,
+      "quote_volume_usd_24h": 7015265.34016,
+      "symbol": "ZBT/USDT",
+      "volCcy24h": 37410758.0
+    },
+    {
+      "base": "JUP",
+      "instId": "JUP-USDT-SWAP",
+      "last": 0.1997,
+      "quote_volume_usd_24h": 6992733.142999999,
+      "symbol": "JUP/USDT",
+      "volCcy24h": 35016190.0
+    },
+    {
+      "base": "ZIL",
+      "instId": "ZIL-USDT-SWAP",
+      "last": 0.004451,
+      "quote_volume_usd_24h": 6947453.289700001,
+      "symbol": "ZIL/USDT",
+      "volCcy24h": 1560874700.0
+    },
+    {
+      "base": "ZRO",
+      "instId": "ZRO-USDT-SWAP",
+      "last": 1.449,
+      "quote_volume_usd_24h": 6729369.0030000005,
+      "symbol": "ZRO/USDT",
+      "volCcy24h": 4644147.0
+    },
+    {
+      "base": "ETHFI",
+      "instId": "ETHFI-USDT-SWAP",
+      "last": 0.4362,
+      "quote_volume_usd_24h": 6601281.990599999,
+      "symbol": "ETHFI/USDT",
+      "volCcy24h": 15133613.0
+    },
+    {
+      "base": "AXS",
+      "instId": "AXS-USDT-SWAP",
+      "last": 1.3627,
+      "quote_volume_usd_24h": 6575212.55466,
+      "symbol": "AXS/USDT",
+      "volCcy24h": 4825135.8
+    },
+    {
+      "base": "OFC",
+      "instId": "OFC-USDT-SWAP",
+      "last": 0.04662,
+      "quote_volume_usd_24h": 6212073.042,
+      "symbol": "OFC/USDT",
+      "volCcy24h": 133249100.0
+    },
+    {
+      "base": "TIA",
+      "instId": "TIA-USDT-SWAP",
+      "last": 0.3788,
+      "quote_volume_usd_24h": 6132934.5052000005,
+      "symbol": "TIA/USDT",
+      "volCcy24h": 16190429.0
+    },
+    {
+      "base": "KAT",
+      "instId": "KAT-USDT-SWAP",
+      "last": 0.009606,
+      "quote_volume_usd_24h": 6075277.2366,
+      "symbol": "KAT/USDT",
+      "volCcy24h": 632446100.0
+    },
+    {
+      "base": "LPT",
+      "instId": "LPT-USDT-SWAP",
+      "last": 2.234,
+      "quote_volume_usd_24h": 6049703.722800001,
+      "symbol": "LPT/USDT",
+      "volCcy24h": 2708014.2
+    },
+    {
+      "base": "NEIRO",
+      "instId": "NEIRO-USDT-SWAP",
+      "last": 9.869e-05,
+      "quote_volume_usd_24h": 5894354.30157,
+      "symbol": "NEIRO/USDT",
+      "volCcy24h": 59725953000.0
+    },
+    {
+      "base": "AIXBT",
+      "instId": "AIXBT-USDT-SWAP",
+      "last": 0.0339,
+      "quote_volume_usd_24h": 5886397.356,
+      "symbol": "AIXBT/USDT",
+      "volCcy24h": 173640040.0
+    },
+    {
+      "base": "GRASS",
+      "instId": "GRASS-USDT-SWAP",
+      "last": 0.363,
+      "quote_volume_usd_24h": 5855708.001,
+      "symbol": "GRASS/USDT",
+      "volCcy24h": 16131427.0
+    },
+    {
+      "base": "PEOPLE",
+      "instId": "PEOPLE-USDT-SWAP",
+      "last": 0.008361,
+      "quote_volume_usd_24h": 5673182.6412,
+      "symbol": "PEOPLE/USDT",
+      "volCcy24h": 678529200.0
+    },
+    {
+      "base": "H",
+      "instId": "H-USDT-SWAP",
+      "last": 0.2009,
+      "quote_volume_usd_24h": 5665683.359,
+      "symbol": "H/USDT",
+      "volCcy24h": 28201510.0
+    },
+    {
+      "base": "ZK",
+      "instId": "ZK-USDT-SWAP",
+      "last": 0.01946,
+      "quote_volume_usd_24h": 5665108.2138,
+      "symbol": "ZK/USDT",
+      "volCcy24h": 291115530.0
+    },
+    {
+      "base": "BEAT",
+      "instId": "BEAT-USDT-SWAP",
+      "last": 0.539,
+      "quote_volume_usd_24h": 5521084.800000001,
+      "symbol": "BEAT/USDT",
+      "volCcy24h": 10243200.0
+    },
+    {
+      "base": "SPACE",
+      "instId": "SPACE-USDT-SWAP",
+      "last": 0.007288,
+      "quote_volume_usd_24h": 5510494.697600001,
+      "symbol": "SPACE/USDT",
+      "volCcy24h": 756105200.0
+    },
+    {
+      "base": "DYDX",
+      "instId": "DYDX-USDT-SWAP",
+      "last": 0.15597,
+      "quote_volume_usd_24h": 5479490.15721,
+      "symbol": "DYDX/USDT",
+      "volCcy24h": 35131693.0
+    },
+    {
+      "base": "NIGHT",
+      "instId": "NIGHT-USDT-SWAP",
+      "last": 0.03195,
+      "quote_volume_usd_24h": 5417703.99,
+      "symbol": "NIGHT/USDT",
+      "volCcy24h": 169568200.0
+    },
+    {
+      "base": "MORPHO",
+      "instId": "MORPHO-USDT-SWAP",
+      "last": 2.319,
+      "quote_volume_usd_24h": 5115164.397,
+      "symbol": "MORPHO/USDT",
+      "volCcy24h": 2205763.0
+    },
+    {
+      "base": "CORE",
+      "instId": "CORE-USDT-SWAP",
+      "last": 0.03798,
+      "quote_volume_usd_24h": 4970530.44774,
+      "symbol": "CORE/USDT",
+      "volCcy24h": 130872313.0
+    },
+    {
+      "base": "OL",
+      "instId": "OL-USDT-SWAP",
+      "last": 0.010582,
+      "quote_volume_usd_24h": 4964200.3268,
+      "symbol": "OL/USDT",
+      "volCcy24h": 469117400.0
+    },
+    {
+      "base": "TRB",
+      "instId": "TRB-USDT-SWAP",
+      "last": 20.1,
+      "quote_volume_usd_24h": 4909342.59,
+      "symbol": "TRB/USDT",
+      "volCcy24h": 244245.9
+    },
+    {
+      "base": "BLUR",
+      "instId": "BLUR-USDT-SWAP",
+      "last": 0.02734,
+      "quote_volume_usd_24h": 4797753.6118,
+      "symbol": "BLUR/USDT",
+      "volCcy24h": 175484770.0
+    },
+    {
+      "base": "ENSO",
+      "instId": "ENSO-USDT-SWAP",
+      "last": 0.9435,
+      "quote_volume_usd_24h": 4560968.6325,
+      "symbol": "ENSO/USDT",
+      "volCcy24h": 4834095.0
+    },
+    {
+      "base": "BOME",
+      "instId": "BOME-USDT-SWAP",
+      "last": 0.0005865,
+      "quote_volume_usd_24h": 4448838.8595,
+      "symbol": "BOME/USDT",
+      "volCcy24h": 7585403000.0
+    },
+    {
+      "base": "PARTI",
+      "instId": "PARTI-USDT-SWAP",
+      "last": 0.05264,
+      "quote_volume_usd_24h": 4354466.6032,
+      "symbol": "PARTI/USDT",
+      "volCcy24h": 82721630.0
+    },
+    {
+      "base": "SAND",
+      "instId": "SAND-USDT-SWAP",
+      "last": 0.07704,
+      "quote_volume_usd_24h": 4337023.8096,
+      "symbol": "SAND/USDT",
+      "volCcy24h": 56295740.0
+    },
+    {
+      "base": "GOOGL",
+      "instId": "GOOGL-USDT-SWAP",
+      "last": 399.87,
+      "quote_volume_usd_24h": 4311622.2672,
+      "symbol": "GOOGL/USDT",
+      "volCcy24h": 10782.56
+    },
+    {
+      "base": "INJ",
+      "instId": "INJ-USDT-SWAP",
+      "last": 3.887,
+      "quote_volume_usd_24h": 4305888.3855,
+      "symbol": "INJ/USDT",
+      "volCcy24h": 1107766.5
+    },
+    {
+      "base": "TURBO",
+      "instId": "TURBO-USDT-SWAP",
+      "last": 0.0013015,
+      "quote_volume_usd_24h": 4261557.4145,
+      "symbol": "TURBO/USDT",
+      "volCcy24h": 3274343000.0
+    },
+    {
+      "base": "POL",
+      "instId": "POL-USDT-SWAP",
+      "last": 0.09846,
+      "quote_volume_usd_24h": 4173143.4090000005,
+      "symbol": "POL/USDT",
+      "volCcy24h": 42384150.0
+    },
+    {
+      "base": "QQQ",
+      "instId": "QQQ-USDT-SWAP",
+      "last": 692.53,
+      "quote_volume_usd_24h": 4139383.3906999994,
+      "symbol": "QQQ/USDT",
+      "volCcy24h": 5977.19
+    },
+    {
+      "base": "FOGO",
+      "instId": "FOGO-USDT-SWAP",
+      "last": 0.02004,
+      "quote_volume_usd_24h": 4026164.8572,
+      "symbol": "FOGO/USDT",
+      "volCcy24h": 200906430.0
+    },
+    {
+      "base": "ATH",
+      "instId": "ATH-USDT-SWAP",
+      "last": 0.006656,
+      "quote_volume_usd_24h": 4012777.9327999996,
+      "symbol": "ATH/USDT",
+      "volCcy24h": 602881300.0
+    },
+    {
+      "base": "ACT",
+      "instId": "ACT-USDT-SWAP",
+      "last": 0.01597,
+      "quote_volume_usd_24h": 3971991.7891300004,
+      "symbol": "ACT/USDT",
+      "volCcy24h": 248715829.0
+    },
+    {
+      "base": "POPCAT",
+      "instId": "POPCAT-USDT-SWAP",
+      "last": 0.06748,
+      "quote_volume_usd_24h": 3953869.8108,
+      "symbol": "POPCAT/USDT",
+      "volCcy24h": 58593210.0
+    },
+    {
+      "base": "ENJ",
+      "instId": "ENJ-USDT-SWAP",
+      "last": 0.0502,
+      "quote_volume_usd_24h": 3735129.9960000003,
+      "symbol": "ENJ/USDT",
+      "volCcy24h": 74404980.0
+    },
+    {
+      "base": "ARM",
+      "instId": "ARM-USDT-SWAP",
+      "last": 235.5,
+      "quote_volume_usd_24h": 3455055.8249999997,
+      "symbol": "ARM/USDT",
+      "volCcy24h": 14671.15
+    },
+    {
+      "base": "SPY",
+      "instId": "SPY-USDT-SWAP",
+      "last": 732.02,
+      "quote_volume_usd_24h": 3442507.0549999997,
+      "symbol": "SPY/USDT",
+      "volCcy24h": 4702.75
+    },
+    {
+      "base": "KAITO",
+      "instId": "KAITO-USDT-SWAP",
+      "last": 0.4999,
+      "quote_volume_usd_24h": 3432715.8195,
+      "symbol": "KAITO/USDT",
+      "volCcy24h": 6866805.0
+    },
+    {
+      "base": "BERA",
+      "instId": "BERA-USDT-SWAP",
+      "last": 0.3843,
+      "quote_volume_usd_24h": 3320116.4625299997,
+      "symbol": "BERA/USDT",
+      "volCcy24h": 8639387.1
+    },
+    {
+      "base": "EWY",
+      "instId": "EWY-USDT-SWAP",
+      "last": 181.86,
+      "quote_volume_usd_24h": 3318941.3628000002,
+      "symbol": "EWY/USDT",
+      "volCcy24h": 18249.98
+    },
+    {
+      "base": "SPK",
+      "instId": "SPK-USDT-SWAP",
+      "last": 0.03612,
+      "quote_volume_usd_24h": 3204775.8959999997,
+      "symbol": "SPK/USDT",
+      "volCcy24h": 88725800.0
+    },
+    {
+      "base": "KITE",
+      "instId": "KITE-USDT-SWAP",
+      "last": 0.1549,
+      "quote_volume_usd_24h": 3087483.839,
+      "symbol": "KITE/USDT",
+      "volCcy24h": 19932110.0
+    },
+    {
+      "base": "ORCL",
+      "instId": "ORCL-USDT-SWAP",
+      "last": 192.8,
+      "quote_volume_usd_24h": 3034259.4080000003,
+      "symbol": "ORCL/USDT",
+      "volCcy24h": 15737.86
+    },
+    {
+      "base": "OPN",
+      "instId": "OPN-USDT-SWAP",
+      "last": 0.1868,
+      "quote_volume_usd_24h": 3000936.3959999997,
+      "symbol": "OPN/USDT",
+      "volCcy24h": 16064970.0
+    },
+    {
+      "base": "SAHARA",
+      "instId": "SAHARA-USDT-SWAP",
+      "last": 0.02531,
+      "quote_volume_usd_24h": 2988305.6358,
+      "symbol": "SAHARA/USDT",
+      "volCcy24h": 118068180.0
+    },
+    {
+      "base": "LINEA",
+      "instId": "LINEA-USDT-SWAP",
+      "last": 0.003719,
+      "quote_volume_usd_24h": 2955499.7132,
+      "symbol": "LINEA/USDT",
+      "volCcy24h": 794702800.0
+    },
+    {
+      "base": "IOTA",
+      "instId": "IOTA-USDT-SWAP",
+      "last": 0.05907,
+      "quote_volume_usd_24h": 2846391.3225,
+      "symbol": "IOTA/USDT",
+      "volCcy24h": 48186750.0
+    },
+    {
+      "base": "RLS",
+      "instId": "RLS-USDT-SWAP",
+      "last": 0.004016,
+      "quote_volume_usd_24h": 2813317.6367999995,
+      "symbol": "RLS/USDT",
+      "volCcy24h": 700527300.0
+    },
+    {
+      "base": "USELESS",
+      "instId": "USELESS-USDT-SWAP",
+      "last": 0.04613,
+      "quote_volume_usd_24h": 2794579.8488999996,
+      "symbol": "USELESS/USDT",
+      "volCcy24h": 60580530.0
+    },
+    {
+      "base": "SOON",
+      "instId": "SOON-USDT-SWAP",
+      "last": 0.1766,
+      "quote_volume_usd_24h": 2757977.3876,
+      "symbol": "SOON/USDT",
+      "volCcy24h": 15617086.0
+    },
+    {
+      "base": "COIN",
+      "instId": "COIN-USDT-SWAP",
+      "last": 196.16,
+      "quote_volume_usd_24h": 2659725.5936,
+      "symbol": "COIN/USDT",
+      "volCcy24h": 13558.96
+    },
+    {
+      "base": "2Z",
+      "instId": "2Z-USDT-SWAP",
+      "last": 0.0941,
+      "quote_volume_usd_24h": 2615829.44,
+      "symbol": "2Z/USDT",
+      "volCcy24h": 27798400.0
+    },
+    {
+      "base": "YGG",
+      "instId": "YGG-USDT-SWAP",
+      "last": 0.04423,
+      "quote_volume_usd_24h": 2592078.05229,
+      "symbol": "YGG/USDT",
+      "volCcy24h": 58604523.0
+    },
+    {
+      "base": "HOOD",
+      "instId": "HOOD-USDT-SWAP",
+      "last": 77.87,
+      "quote_volume_usd_24h": 2547454.754,
+      "symbol": "HOOD/USDT",
+      "volCcy24h": 32714.2
+    },
+    {
+      "base": "MEME",
+      "instId": "MEME-USDT-SWAP",
+      "last": 0.0006058,
+      "quote_volume_usd_24h": 2541493.83904,
+      "symbol": "MEME/USDT",
+      "volCcy24h": 4195268800.0
+    },
+    {
+      "base": "ROBO",
+      "instId": "ROBO-USDT-SWAP",
+      "last": 0.0201,
+      "quote_volume_usd_24h": 2460189.75,
+      "symbol": "ROBO/USDT",
+      "volCcy24h": 122397500.0
+    },
+    {
+      "base": "WET",
+      "instId": "WET-USDT-SWAP",
+      "last": 0.09591,
+      "quote_volume_usd_24h": 2408060.3249999997,
+      "symbol": "WET/USDT",
+      "volCcy24h": 25107500.0
+    },
+    {
+      "base": "W",
+      "instId": "W-USDT-SWAP",
+      "last": 0.01412,
+      "quote_volume_usd_24h": 2405783.47592,
+      "symbol": "W/USDT",
+      "volCcy24h": 170381266.0
+    },
+    {
+      "base": "EGLD",
+      "instId": "EGLD-USDT-SWAP",
+      "last": 4.295,
+      "quote_volume_usd_24h": 2400375.856,
+      "symbol": "EGLD/USDT",
+      "volCcy24h": 558876.8
+    },
+    {
+      "base": "TSM",
+      "instId": "TSM-USDT-SWAP",
+      "last": 418.09,
+      "quote_volume_usd_24h": 2356079.3005999997,
+      "symbol": "TSM/USDT",
+      "volCcy24h": 5635.34
+    },
+    {
+      "base": "ACU",
+      "instId": "ACU-USDT-SWAP",
+      "last": 0.11986,
+      "quote_volume_usd_24h": 2320844.3855999997,
+      "symbol": "ACU/USDT",
+      "volCcy24h": 19362960.0
+    },
+    {
+      "base": "PYTH",
+      "instId": "PYTH-USDT-SWAP",
+      "last": 0.05209,
+      "quote_volume_usd_24h": 2310280.053,
+      "symbol": "PYTH/USDT",
+      "volCcy24h": 44351700.0
+    },
+    {
+      "base": "ENS",
+      "instId": "ENS-USDT-SWAP",
+      "last": 6.572,
+      "quote_volume_usd_24h": 2286072.1716,
+      "symbol": "ENS/USDT",
+      "volCcy24h": 347850.3
+    },
+    {
+      "base": "XPT",
+      "instId": "XPT-USDT-SWAP",
+      "last": 2063.1,
+      "quote_volume_usd_24h": 2260637.6988,
+      "symbol": "XPT/USDT",
+      "volCcy24h": 1095.748
+    },
+    {
+      "base": "CRO",
+      "instId": "CRO-USDT-SWAP",
+      "last": 0.07121,
+      "quote_volume_usd_24h": 2157351.1001999998,
+      "symbol": "CRO/USDT",
+      "volCcy24h": 30295620.0
+    },
+    {
+      "base": "SPX",
+      "instId": "SPX-USDT-SWAP",
+      "last": 0.4263,
+      "quote_volume_usd_24h": 2145770.8188,
+      "symbol": "SPX/USDT",
+      "volCcy24h": 5033476.0
+    },
+    {
+      "base": "SEI",
+      "instId": "SEI-USDT-SWAP",
+      "last": 0.06144,
+      "quote_volume_usd_24h": 2132535.0912,
+      "symbol": "SEI/USDT",
+      "volCcy24h": 34709230.0
+    },
+    {
+      "base": "PLTR",
+      "instId": "PLTR-USDT-SWAP",
+      "last": 133.68,
+      "quote_volume_usd_24h": 2117207.7984,
+      "symbol": "PLTR/USDT",
+      "volCcy24h": 15837.88
+    },
+    {
+      "base": "FLOKI",
+      "instId": "FLOKI-USDT-SWAP",
+      "last": 3.36e-05,
+      "quote_volume_usd_24h": 2077484.64,
+      "symbol": "FLOKI/USDT",
+      "volCcy24h": 61829900000.0
+    },
+    {
+      "base": "AMZN",
+      "instId": "AMZN-USDT-SWAP",
+      "last": 275.57,
+      "quote_volume_usd_24h": 2069922.0093999999,
+      "symbol": "AMZN/USDT",
+      "volCcy24h": 7511.42
+    },
+    {
+      "base": "NG",
+      "instId": "NG-USDT-SWAP",
+      "last": 2.723,
+      "quote_volume_usd_24h": 2033359.4049999998,
+      "symbol": "NG/USDT",
+      "volCcy24h": 746735.0
+    }
+  ]
+}
