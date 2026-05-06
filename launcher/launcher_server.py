@@ -111,6 +111,25 @@ def pid_snapshot() -> dict[str, Any]:
     }
 
 
+def active_summary() -> dict[str, Any]:
+    summary = read_json(ROOT_DIR / "engine" / "logs" / "summary.json") or {}
+    if not summary:
+        return {}
+    pid = summary.get("pid")
+    if process_alive(pid):
+        return summary
+    stale = dict(summary)
+    stale["engine_status"] = "stale"
+    stale["stale"] = True
+    stale["stale_reason"] = f"pid {pid} is not running"
+    stale["portfolios"] = {}
+    stale["total_nav"] = 0.0
+    stale["total_capital"] = 0.0
+    stale["total_pnl"] = 0.0
+    stale["total_pnl_pct"] = 0.0
+    return stale
+
+
 def strategy_options() -> list[dict[str, Any]]:
     options: list[dict[str, Any]] = [
         {
@@ -1502,7 +1521,6 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 pass
 
     def status_payload(self) -> dict[str, Any]:
-        summary = read_json(ROOT_DIR / "engine" / "logs" / "summary.json") or {}
         pids = pid_snapshot()
         return {
             "ok": True,
@@ -1510,7 +1528,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "default_dashboard_port": DEFAULT_DASHBOARD_PORT,
             "default_dashboard_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/",
             "default_yolo_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/yolo",
-            "summary": summary,
+            "summary": active_summary(),
             "pids": pids,
             "pro_paper": pro_paper_status(),
             "c_auto_v2_paper": c_auto_v2_paper_status(),

@@ -178,14 +178,16 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
         and not previous.get("ledger_tail")
         and abs(float(previous.get("realized_nav") or args.initial_capital) - float(args.initial_capital)) < 1e-9
     )
-    if bootstrap or _is_rebalance_ts(now_ts, int(args.rebalance_hours)):
+    last_rebalance_ts = _last_rebalance_ts(previous)
+    should_rebalance = (bootstrap or _is_rebalance_ts(now_ts, int(args.rebalance_hours))) and last_rebalance_ts != now_ts.isoformat()
+    if should_rebalance:
         new_positions, new_events = _open_live_positions(scored, positions, now_ts, args)
         positions.update(new_positions)
         ledger.extend(new_events)
     nav = _mark_live_nav(realized_nav, positions, latest_features, args)
     equity_tail = list(previous.get("equity", []))[-239:]
     equity_tail.append({"ts": now_ts.isoformat(), "nav": nav, "open_positions": len(positions)})
-    ledger_tail = (list(previous.get("ledger_tail", [])) + ledger)[-40:]
+    ledger_tail = _dedupe_ledger_events(list(previous.get("ledger_tail", [])) + ledger)[-40:]
     return {
         "available": True,
         "state_id": args.state_id,
@@ -211,6 +213,8 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "metrics": _live_metrics(equity_tail, args.initial_capital),
         "equity": equity_tail,
         "ledger_tail": ledger_tail,
+        "last_rebalance_ts": now_ts.isoformat() if should_rebalance else last_rebalance_ts,
+        "_cycle_ledger_events": ledger,
         "latest_candidates": _candidate_snapshot(scored, now_ts),
     }
 
@@ -672,11 +676,44 @@ def _net_return(side: str, entry_price: float, exit_price: float, args: argparse
 
 def _append_live_outputs(args: argparse.Namespace, state: dict[str, Any]) -> None:
     prefix = f"{args.state_id}_{args.environment}"
-    (PAPER_DIR / f"{prefix}.json").write_text(json.dumps(state, indent=2, sort_keys=True))
+    state_for_file = dict(state)
+    cycle_ledger_events = list(state_for_file.pop("_cycle_ledger_events", []) or [])
+    (PAPER_DIR / f"{prefix}.json").write_text(json.dumps(state_for_file, indent=2, sort_keys=True))
     _write_jsonl(PAPER_DIR / f"{prefix}_equity.jsonl", state.get("equity", [])[-1:])
-    ledger = state.get("ledger_tail", [])
-    if ledger:
-        _write_jsonl(PAPER_DIR / f"{prefix}_ledger.jsonl", ledger[-5:])
+    if cycle_ledger_events:
+        _write_jsonl(PAPER_DIR / f"{prefix}_ledger.jsonl", cycle_ledger_events)
+
+
+def _last_rebalance_ts(state: dict[str, Any]) -> str:
+    explicit = str(state.get("last_rebalance_ts") or "")
+    if explicit:
+        return explicit
+    timestamps: list[str] = []
+    for event in state.get("ledger_tail", []) or []:
+        if event.get("event") in {"entry", "skip"} and event.get("ts"):
+            timestamps.append(str(event["ts"]))
+    for pos in dict(state.get("positions") or {}).values():
+        if pos.get("entry_ts"):
+            timestamps.append(str(pos["entry_ts"]))
+    return max(timestamps) if timestamps else ""
+
+
+def _dedupe_ledger_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    out: list[dict[str, Any]] = []
+    for event in events:
+        key = (
+            event.get("event"),
+            event.get("ts"),
+            event.get("symbol"),
+            event.get("side"),
+            event.get("reason"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(event)
+    return out
 
 
 def _live_metrics(equity_tail: list[dict[str, Any]], initial_capital: float) -> dict[str, Any]:
