@@ -74,6 +74,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lookback-days", type=int, default=240)
     p.add_argument("--max-train-rows", type=int, default=250_000)
     p.add_argument("--refresh-ohlcv", action="store_true")
+    p.add_argument("--max-market-age-sec", type=float, default=2 * 3600.0)
+    p.add_argument("--min-fresh-symbols", type=int, default=20)
+    p.add_argument("--require-derivatives", action="store_true")
     p.add_argument("--max-positions", type=int, default=4)
     p.add_argument("--rebalance-hours", type=int, default=6)
     p.add_argument("--base-risk", type=float, default=0.06)
@@ -171,6 +174,7 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     predictions = _predict_policy(policy, train_features, train_labels, latest_features, args)
     scored = _build_portfolio_scores(predictions)
     now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
+    freshness = _freshness_report(latest_features, now_ts, args)
     previous = _load_live_state(args)
     positions, ledger, realized_nav = _close_due_live(previous, latest_features, now_ts, args)
     bootstrap = (
@@ -179,15 +183,37 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
         and abs(float(previous.get("realized_nav") or args.initial_capital) - float(args.initial_capital)) < 1e-9
     )
     last_rebalance_ts = _last_rebalance_ts(previous)
-    should_rebalance = (bootstrap or _is_rebalance_ts(now_ts, int(args.rebalance_hours))) and last_rebalance_ts != now_ts.isoformat()
+    freshness_ok = bool(freshness.get("passed"))
+    should_rebalance = (
+        freshness_ok
+        and (bootstrap or _is_rebalance_ts(now_ts, int(args.rebalance_hours)))
+        and last_rebalance_ts != now_ts.isoformat()
+    )
     if should_rebalance:
         new_positions, new_events = _open_live_positions(scored, positions, now_ts, args)
         positions.update(new_positions)
         ledger.extend(new_events)
+    elif not freshness_ok:
+        ledger.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "skip",
+                "symbol": None,
+                "side": None,
+                "reason": "freshness_gate_failed:" + ",".join(freshness.get("reasons") or []),
+                "pnl": None,
+                "net_return": None,
+            }
+        )
     nav = _mark_live_nav(realized_nav, positions, latest_features, args)
-    equity_tail = list(previous.get("equity", []))[-239:]
-    equity_tail.append({"ts": now_ts.isoformat(), "nav": nav, "open_positions": len(positions)})
-    ledger_tail = _dedupe_ledger_events(list(previous.get("ledger_tail", [])) + ledger)[-40:]
+    equity_tail = _upsert_equity_point(
+        list(previous.get("equity", [])),
+        {"ts": now_ts.isoformat(), "nav": nav, "open_positions": len(positions)},
+    )[-240:]
+    previous_ledger_tail = list(previous.get("ledger_tail", []))
+    if freshness_ok:
+        previous_ledger_tail = _drop_freshness_skips(previous_ledger_tail, now_ts.isoformat())
+    ledger_tail = _dedupe_ledger_events(previous_ledger_tail + ledger)[-40:]
     return {
         "available": True,
         "state_id": args.state_id,
@@ -208,8 +234,9 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "realized_pnl": realized_nav - float(args.initial_capital),
         "open_risk": sum(float(pos.get("risk_budget", 0.0)) for pos in positions.values()),
         "positions": positions,
-        "live_gates_enabled": False,
-        "live_gate_pass_count": 0,
+        "live_gates_enabled": True,
+        "live_gate_pass_count": 1 if freshness_ok else 0,
+        "freshness": freshness,
         "metrics": _live_metrics(equity_tail, args.initial_capital),
         "equity": equity_tail,
         "ledger_tail": ledger_tail,
@@ -679,9 +706,115 @@ def _append_live_outputs(args: argparse.Namespace, state: dict[str, Any]) -> Non
     state_for_file = dict(state)
     cycle_ledger_events = list(state_for_file.pop("_cycle_ledger_events", []) or [])
     (PAPER_DIR / f"{prefix}.json").write_text(json.dumps(state_for_file, indent=2, sort_keys=True))
-    _write_jsonl(PAPER_DIR / f"{prefix}_equity.jsonl", state.get("equity", [])[-1:])
+    _append_latest_equity(PAPER_DIR / f"{prefix}_equity.jsonl", state.get("equity", [])[-1:])
     if cycle_ledger_events:
         _write_jsonl(PAPER_DIR / f"{prefix}_ledger.jsonl", cycle_ledger_events)
+
+
+def _freshness_report(latest_features: pd.DataFrame, now_ts: pd.Timestamp, args: argparse.Namespace) -> dict[str, Any]:
+    observed_at = datetime.now(timezone.utc)
+    market_age_sec = max(0.0, (observed_at - now_ts.to_pydatetime()).total_seconds())
+    try:
+        latest = latest_features.xs(now_ts, level="timestamp", drop_level=False)
+    except Exception:
+        latest = latest_features
+    symbols = sorted(str(sym) for sym in latest.index.get_level_values("symbol").unique())
+    volume_col = _first_existing_col(latest, ("volume_usd", "quote_volume", "volume"))
+    if len(latest) and "close" in latest and volume_col:
+        close_ok = pd.to_numeric(latest["close"], errors="coerce").notna().to_numpy(dtype=bool)
+        volume_ok = (pd.to_numeric(latest[volume_col], errors="coerce").fillna(0.0) > 0).to_numpy(dtype=bool)
+        fresh_symbols = int(np.logical_and(close_ok, volume_ok).sum())
+    else:
+        fresh_symbols = 0
+    derivative_present: dict[str, int] = {}
+    for name in ("funding_rate", "oi_value", "ls_ratio"):
+        if name in latest:
+            derivative_present[name] = int(pd.to_numeric(latest[name], errors="coerce").notna().sum())
+        else:
+            derivative_present[name] = 0
+    reasons: list[str] = []
+    if market_age_sec > float(args.max_market_age_sec):
+        reasons.append(f"market_age_sec>{float(args.max_market_age_sec):.0f}")
+    if fresh_symbols < int(args.min_fresh_symbols):
+        reasons.append(f"fresh_symbols<{int(args.min_fresh_symbols)}")
+    if args.require_derivatives:
+        required = max(1, min(int(args.min_fresh_symbols), len(symbols)))
+        missing = [name for name, count in derivative_present.items() if count < required]
+        if missing:
+            reasons.append("missing_derivatives:" + "|".join(missing))
+    return {
+        "passed": not reasons,
+        "reasons": reasons,
+        "observed_at": observed_at.isoformat(),
+        "latest_market_ts": now_ts.isoformat(),
+        "market_age_sec": market_age_sec,
+        "fresh_symbols": fresh_symbols,
+        "symbol_count": len(symbols),
+        "volume_column": volume_col,
+        "derivative_present": derivative_present,
+        "require_derivatives": bool(args.require_derivatives),
+    }
+
+
+def _first_existing_col(df: pd.DataFrame, candidates: tuple[str, ...]) -> str | None:
+    for col in candidates:
+        if col in df:
+            return col
+    return None
+
+
+def _upsert_equity_point(equity: list[dict[str, Any]], point: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    target_ts = str(point.get("ts") or "")
+    replaced = False
+    seen: set[str] = set()
+    for row in equity:
+        ts = str(row.get("ts") or "")
+        if not ts or ts in seen:
+            continue
+        seen.add(ts)
+        if ts == target_ts:
+            out.append(point)
+            replaced = True
+        else:
+            out.append(row)
+    if not replaced:
+        out.append(point)
+    return sorted(out, key=lambda row: str(row.get("ts") or ""))
+
+
+def _append_latest_equity(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    latest = rows[-1]
+    latest_ts = str(latest.get("ts") or "")
+    if latest_ts and _last_jsonl_ts(path) == latest_ts:
+        return
+    _write_jsonl(path, [latest])
+
+
+def _last_jsonl_ts(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, 2)
+            pos = fh.tell()
+            buf = bytearray()
+            while pos > 0:
+                pos -= 1
+                fh.seek(pos)
+                char = fh.read(1)
+                if char == b"\n" and buf:
+                    break
+                if char != b"\n":
+                    buf.extend(char)
+            line = bytes(reversed(buf)).decode("utf-8")
+        if not line.strip():
+            return None
+        return str(json.loads(line).get("ts") or "")
+    except Exception:
+        return None
 
 
 def _last_rebalance_ts(state: dict[str, Any]) -> str:
@@ -712,6 +845,19 @@ def _dedupe_ledger_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if key in seen:
             continue
         seen.add(key)
+        out.append(event)
+    return out
+
+
+def _drop_freshness_skips(events: list[dict[str, Any]], ts: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for event in events:
+        if (
+            event.get("event") == "skip"
+            and str(event.get("ts") or "") == ts
+            and str(event.get("reason") or "").startswith("freshness_gate_failed:")
+        ):
+            continue
         out.append(event)
     return out
 

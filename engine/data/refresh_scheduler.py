@@ -23,9 +23,17 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 ENGINE_DIR = ROOT / "engine"
 sys.path.insert(0, str(ENGINE_DIR))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from config.settings import DATA_DIR  # noqa: E402
 from data.fetcher import fetch_ohlcv  # noqa: E402
+from build_c_auto_feature_store import DEFAULT_DERIV_RUN  # noqa: E402
+from fetch_derivatives_structure import (  # noqa: E402
+    _create_okx as _create_derivatives_okx,
+    _fetch_with_retries as _fetch_derivatives_with_retries,
+    _resolve_symbol as _resolve_derivatives_symbol,
+    _safe_symbol as _safe_derivatives_symbol,
+)
 
 
 QUALITY_PATH = ENGINE_DIR / "data" / "quality" / "c_auto_dataset_quality_v1" / "symbol_quality.parquet"
@@ -40,10 +48,20 @@ STOP = False
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run unified OKX market data refresh scheduler")
     p.add_argument("--interval-sec", type=float, default=900.0)
-    p.add_argument("--max-symbols", type=int, default=30)
-    p.add_argument("--timeframes", default="1h")
+    p.add_argument("--max-symbols", type=int, default=150)
+    p.add_argument("--timeframes", default="5m,15m,1h,4h,1d")
     p.add_argument("--lookback-days", type=int, default=3)
-    p.add_argument("--sleep-sec", type=float, default=0.4)
+    p.add_argument("--sleep-sec", type=float, default=0.2)
+    p.add_argument("--allow-stale-fallback", action="store_true")
+    p.add_argument("--skip-derivatives", action="store_true")
+    p.add_argument("--derivatives-run-id", default=DEFAULT_DERIV_RUN)
+    p.add_argument("--derivatives-max-symbols", type=int, default=150)
+    p.add_argument("--derivatives-kinds", default="funding,open_interest,long_short")
+    p.add_argument("--derivatives-timeframe", default="5m")
+    p.add_argument("--derivatives-lookback-days", type=int, default=3)
+    p.add_argument("--derivatives-limit", type=int, default=100)
+    p.add_argument("--derivatives-retry-attempts", type=int, default=3)
+    p.add_argument("--derivatives-retry-sleep-sec", type=float, default=6.0)
     p.add_argument("--max-cycles", type=int, default=0)
     p.add_argument("--once", action="store_true")
     return p.parse_args()
@@ -83,11 +101,17 @@ def main() -> int:
 
 def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dict[str, Any]:
     symbols = _symbols(int(args.max_symbols))
-    timeframes = [item.strip() for item in str(args.timeframes).split(",") if item.strip()]
-    target_end = pd.Timestamp.now(tz="UTC").floor("1h")
+    timeframes = _prioritize_timeframes([item.strip() for item in str(args.timeframes).split(",") if item.strip()])
+    derivative_symbols = symbols[: max(0, min(int(args.derivatives_max_symbols), len(symbols)))]
+    derivative_kinds = [item.strip() for item in str(args.derivatives_kinds).split(",") if item.strip()]
+    target_end = pd.Timestamp.now(tz="UTC").floor("5min")
     start = (target_end - pd.Timedelta(days=int(args.lookback_days))).strftime("%Y-%m-%d")
     end = target_end.strftime("%Y-%m-%d")
-    total_jobs = len(symbols) * len(timeframes)
+    derivatives_start = (target_end - pd.Timedelta(days=int(args.derivatives_lookback_days))).strftime("%Y-%m-%d")
+    derivatives_end = target_end.strftime("%Y-%m-%d")
+    ohlcv_jobs = len(symbols) * len(timeframes)
+    derivative_jobs = 0 if args.skip_derivatives else len(derivative_symbols) * len(derivative_kinds)
+    total_jobs = ohlcv_jobs + derivative_jobs
     ok = 0
     failed = 0
     skipped = 0
@@ -107,42 +131,115 @@ def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dic
             "skipped": skipped,
             "symbols": symbols,
             "timeframes": timeframes,
+            "derivatives": {
+                "enabled": not bool(args.skip_derivatives),
+                "run_id": args.derivatives_run_id,
+                "symbols": derivative_symbols,
+                "kinds": derivative_kinds,
+                "timeframe": args.derivatives_timeframe,
+            },
             "heartbeat_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 
-    for timeframe in timeframes:
-        for symbol in symbols:
+    critical_timeframes = [tf for tf in timeframes if tf in {"1h", "5m"}]
+    deferred_timeframes = [tf for tf in timeframes if tf not in set(critical_timeframes)]
+    for timeframe in critical_timeframes:
+        ok, failed, skipped = _refresh_ohlcv_timeframe(
+            args=args,
+            cycle=cycle,
+            started_at=started_at,
+            symbols=symbols,
+            timeframes=timeframes,
+            derivative_symbols=derivative_symbols,
+            derivative_kinds=derivative_kinds,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            target_end=target_end,
+            total_jobs=total_jobs,
+            ok=ok,
+            failed=failed,
+            skipped=skipped,
+            latest_records=latest_records,
+        )
+    if not args.skip_derivatives and not STOP:
+        derivatives_ex = None
+        for symbol in derivative_symbols:
             if STOP:
                 break
-            record = _refresh_one(symbol, timeframe, start, end, target_end)
-            latest_records.append(record)
-            if record["status"] == "ok":
-                ok += 1
-            elif record["status"] == "skipped":
-                skipped += 1
-            else:
-                failed += 1
-            _append_jsonl(PROGRESS_PATH, record)
-            _write_status(
-                {
-                    "scheduler_status": "running",
-                    "cycle": cycle,
-                    "cycle_started_at": started_at.isoformat(),
-                    "current_symbol": symbol,
-                    "current_timeframe": timeframe,
-                    "target_end": target_end.isoformat(),
-                    "total_jobs": total_jobs,
-                    "ok": ok,
-                    "failed": failed,
-                    "skipped": skipped,
-                    "last_record": record,
-                    "symbols": symbols,
-                    "timeframes": timeframes,
-                    "heartbeat_at": datetime.now(timezone.utc).isoformat(),
-                }
-            )
-            _sleep_interruptibly(max(0.0, float(args.sleep_sec)))
+            if derivatives_ex is None:
+                derivatives_ex = _create_derivatives_okx()
+            for kind in derivative_kinds:
+                if STOP:
+                    break
+                record = _refresh_derivative_one(
+                    ex=derivatives_ex,
+                    symbol=symbol,
+                    kind=kind,
+                    timeframe=str(args.derivatives_timeframe),
+                    start=derivatives_start,
+                    end=derivatives_end,
+                    target_end=_target_end_for_timeframe(str(args.derivatives_timeframe)),
+                    run_id=str(args.derivatives_run_id),
+                    limit=int(args.derivatives_limit),
+                    attempts=int(args.derivatives_retry_attempts),
+                    retry_sleep_sec=float(args.derivatives_retry_sleep_sec),
+                )
+                latest_records.append(record)
+                if record["status"] == "ok":
+                    ok += 1
+                elif record["status"] == "skipped":
+                    skipped += 1
+                else:
+                    failed += 1
+                _append_jsonl(PROGRESS_PATH, record)
+                _write_status(
+                    {
+                        "scheduler_status": "running",
+                        "cycle": cycle,
+                        "cycle_started_at": started_at.isoformat(),
+                        "current_symbol": symbol,
+                        "current_timeframe": str(args.derivatives_timeframe),
+                        "current_kind": kind,
+                        "target_end": target_end.isoformat(),
+                        "total_jobs": total_jobs,
+                        "ok": ok,
+                        "failed": failed,
+                        "skipped": skipped,
+                        "last_record": record,
+                        "symbols": symbols,
+                        "timeframes": timeframes,
+                        "derivatives": {
+                            "enabled": True,
+                            "run_id": args.derivatives_run_id,
+                            "symbols": derivative_symbols,
+                            "kinds": derivative_kinds,
+                            "timeframe": args.derivatives_timeframe,
+                        },
+                        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                _sleep_interruptibly(max(0.0, float(args.sleep_sec)))
+    for timeframe in deferred_timeframes:
+        ok, failed, skipped = _refresh_ohlcv_timeframe(
+            args=args,
+            cycle=cycle,
+            started_at=started_at,
+            symbols=symbols,
+            timeframes=timeframes,
+            derivative_symbols=derivative_symbols,
+            derivative_kinds=derivative_kinds,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            target_end=target_end,
+            total_jobs=total_jobs,
+            ok=ok,
+            failed=failed,
+            skipped=skipped,
+            latest_records=latest_records,
+        )
     return {
         "cycle": cycle,
         "cycle_started_at": started_at.isoformat(),
@@ -155,10 +252,93 @@ def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dic
         "last_records": latest_records[-20:],
         "symbols": symbols,
         "timeframes": timeframes,
+        "derivatives": {
+            "enabled": not bool(args.skip_derivatives),
+            "run_id": args.derivatives_run_id,
+            "symbols": derivative_symbols,
+            "kinds": derivative_kinds,
+            "timeframe": args.derivatives_timeframe,
+        },
     }
 
 
-def _refresh_one(symbol: str, timeframe: str, start: str, end: str, target_end: pd.Timestamp) -> dict[str, Any]:
+def _prioritize_timeframes(timeframes: list[str]) -> list[str]:
+    preferred = ["1h", "5m", "15m", "4h", "1d"]
+    out: list[str] = []
+    for timeframe in preferred + timeframes:
+        if timeframe in timeframes and timeframe not in out:
+            out.append(timeframe)
+    return out
+
+
+def _refresh_ohlcv_timeframe(
+    *,
+    args: argparse.Namespace,
+    cycle: int,
+    started_at: datetime,
+    symbols: list[str],
+    timeframes: list[str],
+    derivative_symbols: list[str],
+    derivative_kinds: list[str],
+    timeframe: str,
+    start: str,
+    end: str,
+    target_end: pd.Timestamp,
+    total_jobs: int,
+    ok: int,
+    failed: int,
+    skipped: int,
+    latest_records: list[dict[str, Any]],
+) -> tuple[int, int, int]:
+    for symbol in symbols:
+        if STOP:
+            break
+        record = _refresh_one(symbol, timeframe, start, end, _target_end_for_timeframe(timeframe), bool(args.allow_stale_fallback))
+        latest_records.append(record)
+        if record["status"] == "ok":
+            ok += 1
+        elif record["status"] == "skipped":
+            skipped += 1
+        else:
+            failed += 1
+        _append_jsonl(PROGRESS_PATH, record)
+        _write_status(
+            {
+                "scheduler_status": "running",
+                "cycle": cycle,
+                "cycle_started_at": started_at.isoformat(),
+                "current_symbol": symbol,
+                "current_timeframe": timeframe,
+                "target_end": target_end.isoformat(),
+                "total_jobs": total_jobs,
+                "ok": ok,
+                "failed": failed,
+                "skipped": skipped,
+                "last_record": record,
+                "symbols": symbols,
+                "timeframes": timeframes,
+                "derivatives": {
+                    "enabled": not bool(args.skip_derivatives),
+                    "run_id": args.derivatives_run_id,
+                    "symbols": derivative_symbols,
+                    "kinds": derivative_kinds,
+                    "timeframe": args.derivatives_timeframe,
+                },
+                "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        _sleep_interruptibly(max(0.0, float(args.sleep_sec)))
+    return ok, failed, skipped
+
+
+def _refresh_one(
+    symbol: str,
+    timeframe: str,
+    start: str,
+    end: str,
+    target_end: pd.Timestamp,
+    allow_stale_fallback: bool,
+) -> dict[str, Any]:
     started = time.time()
     try:
         before = _cache_max_ts(symbol, timeframe)
@@ -170,26 +350,103 @@ def _refresh_one(symbol: str, timeframe: str, start: str, end: str, target_end: 
             timeframe=timeframe,
             use_cache=True,
             sandbox=False,
-            fallback_to_stale=True,
+            fallback_to_stale=allow_stale_fallback,
             fallback_to_yfinance=False,
             include_funding=False,
         )
         after = _cache_max_ts(symbol, timeframe)
+        freshness = _freshness_status(after, target_end, timeframe)
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "status": "ok",
+            "status": "ok" if freshness["fresh"] else "failed",
+            "kind": "ohlcv",
             "symbol": symbol,
             "timeframe": timeframe,
             "rows": int(len(df)) if df is not None else 0,
             "cache_before": before.isoformat() if before is not None else None,
             "cache_after": after.isoformat() if after is not None else None,
             "target_end": target_end.isoformat(),
+            "fresh": freshness["fresh"],
+            "age_sec": freshness["age_sec"],
+            "freshness_error": freshness.get("error"),
             "elapsed_sec": round(time.time() - started, 3),
         }
     except Exception as exc:
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
             "status": "failed",
+            "kind": "ohlcv",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "error": str(exc),
+            "target_end": target_end.isoformat(),
+            "elapsed_sec": round(time.time() - started, 3),
+        }
+
+
+def _refresh_derivative_one(
+    *,
+    ex,
+    symbol: str,
+    kind: str,
+    timeframe: str,
+    start: str,
+    end: str,
+    target_end: pd.Timestamp,
+    run_id: str,
+    limit: int,
+    attempts: int,
+    retry_sleep_sec: float,
+) -> dict[str, Any]:
+    started = time.time()
+    path = _derivative_path(run_id, symbol, kind, timeframe)
+    try:
+        before = _frame_max_ts(path)
+        since = before + pd.Timedelta(milliseconds=1) if before is not None else pd.Timestamp(start, tz="UTC")
+        min_since = pd.Timestamp(start, tz="UTC")
+        since = max(since, min_since)
+        end_ts = target_end
+        ccxt_symbol = _resolve_derivatives_symbol(ex, symbol)
+        df_new = _fetch_derivatives_with_retries(
+            ex=ex,
+            kind=kind,
+            symbol=symbol,
+            ccxt_symbol=ccxt_symbol,
+            timeframe=timeframe,
+            since_ms=int(since.timestamp() * 1000),
+            end_ms=int(end_ts.timestamp() * 1000),
+            limit=limit,
+            attempts=attempts,
+            retry_sleep_sec=retry_sleep_sec,
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing = _read_frame(path)
+        merged = _merge_frames(existing, df_new)
+        _write_frame(merged, path)
+        after = _frame_max_ts(path)
+        freshness_timeframe = "8h" if kind == "funding" else timeframe
+        freshness = _freshness_status(after, target_end, freshness_timeframe)
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "status": "ok" if freshness["fresh"] else "failed",
+            "kind": kind,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "rows": int(len(df_new)),
+            "cache_before": before.isoformat() if before is not None else None,
+            "cache_after": after.isoformat() if after is not None else None,
+            "target_end": target_end.isoformat(),
+            "artifact": str(path.relative_to(ENGINE_DIR)),
+            "fresh": freshness["fresh"],
+            "age_sec": freshness["age_sec"],
+            "freshness_error": freshness.get("error"),
+            "elapsed_sec": round(time.time() - started, 3),
+        }
+    except Exception as exc:
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "status": "failed",
+            "kind": kind,
             "symbol": symbol,
             "timeframe": timeframe,
             "error": str(exc),
@@ -219,6 +476,37 @@ def _symbols(max_symbols: int) -> list[str]:
     return symbols[: max(max_symbols, 1)]
 
 
+def _target_end_for_timeframe(timeframe: str) -> pd.Timestamp:
+    mapping = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1d"}
+    return pd.Timestamp.now(tz="UTC").floor(mapping.get(timeframe, "1h"))
+
+
+def _freshness_status(cache_ts: pd.Timestamp | None, target_end: pd.Timestamp, timeframe: str) -> dict[str, Any]:
+    if cache_ts is None:
+        return {"fresh": False, "age_sec": None, "error": "missing_cache"}
+    tolerance = _timeframe_seconds(timeframe) * 2
+    age_sec = max(0.0, (target_end - cache_ts).total_seconds())
+    if age_sec > tolerance:
+        return {"fresh": False, "age_sec": age_sec, "error": f"cache_lag_sec>{tolerance:g}"}
+    return {"fresh": True, "age_sec": age_sec}
+
+
+def _timeframe_seconds(timeframe: str) -> int:
+    if timeframe == "5m":
+        return 300
+    if timeframe == "15m":
+        return 900
+    if timeframe == "1h":
+        return 3600
+    if timeframe == "4h":
+        return 14400
+    if timeframe == "8h":
+        return 28800
+    if timeframe == "1d":
+        return 86400
+    return 3600
+
+
 def _cache_max_ts(symbol: str, timeframe: str) -> pd.Timestamp | None:
     safe = symbol.replace("/", "_").replace(":", "_")
     for ext in ("parquet", "pkl"):
@@ -233,6 +521,58 @@ def _cache_max_ts(symbol: str, timeframe: str) -> pd.Timestamp | None:
         except Exception:
             return None
     return None
+
+
+def _derivative_path(run_id: str, symbol: str, kind: str, timeframe: str) -> Path:
+    return ENGINE_DIR / "data" / "derivatives_structure" / run_id / _safe_derivatives_symbol(symbol) / f"{kind}_{timeframe}.parquet"
+
+
+def _frame_max_ts(path: Path) -> pd.Timestamp | None:
+    df = _read_frame(path)
+    if df.empty:
+        return None
+    try:
+        return pd.Timestamp(pd.to_datetime(df.index, utc=True).max())
+    except Exception:
+        return None
+
+
+def _read_frame(path: Path) -> pd.DataFrame:
+    candidates = [path]
+    if path.suffix == ".parquet":
+        candidates.append(path.with_suffix(".pkl"))
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        try:
+            df = pd.read_parquet(candidate) if candidate.suffix == ".parquet" else pd.read_pickle(candidate)
+            if not df.empty:
+                df.index = pd.to_datetime(df.index, utc=True)
+                return df.sort_index()
+            return df
+        except Exception:
+            continue
+    return pd.DataFrame()
+
+
+def _merge_frames(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
+    frames = [df for df in (existing, new) if df is not None and not df.empty]
+    if not frames:
+        return pd.DataFrame()
+    out = pd.concat(frames).sort_index()
+    if "symbol" in out.columns:
+        out = out.reset_index().drop_duplicates(subset=["timestamp", "symbol"], keep="last").set_index("timestamp")
+    else:
+        out = out[~out.index.duplicated(keep="last")]
+    out.index = pd.to_datetime(out.index, utc=True)
+    return out.sort_index()
+
+
+def _write_frame(df: pd.DataFrame, path: Path) -> None:
+    try:
+        df.to_parquet(path)
+    except Exception:
+        df.to_pickle(path.with_suffix(".pkl"))
 
 
 def _write_status(payload: dict[str, Any]) -> None:

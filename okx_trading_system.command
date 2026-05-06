@@ -61,10 +61,14 @@ log_path="$LOG_DIR/data_refresh_double_click_${stamp}.log"
 echo "Starting unified data refresh: every 15 minutes"
 nohup "$PYTHON_BIN" engine/data/refresh_scheduler.py \
   --interval-sec 900 \
-  --max-symbols 30 \
-  --timeframes 1h \
+  --max-symbols 150 \
+  --timeframes 5m,15m,1h,4h,1d \
   --lookback-days 3 \
-  --sleep-sec 0.4 \
+  --sleep-sec 0.2 \
+  --derivatives-max-symbols 150 \
+  --derivatives-kinds funding,open_interest,long_short \
+  --derivatives-timeframe 5m \
+  --derivatives-lookback-days 3 \
   > "$log_path" 2>&1 < /dev/null &
 echo "$!" > "$CONTROL_DIR/data_refresh.pid"
 
