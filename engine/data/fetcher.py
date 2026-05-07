@@ -10,6 +10,7 @@ Data is cached locally as Parquet files to avoid redundant API calls.
 """
 
 import logging
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -142,6 +143,7 @@ def _ticker_quote_volume_usd(ticker: Dict) -> float:
 # ---------------------------------------------------------------------------
 
 _EXCHANGE_CACHE: dict[tuple[str, bool], ccxt.Exchange] = {}
+_EXCHANGE_CACHE_LOCK = threading.Lock()
 
 
 def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
@@ -152,22 +154,23 @@ def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
     Authenticated client is used only when sandbox=True (demo account keys).
     """
     cache_key = (mode, sandbox)
-    if cache_key in _EXCHANGE_CACHE:
-        return _EXCHANGE_CACHE[cache_key]
+    with _EXCHANGE_CACHE_LOCK:
+        if cache_key in _EXCHANGE_CACHE:
+            return _EXCHANGE_CACHE[cache_key]
 
-    options = {"defaultType": "swap" if mode == "futures" else "spot"}
-    if mode == "futures":
-        # Limit market discovery to swaps so historical futures fetches don't
-        # first enumerate SPOT/FUTURE/OPTION markets and fail noisily.
-        options["fetchMarkets"] = {"types": ["swap"]}
+        options = {"defaultType": "swap" if mode == "futures" else "spot"}
+        if mode == "futures":
+            # Limit market discovery to swaps so historical futures fetches don't
+            # first enumerate SPOT/FUTURE/OPTION markets and fail noisily.
+            options["fetchMarkets"] = {"types": ["swap"]}
 
-    if sandbox:
-        ex = create_exchange(mode=mode, sandbox=True)
-    else:
-        ex = ccxt.okx({"enableRateLimit": True, "timeout": 20_000, "options": options})
-    ex.load_markets()
-    _EXCHANGE_CACHE[cache_key] = ex
-    return ex
+        if sandbox:
+            ex = create_exchange(mode=mode, sandbox=True)
+        else:
+            ex = ccxt.okx({"enableRateLimit": True, "timeout": 20_000, "options": options})
+        ex.load_markets()
+        _EXCHANGE_CACHE[cache_key] = ex
+        return ex
 
 
 def _resolve_symbol_alias(symbol: str, mode: str) -> str:

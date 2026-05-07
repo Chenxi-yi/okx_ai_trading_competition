@@ -46,6 +46,7 @@ class DownloadStartRequest:
     sleep_sec: float = 0.5
     retry_attempts: int = 4
     retry_sleep_sec: float = 8.0
+    workers: int = 1
     min_coverage: float = 0.8
     min_rows: int = 100
     skip_funding: bool = False
@@ -70,6 +71,7 @@ class DownloadStartRequest:
             sleep_sec=float(payload.get("sleep_sec", 0.5)),
             retry_attempts=int(payload.get("retry_attempts", 4)),
             retry_sleep_sec=float(payload.get("retry_sleep_sec", 8.0)),
+            workers=max(1, int(payload.get("workers", 1))),
             min_coverage=float(payload.get("min_coverage", 0.8)),
             min_rows=int(payload.get("min_rows", 100)),
             skip_funding=bool(payload.get("skip_funding", False)),
@@ -237,6 +239,7 @@ class DataDownloadManager:
                 sleep_sec=0.5,
                 retry_attempts=4,
                 retry_sleep_sec=8.0,
+                workers=max(1, int(manifest.get("workers") or 1)),
                 min_rows=100,
                 skip_funding=bool(manifest.get("skip_funding", False)),
             )
@@ -403,6 +406,8 @@ class DataDownloadManager:
             str(request.retry_attempts),
             "--retry-sleep-sec",
             str(request.retry_sleep_sec),
+            "--workers",
+            str(max(1, int(request.workers))),
             "--min-coverage",
             str(request.min_coverage),
             "--min-rows",

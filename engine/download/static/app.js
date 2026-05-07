@@ -157,6 +157,7 @@ async function startDownload(event) {
     min_volume_usd: Number(valueOf('minVolumeInput') || 30000000),
     max_symbols: Number(valueOf('maxSymbolsInput') || 250),
     sleep_sec: Number(valueOf('sleepInput') || 0.5),
+    workers: Number(valueOf('workersInput') || 1),
     min_rows: Number(valueOf('minRowsInput') || 100),
     skip_funding: $('skipFundingInput').checked,
     refresh_universe: $('refreshUniverseInput').checked,

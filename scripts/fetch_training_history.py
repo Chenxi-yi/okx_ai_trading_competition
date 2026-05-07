@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import json
 import logging
 import sys
@@ -36,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sleep-sec", type=float, default=0.5)
     p.add_argument("--retry-attempts", type=int, default=4)
     p.add_argument("--retry-sleep-sec", type=float, default=8.0)
+    p.add_argument("--workers", type=int, default=1, help="Number of concurrent symbol/timeframe downloads")
     p.add_argument("--min-coverage", type=float, default=0.8, help="Minimum expected bar coverage before a symbol is marked ok")
     p.add_argument("--min-rows", type=int, default=100, help="Minimum rows required before a symbol is marked ok")
     p.add_argument("--skip-funding", action="store_true", help="Skip funding-rate join while downloading OHLCV")
@@ -73,6 +75,7 @@ def main() -> int:
                 "end": args.end,
                 "timeframes": timeframes,
                 "skip_funding": bool(args.skip_funding),
+                "workers": max(1, int(args.workers)),
                 "status": "running",
                 "summary": {
                     "ok": 0,
@@ -100,6 +103,7 @@ def main() -> int:
                 "end": args.end,
                 "timeframes": timeframes,
                 "skip_funding": bool(args.skip_funding),
+                "workers": max(1, int(args.workers)),
                 "status": "running",
             }
         )
@@ -130,82 +134,96 @@ def main() -> int:
     ok = 0
     failed = 0
     skipped = 0
+    workers = max(1, int(args.workers))
+    pending_jobs: list[tuple[int, str, str]] = []
     for timeframe in timeframes:
         for i, symbol in enumerate(symbols, start=1):
             key = (symbol, timeframe)
             if key in completed:
                 skipped += 1
                 continue
-            started = time.time()
+            pending_jobs.append((i, symbol, timeframe))
+
+    in_flight: dict = {}
+    next_job = iter(pending_jobs)
+    processed = 0
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        while True:
+            while len(in_flight) < workers:
+                try:
+                    i, symbol, timeframe = next(next_job)
+                except StopIteration:
+                    break
+                future = executor.submit(_download_job, args, i, len(symbols), symbol, timeframe)
+                in_flight[future] = (i, symbol, timeframe)
+
+            if not in_flight:
+                break
+
+            active = [
+                {"symbol": symbol, "timeframe": timeframe, "job_index": i}
+                for i, symbol, timeframe in in_flight.values()
+            ]
             _write_json(
                 status_path,
                 {
                     "run_id": run_id,
                     "status": "running",
-                    "current_symbol": symbol,
-                    "current_timeframe": timeframe,
-                    "job_index": i,
+                    "current_symbol": active[0]["symbol"] if active else None,
+                    "current_timeframe": active[0]["timeframe"] if active else None,
+                    "active_jobs": active,
+                    "workers": workers,
+                    "job_index": processed + skipped + len(in_flight),
                     "symbols": len(symbols),
                     "total_jobs": total_jobs,
-                    "started_at": datetime.now(timezone.utc).isoformat(),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
-            record: Dict = {
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "start": args.start,
-                "end": args.end,
-            }
-            try:
-                expected_rows = _expected_rows(args.start, args.end, timeframe)
-                min_rows = max(int(args.min_rows), 1)
-                df = _fetch_with_retries(
-                    symbol,
-                    args.start,
-                    args.end,
-                    timeframe,
-                    args.retry_attempts,
-                    args.retry_sleep_sec,
-                    min_rows=min_rows,
-                    include_funding=not args.skip_funding,
-                )
-                coverage = len(df) / max(expected_rows, 1)
-                record.update(
-                    {
-                        "status": "ok",
-                        "rows": int(len(df)),
-                        "expected_rows": int(expected_rows),
-                        "coverage": round(float(coverage), 6),
-                        "min_rows": int(min_rows),
-                        "first_ts": str(df.index.min()) if not df.empty else None,
-                        "last_ts": str(df.index.max()) if not df.empty else None,
-                        "elapsed_sec": round(time.time() - started, 3),
+
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                i, symbol, timeframe = in_flight.pop(future)
+                try:
+                    record = future.result()
+                except Exception as exc:
+                    record = {
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "start": args.start,
+                        "end": args.end,
+                        "status": "failed",
+                        "error": str(exc),
+                        "elapsed_sec": 0.0,
                     }
+                processed += 1
+                if record.get("status") == "ok":
+                    ok += 1
+                    logging.info("OK %s %s rows=%d (%d/%d)", symbol, timeframe, record.get("rows", 0), i, len(symbols))
+                else:
+                    failed += 1
+                    logging.warning("FAILED %s %s: %s", symbol, timeframe, record.get("error"))
+                _append_jsonl(progress_path, record)
+                _write_json(
+                    status_path,
+                    {
+                        "run_id": run_id,
+                        "status": "running",
+                        "last_symbol": symbol,
+                        "last_timeframe": timeframe,
+                        "last_record": record,
+                        "active_jobs": [
+                            {"symbol": sym, "timeframe": tf, "job_index": idx}
+                            for idx, sym, tf in in_flight.values()
+                        ],
+                        "workers": workers,
+                        "job_index": processed + skipped,
+                        "symbols": len(symbols),
+                        "total_jobs": total_jobs,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    },
                 )
-                ok += 1
-                logging.info("OK %s %s rows=%d (%d/%d)", symbol, timeframe, len(df), i, len(symbols))
-            except Exception as exc:
-                record.update({"status": "failed", "error": str(exc), "elapsed_sec": round(time.time() - started, 3)})
-                failed += 1
-                logging.warning("FAILED %s %s: %s", symbol, timeframe, exc)
-            _append_jsonl(progress_path, record)
-            _write_json(
-                status_path,
-                {
-                    "run_id": run_id,
-                    "status": "running",
-                    "last_symbol": symbol,
-                    "last_timeframe": timeframe,
-                    "last_record": record,
-                    "job_index": i,
-                    "symbols": len(symbols),
-                    "total_jobs": total_jobs,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            time.sleep(max(0.0, args.sleep_sec))
+                time.sleep(max(0.0, args.sleep_sec))
 
     manifest.update(
         {
@@ -231,6 +249,45 @@ def main() -> int:
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
     return 0 if failed == 0 else 1
+
+
+def _download_job(args: argparse.Namespace, index: int, symbol_count: int, symbol: str, timeframe: str) -> Dict:
+    started = time.time()
+    record: Dict = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "start": args.start,
+        "end": args.end,
+    }
+    expected_rows = _expected_rows(args.start, args.end, timeframe)
+    min_rows = max(int(args.min_rows), 1)
+    df = _fetch_with_retries(
+        symbol,
+        args.start,
+        args.end,
+        timeframe,
+        args.retry_attempts,
+        args.retry_sleep_sec,
+        min_rows=min_rows,
+        include_funding=not args.skip_funding,
+    )
+    coverage = len(df) / max(expected_rows, 1)
+    record.update(
+        {
+            "status": "ok",
+            "rows": int(len(df)),
+            "expected_rows": int(expected_rows),
+            "coverage": round(float(coverage), 6),
+            "min_rows": int(min_rows),
+            "first_ts": str(df.index.min()) if not df.empty else None,
+            "last_ts": str(df.index.max()) if not df.empty else None,
+            "elapsed_sec": round(time.time() - started, 3),
+            "job_index": int(index),
+            "symbols": int(symbol_count),
+        }
+    )
+    return record
 
 
 def _fetch_with_retries(
