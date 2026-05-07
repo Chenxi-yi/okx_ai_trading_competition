@@ -141,6 +141,9 @@ def _ticker_quote_volume_usd(ticker: Dict) -> float:
 # Exchange factory
 # ---------------------------------------------------------------------------
 
+_EXCHANGE_CACHE: dict[tuple[str, bool], ccxt.Exchange] = {}
+
+
 def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
     """
     Return a ccxt.okx exchange for market data.
@@ -148,6 +151,10 @@ def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
     Uses an UNAUTHENTICATED client for historical data (OHLCV is public).
     Authenticated client is used only when sandbox=True (demo account keys).
     """
+    cache_key = (mode, sandbox)
+    if cache_key in _EXCHANGE_CACHE:
+        return _EXCHANGE_CACHE[cache_key]
+
     options = {"defaultType": "swap" if mode == "futures" else "spot"}
     if mode == "futures":
         # Limit market discovery to swaps so historical futures fetches don't
@@ -159,6 +166,7 @@ def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
     else:
         ex = ccxt.okx({"enableRateLimit": True, "timeout": 20_000, "options": options})
     ex.load_markets()
+    _EXCHANGE_CACHE[cache_key] = ex
     return ex
 
 
