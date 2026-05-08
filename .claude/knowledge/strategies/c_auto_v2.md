@@ -234,6 +234,62 @@ Fixed sizing is the current reference view because it removes compounding from
 position sizing. The conservative fixed profile is the best paper-mode
 candidate so far.
 
+## Rebuild-161 OHLCV-Only Check — 2026-05-08
+
+After rebuilding OKX OHLCV history from `2023-01-01` to `2026-05-07`, the
+training universe was filtered to remove symbols first available on or after
+`2026-03-08`.
+
+Inputs:
+
+```text
+universe: okx_usdt_swap_ge2m_20260507_listed_before_20260308
+symbols: 161
+quality_id: c_auto_dataset_quality_rebuild_161_ohlcv_v1
+feature_store: c_auto_feature_store_rebuild_161_ohlcv_v1
+feature rows: 2,572,026
+features: 83
+labels: 40
+walk-forward folds: 80
+validation: warn:excessive_feature_nan
+```
+
+The warning is expected for this pass because derivatives and instrument
+snapshot data were not rebuilt yet. OHLCV, BTC regime, and price-derived
+features were available; `oi_*`, `ls_*`, and `listing_age_days` were all-null.
+
+All-fold sleeve check on the rebuilt feature store:
+
+| Sleeve | Regime | Label | IC | Spread | Long Tail | Short Tail |
+|---|---|---:|---:|---:|---:|---:|
+| `cross_section_spread` | `strong_bull` | 24h long | +0.2110 | +0.0398 | +0.0327 | -0.0070 |
+| `cross_section_spread` | `bear` | 24h long | +0.2094 | +0.0235 | +0.0099 | -0.0136 |
+| `cross_section_spread` | `chop_short` | 24h long | +0.2241 | +0.0188 | +0.0059 | -0.0130 |
+| `cross_section_spread` | `bull` | 24h long | +0.2966 | +0.0294 | +0.0134 | -0.0160 |
+| `high_beta_amplification` | `strong_bull` | 12h long | +0.3056 | +0.0404 | +0.0276 | -0.0129 |
+| `high_beta_amplification` | `bear` | 12h short | +0.3202 | +0.0286 | +0.0122 | -0.0163 |
+| `small_account_rotation` | `strong_bull` | 6h long | +0.2034 | +0.0146 | +0.0096 | -0.0050 |
+| `small_account_rotation` | `bear` | 6h short | +0.1690 | +0.0092 | +0.0031 | -0.0061 |
+
+Fixed 1,000U conservative portfolio checks:
+
+| Run | Final NAV | Return | Max DD | Trades | Win Rate | Leakage |
+|---|---:|---:|---:|---:|---:|---|
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_fixed1000_conservative_v1` | 6,120.74 | +512.07% | -3.87% | 4,200 | 60.69% | 0 violations |
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_fixed1000_highcost_v1` | 5,819.95 | +482.00% | -4.25% | 4,200 | 58.45% | 0 violations |
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_fixed1000_2025plus_v1` | 2,936.44 | +193.64% | -4.67% | 1,504 | 62.37% | 0 violations |
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_fixed1000_2026_v1` | 1,532.10 | +53.21% | -8.58% | 264 | 68.18% | 0 violations |
+
+Interpretation:
+
+- The rebuilt OHLCV-only pass reproduces and strengthens the C-Auto v2 thesis.
+- `cross_section_spread` and `high_beta_amplification` remain the first paper
+  candidates.
+- `crowding_squeeze_reversal` is not validated without derivatives and should
+  remain disabled until OI/long-short history is rebuilt.
+- Before live allocation, rebuild derivatives/instrument snapshots and rerun the
+  same sleeve and portfolio tests with derivative features present.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text

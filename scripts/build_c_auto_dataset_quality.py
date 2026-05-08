@@ -32,9 +32,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--htf-run-id", default=DEFAULT_HTF_RUN)
     p.add_argument("--deriv-run-id", default=DEFAULT_DERIV_RUN)
     p.add_argument("--snapshot-run-id", default=DEFAULT_SNAPSHOT_RUN)
+    p.add_argument("--symbols-manifest", default="", help="Optional universe manifest used to filter symbols")
     p.add_argument("--dataset-id", default=None)
     p.add_argument("--min-train-1h-rows", type=int, default=2160, help="90 days of 1h bars")
     p.add_argument("--min-long-train-1h-rows", type=int, default=4320, help="180 days of 1h bars")
+    p.add_argument("--allow-missing-derivatives", action="store_true", help="Build OHLCV-only quality when derivatives runs are absent")
     p.add_argument("--register-catalog", action="store_true")
     return p.parse_args()
 
@@ -54,9 +56,13 @@ def main() -> int:
 
     ohlcv_manifest = _read_json(ohlcv_dir / "manifest.json")
     htf_manifest = _read_json(htf_dir / "manifest.json")
-    deriv_manifest = _read_json(deriv_run_dir / "manifest.json")
-    snapshot_manifest = _read_json(snapshot_run_dir / "manifest.json")
+    deriv_manifest = _read_json(deriv_run_dir / "manifest.json", required=not args.allow_missing_derivatives)
+    snapshot_manifest = _read_json(snapshot_run_dir / "manifest.json", required=not args.allow_missing_derivatives)
     symbols = list(dict.fromkeys(ohlcv_manifest.get("symbols") or htf_manifest.get("symbols") or []))
+    if args.symbols_manifest:
+        symbols_manifest = _read_json(Path(args.symbols_manifest), required=True)
+        allowed = {str(symbol) for symbol in symbols_manifest.get("symbols", [])}
+        symbols = [symbol for symbol in symbols if symbol in allowed]
 
     progress_raw = pd.concat(
         [
@@ -92,17 +98,22 @@ def main() -> int:
 
         row["train_eligible_90d"] = int(row.get("1h_rows") or 0) >= args.min_train_1h_rows
         row["train_eligible_180d"] = int(row.get("1h_rows") or 0) >= args.min_long_train_1h_rows
-        row["has_core_inputs"] = bool(
+        has_core_ohlcv = bool(
             row.get("5m_status") == "ok"
             and row.get("15m_status") == "ok"
             and row.get("1h_status") == "ok"
-            and row.get("funding_present")
+        )
+        has_derivatives = bool(
+            row.get("funding_present")
             and row.get("open_interest_present")
             and row.get("long_short_present")
             and row.get("instrument_snapshot_present")
             and row.get("ticker_snapshot_present")
             and row.get("orderbook_snapshot_present")
         )
+        row["has_core_ohlcv"] = has_core_ohlcv
+        row["has_derivatives"] = has_derivatives
+        row["has_core_inputs"] = bool(has_core_ohlcv and (has_derivatives or args.allow_missing_derivatives))
         rows.append(row)
 
     quality = pd.DataFrame(rows).sort_values(["train_eligible_90d", "1h_rows", "symbol"], ascending=[False, False, True])
@@ -125,7 +136,9 @@ def main() -> int:
             "htf_run_id": args.htf_run_id,
             "deriv_run_id": args.deriv_run_id,
             "snapshot_run_id": args.snapshot_run_id,
+            "symbols_manifest": args.symbols_manifest,
         },
+        "allow_missing_derivatives": bool(args.allow_missing_derivatives),
         "thresholds": {
             "min_train_1h_rows": args.min_train_1h_rows,
             "min_long_train_1h_rows": args.min_long_train_1h_rows,
@@ -166,8 +179,12 @@ def main() -> int:
     return 0 if summary["status"] in {"ok", "warn"} else 1
 
 
-def _read_json(path: Path) -> dict[str, Any]:
+def _read_json(path: Path, required: bool = True) -> dict[str, Any]:
+    if not path.is_absolute():
+        path = ROOT / path
     if not path.exists():
+        if not required:
+            return {}
         raise FileNotFoundError(path)
     return json.loads(path.read_text())
 
