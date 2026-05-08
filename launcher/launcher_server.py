@@ -11,6 +11,7 @@ import argparse
 import json
 import mimetypes
 import os
+import shutil
 import signal
 import site
 import subprocess
@@ -50,6 +51,7 @@ DEFAULT_DOWNLOAD_RUN_ID = "train_hist_vol1m_1h_20240101_20260424"
 DEFAULT_DERIVATIVES_RUN_ID = "deriv_struct_132_5m_20240101_20260424"
 DEFAULT_MONSTER_WATCHLIST_ID = "monster_watchlist_5m_live_gated_20260426"
 C_AUTO_V2_STRATEGY_ID = "c_auto_v2_fixed1000_conservative"
+C_AUTO_V2_STATE_ID = "fixed1000_conservative"
 
 
 def read_text(path: Path) -> str | None:
@@ -531,18 +533,26 @@ def _position_net_return(pos: dict[str, Any]) -> float:
     return gross - 0.0014
 
 
-def start_c_auto_v2_paper(environment: str) -> dict[str, Any]:
-    existing = find_c_auto_v2_paper_processes("fixed1000_conservative")
+def start_c_auto_v2_paper(environment: str, fresh_start: bool = False) -> dict[str, Any]:
+    existing = find_c_auto_v2_paper_processes(C_AUTO_V2_STATE_ID)
+    archived_session = None
     if existing:
         live_existing = [proc for proc in existing if proc.get("source_mode") == "live"]
         stale_existing = [proc for proc in existing if proc.get("source_mode") != "live"]
-        if live_existing:
+        if live_existing and not fresh_start:
             return {"ok": True, "already_running": True, "processes": live_existing, "status": c_auto_v2_paper_status(environment=environment)}
-        for proc in stale_existing:
+        for proc in live_existing + stale_existing:
+            state_id = str(proc.get("state_id") or C_AUTO_V2_STATE_ID)
+            proc_env = str(proc.get("environment") or environment)
+            stop_path = CONTROL_DIR / f"c_auto_v2_paper_{state_id}_{proc_env}.stop"
+            stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
             try:
                 os.kill(int(proc["pid"]), 15)
             except OSError:
                 pass
+        time.sleep(0.5)
+    if fresh_start:
+        archived_session = archive_c_auto_v2_paper_session(C_AUTO_V2_STATE_ID, environment, "fresh_launcher_start")
     result = run_script(
         [
             "python3",
@@ -583,8 +593,55 @@ def start_c_auto_v2_paper(environment: str) -> dict[str, Any]:
         ],
         f"c_auto_v2_paper_fixed1000_{environment}",
     )
-    result.update({"ok": True, "strategy": C_AUTO_V2_STRATEGY_ID, "environment": environment, "mode": "paper"})
+    result.update(
+        {
+            "ok": True,
+            "strategy": C_AUTO_V2_STRATEGY_ID,
+            "environment": environment,
+            "mode": "paper",
+            "fresh_start": fresh_start,
+            "archived_session": archived_session,
+        }
+    )
     return result
+
+
+def archive_c_auto_v2_paper_session(state_id: str, environment: str, reason: str) -> dict[str, Any] | None:
+    prefix = f"{state_id}_{environment}"
+    active_paths = [
+        C_AUTO_V2_PAPER_DIR / f"{prefix}.json",
+        C_AUTO_V2_PAPER_DIR / f"{prefix}_scheduler.json",
+        C_AUTO_V2_PAPER_DIR / f"{prefix}_equity.jsonl",
+        C_AUTO_V2_PAPER_DIR / f"{prefix}_ledger.jsonl",
+    ]
+    existing_paths = [path for path in active_paths if path.exists()]
+    if not existing_paths:
+        return None
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    session_id = f"{prefix}_{stamp}"
+    archive_dir = C_AUTO_V2_PAPER_DIR / "archive" / session_id
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived_files: list[str] = []
+    for path in existing_paths:
+        target = archive_dir / path.name
+        shutil.move(str(path), str(target))
+        archived_files.append(str(target.relative_to(ROOT_DIR)))
+    manifest = {
+        "session_id": session_id,
+        "state_id": state_id,
+        "environment": environment,
+        "reason": reason,
+        "archived_at": datetime.now(timezone.utc).isoformat(),
+        "files": archived_files,
+    }
+    manifest_path = archive_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    return {
+        "session_id": session_id,
+        "archive_dir": str(archive_dir.relative_to(ROOT_DIR)),
+        "files": archived_files,
+        "manifest": str(manifest_path.relative_to(ROOT_DIR)),
+    }
 
 
 def stop_pro_paper() -> dict[str, Any]:
@@ -1831,7 +1888,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
         if option["kind"] == "c_auto_v2":
             if mode == "paper":
-                result = start_c_auto_v2_paper(env)
+                result = start_c_auto_v2_paper(env, fresh_start=bool(payload.get("fresh_start", False)))
                 result["data_refresh"] = data_refresh
                 result["kill_switch"] = kill_switch
                 return result
@@ -1886,13 +1943,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
         env = str(payload.get("env", "personal")).strip()
         if mode != "paper" or strategy != C_AUTO_V2_STRATEGY_ID:
             return
-        prefix = f"fixed1000_conservative_{env}"
-        for suffix in (".json", "_scheduler.json", "_equity.jsonl", "_ledger.jsonl"):
-            path = C_AUTO_V2_PAPER_DIR / f"{prefix}{suffix}"
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                pass
+        archive_c_auto_v2_paper_session(C_AUTO_V2_STATE_ID, env, "launcher_restart")
 
     def status_payload(self) -> dict[str, Any]:
         pids = pid_snapshot()

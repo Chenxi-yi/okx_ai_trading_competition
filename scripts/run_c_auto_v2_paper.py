@@ -177,9 +177,10 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     freshness = _freshness_report(latest_features, now_ts, args)
     previous = _load_live_state(args)
     positions, ledger, realized_nav = _close_due_live(previous, latest_features, now_ts, args)
+    stopped_flat_restart = str(previous.get("runner_status") or "") == "stopped_flat" and not positions
     bootstrap = (
         not positions
-        and not previous.get("ledger_tail")
+        and (stopped_flat_restart or not previous.get("ledger_tail"))
         and abs(float(previous.get("realized_nav") or args.initial_capital) - float(args.initial_capital)) < 1e-9
     )
     last_rebalance_ts = _last_rebalance_ts(previous)

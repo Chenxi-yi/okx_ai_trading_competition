@@ -755,9 +755,11 @@ async function startSystem() {
       port: state.port,
       confirm_real: confirmReal,
       confirm_competition: confirmCompetition,
+      fresh_start: true,
     }),
   });
-  $('lastAction').textContent = `启动请求已提交 ${launchPidText(result)}`;
+  const archived = result.archived_session?.session_id ? ` · 已归档 ${result.archived_session.session_id}` : '';
+  $('lastAction').textContent = `全新启动已提交 ${launchPidText(result)}${archived}`;
   setTimeout(refreshStatus, 1500);
 }
 
