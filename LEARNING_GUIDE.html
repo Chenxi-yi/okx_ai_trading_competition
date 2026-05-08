@@ -276,16 +276,16 @@
         <div class="eyebrow">Beginner Guide</div>
         <h1>OKX AI Skill Challenge
           <br />从大到小讲清楚这个项目</h1>
-        <p class="section-lead">这不是一个“单策略脚本仓库”，而是一套带比赛包装的量化交易系统。它同时包含三条路线：标准化的多组合交易引擎、以 <code>elite_flow</code> 为代表的微观结构自定义策略，以及以 <code>yolo_momentum / yolo_orchestrator</code> 为代表的高杠杆实验路线。目前最稳定可运行的是 <code>elite_flow + dashboard</code>。</p>
+        <p class="section-lead">这不是一个“单策略脚本仓库”，而是一套带比赛包装的量化交易系统。它同时包含三条路线：以 <code>C-Auto v2</code> 为当前主线的系统化 paper 策略、以 <code>elite_flow</code> 为代表的微观结构自定义策略，以及以 <code>yolo_momentum / yolo_orchestrator</code> 为代表的高杠杆实验路线。目前最重要的运行路径是从桌面启动器进入 <code>C-Auto v2 paper</code>。</p>
         <div>
-          <span class="pill">入口：<code>engine/main.py</code></span>
-          <span class="pill">主运行路径：<code>competition demo-start --strategy elite_flow</code></span>
-          <span class="pill">监控：<code>engine/dashboard.py</code></span>
-          <span class="pill">状态文件：<code>engine/logs/summary.json</code></span>
+          <span class="pill">唯一入口：<code>okx_trading_system.command</code></span>
+          <span class="pill">主运行路径：<code>C-Auto v2 paper</code></span>
+          <span class="pill">监控：<code>launcher/static</code></span>
+          <span class="pill">状态文件：<code>engine/logs/c_auto_v2_paper/*.json</code></span>
         </div>
         <div class="callout">
           先用一句话理解全局：
-          <strong>CLI 负责启动，TradingEngine 负责调度，TradingAlgorithm 负责把“市场数据”变成“目标仓位”，Broker 负责下单，Portfolio 负责记账，StructuredLogger 负责把一切写给 dashboard。</strong>
+          <strong>启动器负责统一启动和暂停，data refresh 负责更新数据，C-Auto 把特征变成候选信号，信号委员会决定有限仓位给谁，paper/live 以后共用同一套从信号到平仓的逻辑。</strong>
         </div>
       </div>
 
@@ -299,8 +299,9 @@
           <a href="#data-elements"><span>4. 数据元总表</span><span>字段从哪来、到哪去</span></a>
           <a href="#strategies"><span>5. 策略总表</span><span>现在有哪些策略</span></a>
           <a href="#yolo-routes"><span>6. YOLO 路线</span><span>两条 YOLO 路线怎么分工</span></a>
-          <a href="#elite-flow"><span>7. Elite Flow 细解</span><span>当前主跑策略</span></a>
-          <a href="#core-system"><span>8. 核心交易系统</span><span>最详细的部分</span></a>
+          <a href="#c-auto-v2"><span>7. C-Auto v2 细解</span><span>当前 paper 主线</span></a>
+          <a href="#elite-flow"><span>8. Elite Flow 细解</span><span>旧主线 / 微观结构策略</span></a>
+          <a href="#core-system"><span>9. 核心交易系统</span><span>最详细的部分</span></a>
         </div>
       </div>
     </section>
@@ -773,6 +774,14 @@
 
       <div class="strategy-cards">
         <div class="strategy-card">
+          <div class="k">当前 paper 主线</div>
+          <h3>C-Auto v2 Fixed1000</h3>
+          <p><strong>组成：</strong>BTC regime + alt 横截面排名 + high-beta 放大 + 小账户轮动 + 信号委员会。</p>
+          <p><strong>含义：</strong>它不是预测 BTC 涨跌，而是在当前 BTC 环境里挑更可能跑赢/跑输的一组山寨合约。</p>
+          <p><strong>怎么看变化：</strong>看 <code>latest_candidates</code>、<code>positions</code>、<code>source_strategy_id</code>、<code>expected_ev</code> 和 <code>p_target</code>，就能知道委员会为什么选它。</p>
+        </div>
+
+        <div class="strategy-card">
           <div class="k">标准策略</div>
           <h3>Combined Portfolio</h3>
           <p><strong>组成：</strong>Trend Momentum + Cross-Sectional Momentum + Funding Carry。</p>
@@ -1202,10 +1211,260 @@ yolo_orchestrator
       <p style="margin-top:12px;">如果第一轮就打到硬止损，YOLO 不会继续摊平原仓位。它会先冷却，再把轮次切到下一轮，把保证金从 <code>50 → 100 → 200 → 400</code> 逐级提高，然后重新跑一次全市场选标和 3 个 gate，目标是用下一轮交易把前面的亏损和新的 20% ROI 目标一起追回来。</p>
     </section>
 
+    <section class="panel" id="c-auto-v2">
+      <div class="eyebrow">C-Auto v2</div>
+      <h2>当前主线 C-Auto v2：它到底跑出来的是个什么策略</h2>
+      <p class="section-lead">C-Auto v2 现在不是 live 策略，而是已经进入 limited paper 的系统化策略。它的核心不是“猜 BTC 今天涨不涨”，而是先判断 BTC 所处的市场环境，再在一批 OKX USDT 永续合约里做横截面选择：哪些币更值得做多，哪些币更值得做空，哪些环境应该少做或不做。</p>
+
+      <div class="callout">
+        一句话版本：
+        <strong>C-Auto v2 = BTC 环境分类器 + 山寨币横截面排名模型 + 固定 1000U 小账户仓位规则 + 开仓 gate + 信号委员会。</strong>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="k">当前运行身份</div>
+          <h3>Fixed1000 Conservative Paper</h3>
+          <ul>
+            <li><strong>模式：</strong>paper，不是真实下单。</li>
+            <li><strong>本金假设：</strong><code>1000U</code> 固定小账户。</li>
+            <li><strong>最多持仓：</strong><code>4</code> 个标的。</li>
+            <li><strong>调仓节奏：</strong>约每 <code>6h</code> 换一轮，状态约每 <code>5min</code> mark 更新。</li>
+            <li><strong>当前数据：</strong><code>c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1</code>。</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="k">它赚的是什么钱</div>
+          <h3>不是单币预测，而是相对强弱</h3>
+          <ul>
+            <li><strong>横截面价差：</strong>同一 BTC 环境里，强币和弱币表现差异很大。</li>
+            <li><strong>高 beta 放大：</strong>强牛或熊市里，部分山寨比 BTC 反应更大。</li>
+            <li><strong>小账户轮动：</strong>1000U 可以在 3-4 个币之间快速切换，市场冲击很小。</li>
+            <li><strong>不交易也是 edge：</strong>弱信号、数据不新鲜、拥挤异常时少做。</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="margin-top:22px;">它由哪些 sleeve 组成</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Sleeve</th>
+            <th>角色</th>
+            <th>主要用在哪些 regime</th>
+            <th>当前结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>cross_section_spread</code></td>
+            <td>主 alpha</td>
+            <td><code>strong_bull / bear / chop_short / bull</code></td>
+            <td>最稳定。按币种横向排名，选 top tail / short tail。</td>
+          </tr>
+          <tr>
+            <td><code>high_beta_amplification</code></td>
+            <td>条件增强</td>
+            <td><code>strong_bull</code> 做多，<code>bear</code> 做空</td>
+            <td>IC 最高的一组之一，用来增强趋势环境里的弹性。</td>
+          </tr>
+          <tr>
+            <td><code>small_account_rotation</code></td>
+            <td>快轮动</td>
+            <td>6h 持仓窗口</td>
+            <td>有信号，但单独强度不如前两者，更适合作为辅助。</td>
+          </tr>
+          <tr>
+            <td><code>crowding_squeeze_reversal</code></td>
+            <td>风险过滤 / 次级研究</td>
+            <td>OI、funding、long-short 拥挤环境</td>
+            <td>历史 standalone alpha 还不够强；目前更多作为 gate 和后续研究方向。</td>
+          </tr>
+          <tr>
+            <td><code>deriv_oi_compression_breakout</code></td>
+            <td>新增研究候选</td>
+            <td>OI 上升但价格压缩</td>
+            <td>已经接入信号委员会，先 paper 观察，不直接 live。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:22px;">开仓流程：不是看到一个币就买，而是一层层筛</h3>
+      <div class="mono-block">
+<pre>1h 特征面板
+  -> 计算 BTC regime
+  -> 每个 regime 使用对应 sleeve 和特征列
+  -> 给每个 symbol 生成 score / side / horizon / risk_scalar
+  -> 通过数据、训练资格、流动性、拥挤、分位数 gate
+  -> 统一转成 Signal
+  -> PortfolioArbiter 信号委员会按 EV / Kelly / confidence 排序
+  -> 最多接受 4 个仓位
+  -> 写入 paper positions / ledger</pre>
+      </div>
+
+      <div class="triple">
+        <div class="mini-panel">
+          <h4>Gate 1: 数据新鲜度</h4>
+          <p>最新 market timestamp 不能太旧，当前 runner 参数是 <code>max_market_age_sec=7200</code>。如果数据过旧或新鲜标的不够，会跳过开仓。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 2: 训练资格</h4>
+          <p>标的需要有足够历史样本。当前数据质量结果里，<code>90d</code> 训练合格约 <code>143</code> 个，<code>180d</code> 训练合格约 <code>128</code> 个。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 3: 流动性</h4>
+          <p>候选需要满足最小成交额过滤。paper runner 里使用 <code>min_volume_usd</code>，避免把模型信号给到太难成交的币。</p>
+        </div>
+      </div>
+      <div class="triple" style="margin-top:14px;">
+        <div class="mini-panel">
+          <h4>Gate 4: 拥挤过滤</h4>
+          <p>如果 long 方向遇到极端高 funding / 高 OI / 高 long-short，或者 short 方向遇到极端反向拥挤，会被 <code>blocked_by_crowding</code> 挡掉。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 5: 分位数过滤</h4>
+          <p>不是所有正分都能开仓。系统按 side 取高分尾部，当前 conservative 口径近似只拿 top quantile 候选。</p>
+        </div>
+        <div class="mini-panel">
+          <h4>Gate 6: 委员会限仓</h4>
+          <p>所有候选会被转成 <code>Signal</code>，由 <code>PortfolioArbiter</code> 按 <code>forward_ev</code>、<code>kelly_fraction</code>、<code>confidence</code> 排序，最多选 4 个。</p>
+        </div>
+      </div>
+
+      <h3 style="margin-top:22px;">当前 paper 持仓为什么看起来是 short AR / ICP / ORDI / DOGE</h3>
+      <p>这不是人工挑的，也不是单纯因为这些币跌了才 short。当前 BTC regime 落在 <code>chop_short</code> 一类环境时，C-Auto 的规则会启用偏 short / avoid 的轮动逻辑。模型在这一小时的候选里把 <code>AR/USDT</code>、<code>ICP/USDT</code>、<code>ORDI/USDT</code>、<code>DOGE/USDT</code> 排在更值得做空的位置，于是 paper 会以固定小风险开 4 个 short。</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>字段</th>
+            <th>你在前端看到它代表什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>entry_price</code></td>
+            <td>paper 记录的开仓价格。</td>
+          </tr>
+          <tr>
+            <td><code>mark_price</code></td>
+            <td>当前用于估算未实现盈亏的价格。</td>
+          </tr>
+          <tr>
+            <td><code>unrealized_pnl</code></td>
+            <td>当前浮动盈亏，已经包含模拟手续费和滑点影响。</td>
+          </tr>
+          <tr>
+            <td><code>stop_price / tp1_price / tp2_price</code></td>
+            <td>模型生成的纸面止损和目标价，不代表已经在交易所挂了真实单。</td>
+          </tr>
+          <tr>
+            <td><code>source_strategy_id</code></td>
+            <td>下一次全新启动后会显示信号来自 C-Auto 主模型、OI 压缩、还是拥挤反转。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:22px;">历史战绩：应该怎么看，不应该怎么吹</h3>
+      <p>当前最相关的回测不是旧的 79 币数据，而是 2026-05-08 重新拉取后得到的 161 标的、2023-01-01 到 2026-05-07 的 feature store。最接近当前 paper 的是 <code>c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_conservative_v1</code>。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>口径</th>
+            <th>结果</th>
+            <th>解释</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Final NAV</td>
+            <td><code>6107.42</code></td>
+            <td>1000U 初始资金的固定 1000U conservative 研究回测净值。</td>
+          </tr>
+          <tr>
+            <td>Total Return</td>
+            <td><code>+510.74%</code></td>
+            <td>历史研究结果很强，但不能直接等同未来收益。</td>
+          </tr>
+          <tr>
+            <td>Max Drawdown</td>
+            <td><code>-3.49%</code></td>
+            <td>研究回测中的最大回撤，真实 live 里可能更大。</td>
+          </tr>
+          <tr>
+            <td>Trades / Win Rate</td>
+            <td><code>4200</code> / <code>60.60%</code></td>
+            <td>样本量不小，胜率不是靠极少数交易撑出来。</td>
+          </tr>
+          <tr>
+            <td>Leakage</td>
+            <td><code>0 violations</code></td>
+            <td>走过 fold 泄漏检查，但仍需要 paper 验证真实数据刷新和执行路径。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:22px;">按市场环境拆开看</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Regime</th>
+            <th>Trades</th>
+            <th>PnL</th>
+            <th>Win Rate</th>
+            <th>Avg Net Return</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>strong_bull</code></td>
+            <td>624</td>
+            <td>1773.70</td>
+            <td>64.26%</td>
+            <td>4.7375%</td>
+          </tr>
+          <tr>
+            <td><code>bull</code></td>
+            <td>1344</td>
+            <td>1572.76</td>
+            <td>57.81%</td>
+            <td>4.3341%</td>
+          </tr>
+          <tr>
+            <td><code>bear</code></td>
+            <td>1296</td>
+            <td>1445.79</td>
+            <td>63.81%</td>
+            <td>1.8593%</td>
+          </tr>
+          <tr>
+            <td><code>chop_short</code></td>
+            <td>936</td>
+            <td>315.17</td>
+            <td>57.69%</td>
+            <td>0.8634%</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        正确理解这些数字：
+        <strong>它们说明 C-Auto 值得 paper 跑，不说明它已经可以 live 满仓跑。现在最重要的是观察 paper 里真实数据刷新、候选稳定性、滑点假设、暂停/清仓、每轮调仓是否和回测假设一致。</strong>
+      </div>
+
+      <h3 style="margin-top:22px;">目前还缺什么</h3>
+      <ul>
+        <li><strong>OI / long-short 历史还不完整：</strong>OKX OI 小时数据可用覆盖更像最近约 30 天，不能直接当 2023-2026 完整历史。</li>
+        <li><strong>拥挤反转还不是主 alpha：</strong>funding/OI 1d pass 没证明它能单独赚钱，所以现在更适合做 filter 和研究候选。</li>
+        <li><strong>需要 paper 日志积累：</strong>至少要看若干天真实刷新后的候选、持仓、未实现盈亏、止盈止损行为。</li>
+        <li><strong>live 前还要加更严格风控：</strong>日亏损暂停、单币一键清仓、订单状态 reconcile、真实滑点统计，都要继续验证。</li>
+      </ul>
+    </section>
+
     <section class="panel" id="elite-flow">
       <div class="eyebrow">Elite Flow</div>
-      <h2>当前主策略 `elite_flow` 详细说明</h2>
-      <p class="section-lead">README 明确说明了当前最稳定可运行的路径是 <code>elite_flow</code>。它是这个仓库里最值得优先理解的策略，因为 dashboard、start script 和日志解析都围绕它做了增强。</p>
+      <h2>旧主线 / 微观结构策略 `elite_flow` 详细说明</h2>
+      <p class="section-lead"><code>elite_flow</code> 仍然是值得保留的微观结构策略，但它已经不是当前默认 paper 主线。当前主线是 C-Auto v2；Elite 更适合作为后续短线执行、盘口和拥挤结构研究的补充。</p>
 
       <div class="grid-2">
         <div class="card">
