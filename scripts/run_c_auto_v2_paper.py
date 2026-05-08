@@ -40,6 +40,7 @@ from build_c_auto_feature_store import (  # noqa: E402
     _read_quality,
 )
 from data.fetcher import fetch_ohlcv  # noqa: E402
+from arbitration.signal_committee import build_committee_signals, arbitrate_signals  # noqa: E402
 
 try:  # noqa: E402
     from sklearn.linear_model import Ridge
@@ -617,7 +618,6 @@ def _open_live_positions(
     args: argparse.Namespace,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
-    group = group[group["eligible"].astype(bool)].copy()
     group = group[~group["symbol"].isin(positions)]
     group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
     group = group[group["volume_usd"] >= float(args.min_volume_usd)]
@@ -633,31 +633,59 @@ def _open_live_positions(
                 "net_return": None,
             }
         ]
-    threshold = group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
-    group = group[group["score"] >= threshold].sort_values("score", ascending=False)
+    c_auto_group = group[group["eligible"].astype(bool)].copy()
+    if not c_auto_group.empty:
+        threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
+        c_auto_symbols = set(c_auto_group[c_auto_group["score"] >= threshold]["symbol"].astype(str))
+        group.loc[~group["symbol"].astype(str).isin(c_auto_symbols), "eligible"] = False
+    signals = build_committee_signals(
+        group,
+        now_ts,
+        base_capital=float(args.fixed_notional_capital),
+        base_risk=float(args.base_risk),
+        fee_slip_rate=_round_trip_cost_rate(args),
+    )
+    result = arbitrate_signals(
+        signals,
+        positions,
+        now_ts,
+        initial_capital=float(args.initial_capital),
+        realized_nav=float(args.fixed_notional_capital),
+        max_positions=int(args.max_positions),
+        max_decisions=max(0, int(args.max_positions) - len(positions)),
+        max_total_budget_usdt=float(args.fixed_notional_capital) * float(args.base_risk) * float(args.max_positions),
+        min_ev=0.0,
+    )
     opened: dict[str, dict[str, Any]] = {}
     events: list[dict[str, Any]] = []
-    slots = max(0, int(args.max_positions) - len(positions))
-    for _, row in group.head(slots).iterrows():
-        symbol = str(row["symbol"])
-        entry = float(row["close"])
+    row_by_symbol = {str(row["symbol"]): row for _, row in group.iterrows()}
+    for decision in result.decisions:
+        signal = decision.signal
+        symbol = str(signal.symbol)
+        row = row_by_symbol.get(symbol, {})
+        entry = float(signal.entry)
         if not _valid_number(entry) or entry <= 0:
             continue
-        side = str(row["side"])
-        risk_budget = float(args.fixed_notional_capital) * float(args.base_risk) * float(row["risk_scalar"])
-        horizon = int(row["horizon_hours"])
-        stop_pct = 0.025 if side == "long" else 0.025
-        target_pct = max(0.035, abs(float(row["score"]) or 0.0))
+        side = str(signal.side)
+        risk_budget = float(decision.size_usdt)
+        horizon = max(1, int(signal.horizon_sec / 3600))
+        target_pct = abs(float(signal.metadata.get("target_pct") or 0.035))
         opened[symbol] = {
             "side": side,
-            "score": float(row["score"]),
+            "score": float(signal.confidence),
+            "expected_ev": signal.forward_ev,
+            "p_target": signal.p_target,
+            "decision_id": decision.decision_id,
+            "committee_reason": decision.reason,
             "risk_budget": risk_budget,
             "entry_price": entry,
-            "stop_price": entry * (1.0 - stop_pct) if side == "long" else entry * (1.0 + stop_pct),
-            "tp1_price": entry * (1.0 + target_pct) if side == "long" else entry * (1.0 - target_pct),
+            "stop_price": float(signal.stop) if signal.stop is not None else None,
+            "tp1_price": float(signal.target) if signal.target is not None else None,
             "tp2_price": entry * (1.0 + target_pct * 1.75) if side == "long" else entry * (1.0 - target_pct * 1.75),
-            "regime": row.get("btc_regime_6"),
-            "signal_family": row.get("signal_family"),
+            "regime": row.get("btc_regime_6") if hasattr(row, "get") else signal.metadata.get("regime"),
+            "signal_family": signal.metadata.get("signal_family") or signal.strategy_id,
+            "source_strategy_id": signal.strategy_id,
+            "committee_metadata": dict(signal.metadata),
             "entry_ts": now_ts.isoformat(),
             "exit_ts": (now_ts + pd.Timedelta(hours=horizon)).isoformat(),
             "horizon_hours": horizon,
@@ -668,7 +696,34 @@ def _open_live_positions(
                 "event": "entry",
                 "symbol": symbol,
                 "side": side,
-                "reason": str(row.get("btc_regime_6")),
+                "reason": signal.strategy_id,
+                "pnl": None,
+                "net_return": None,
+                "decision_id": decision.decision_id,
+                "expected_ev": signal.forward_ev,
+                "p_target": signal.p_target,
+            }
+        )
+    for note in result.notes[-8:]:
+        events.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "committee_note",
+                "symbol": None,
+                "side": None,
+                "reason": note,
+                "pnl": None,
+                "net_return": None,
+            }
+        )
+    if not opened:
+        events.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "skip",
+                "symbol": None,
+                "side": None,
+                "reason": "committee_no_accepted_signals",
                 "pnl": None,
                 "net_return": None,
             }
@@ -736,8 +791,11 @@ def _latest_price(latest_features: pd.DataFrame, symbol: str) -> float:
 def _net_return(side: str, entry_price: float, exit_price: float, args: argparse.Namespace) -> float:
     raw = float(exit_price) / float(entry_price) - 1.0
     gross = raw if side == "long" else -raw
-    fee_slip = 2.0 * (float(args.fee_bps_per_side) + float(args.slippage_bps_per_side)) / 10000.0
-    return gross - fee_slip
+    return gross - _round_trip_cost_rate(args)
+
+
+def _round_trip_cost_rate(args: argparse.Namespace) -> float:
+    return 2.0 * (float(args.fee_bps_per_side) + float(args.slippage_bps_per_side)) / 10000.0
 
 
 def _append_live_outputs(args: argparse.Namespace, state: dict[str, Any]) -> None:
