@@ -36,7 +36,7 @@ from fetch_derivatives_structure import (  # noqa: E402
 )
 
 
-QUALITY_PATH = ENGINE_DIR / "data" / "quality" / "c_auto_dataset_quality_v1" / "symbol_quality.parquet"
+QUALITY_PATH = ENGINE_DIR / "data" / "quality" / "c_auto_dataset_quality_rebuild_161_ohlcv_v1" / "symbol_quality.parquet"
 LOG_DIR = ENGINE_DIR / "logs" / "data_refresh"
 STATUS_PATH = LOG_DIR / "status.json"
 PROGRESS_PATH = LOG_DIR / "progress.jsonl"
