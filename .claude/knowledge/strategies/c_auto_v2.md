@@ -290,6 +290,64 @@ Interpretation:
 - Before live allocation, rebuild derivatives/instrument snapshots and rerun the
   same sleeve and portfolio tests with derivative features present.
 
+## Rebuild-161 Snapshot Check — 2026-05-08
+
+Market snapshot run:
+
+```text
+run_id: rebuild_161_market_snapshot_20260508
+kinds: instrument,ticker,orderbook,trades
+symbols: 161
+jobs: 644
+status: completed
+failed: 0
+```
+
+Feature store with snapshots:
+
+```text
+dataset_id: c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1
+rows: 2,572,026
+features: 88
+labels: 40
+validation: warn:excessive_feature_nan
+```
+
+The snapshot pass successfully adds static/instrument features. In particular,
+`listing_age_days` is now populated and appears in the top IC diagnostics. The
+remaining excessive-NaN warning is expected because historical funding,
+open-interest, and long/short data have not been rebuilt yet.
+
+All-fold sleeve check with snapshots:
+
+| Sleeve | Regime | Label | IC | Spread | Long Tail | Short Tail |
+|---|---|---:|---:|---:|---:|---:|
+| `cross_section_spread` | `strong_bull` | 24h long | +0.2064 | +0.0384 | +0.0324 | -0.0060 |
+| `cross_section_spread` | `bear` | 24h long | +0.2083 | +0.0227 | +0.0094 | -0.0133 |
+| `cross_section_spread` | `chop_short` | 24h long | +0.2210 | +0.0186 | +0.0057 | -0.0129 |
+| `cross_section_spread` | `bull` | 24h long | +0.2988 | +0.0293 | +0.0132 | -0.0160 |
+| `high_beta_amplification` | `strong_bull` | 12h long | +0.3056 | +0.0404 | +0.0276 | -0.0129 |
+| `high_beta_amplification` | `bear` | 12h short | +0.3202 | +0.0286 | +0.0122 | -0.0163 |
+| `small_account_rotation` | `strong_bull` | 6h long | +0.2018 | +0.0145 | +0.0095 | -0.0050 |
+| `small_account_rotation` | `bear` | 6h short | +0.1677 | +0.0090 | +0.0030 | -0.0061 |
+
+Fixed 1,000U conservative portfolio checks with snapshots:
+
+| Run | Final NAV | Return | Max DD | Trades | Win Rate | Leakage |
+|---|---:|---:|---:|---:|---:|---|
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_conservative_v1` | 6,107.42 | +510.74% | -3.49% | 4,200 | 60.60% | 0 violations |
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_2025plus_v1` | 2,916.93 | +191.69% | -4.44% | 1,504 | 61.84% | 0 violations |
+| `c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_2026_v1` | 1,539.76 | +53.98% | -7.62% | 264 | 68.94% | 0 violations |
+
+Interpretation:
+
+- Snapshot features do not materially change the portfolio result versus the
+  OHLCV-only pass, which is good: the core signal is stable.
+- `listing_age_days` is useful for diagnostics and gating, but not the main
+  alpha source.
+- The next data priority is historical funding, open-interest, and long/short
+  history. Only after that should `crowding_squeeze_reversal` be judged again.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text

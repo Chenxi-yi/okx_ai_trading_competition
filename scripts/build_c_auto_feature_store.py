@@ -262,14 +262,14 @@ def _extra_features_for_symbol(df_1h: pd.DataFrame, symbol: str, deriv_run_id: s
     oi = _load_derivative(symbol, deriv_run_id, "open_interest")
     out["oi_value"] = _align_last(_numeric_col(oi, "open_interest_value"), idx)
     out["oi_quote_volume"] = _align_last(_numeric_col(oi, "quote_volume"), idx)
-    out["oi_chg_1h"] = out["oi_value"].pct_change()
-    out["oi_chg_24h"] = out["oi_value"].pct_change(24)
+    out["oi_chg_1h"] = out["oi_value"].pct_change(fill_method=None)
+    out["oi_chg_24h"] = out["oi_value"].pct_change(24, fill_method=None)
     out["oi_z_24"] = _rolling_z(out["oi_value"], 24)
 
     long_short = _load_derivative(symbol, deriv_run_id, "long_short")
     out["ls_ratio"] = _align_last(_numeric_col(long_short, "long_short_ratio"), idx)
-    out["ls_chg_1h"] = out["ls_ratio"].pct_change()
-    out["ls_chg_24h"] = out["ls_ratio"].pct_change(24)
+    out["ls_chg_1h"] = out["ls_ratio"].pct_change(fill_method=None)
+    out["ls_chg_24h"] = out["ls_ratio"].pct_change(24, fill_method=None)
     out["ls_z_24"] = _rolling_z(out["ls_ratio"], 24)
 
     static = _snapshot_features(symbol, snapshot_run_id)
