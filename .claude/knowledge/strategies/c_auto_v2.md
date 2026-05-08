@@ -348,6 +348,69 @@ Interpretation:
 - The next data priority is historical funding, open-interest, and long/short
   history. Only after that should `crowding_squeeze_reversal` be judged again.
 
+## Rebuild-161 Funding/OI Check — 2026-05-08
+
+Historical derivatives run:
+
+```text
+run_id: rebuild_161_funding_oi_1d_20230101_20260507
+kinds: funding,open_interest
+timeframe: 1d
+symbols: 161
+jobs: 322
+status: completed
+failed: 0
+```
+
+Important data caveat:
+
+- Funding history has useful multi-month to multi-year coverage.
+- OKX daily open-interest history returned mostly 180 rows per symbol, with
+  some 100-row symbols. Treat this as recent OI structure, not complete 2023
+  history.
+- `long_short` does not accept the `1d` period on OKX and failed with
+  `Parameter period error`; it must be rebuilt separately with a supported
+  period such as `1h` or a shorter 5m window.
+
+Feature store:
+
+```text
+dataset_id: c_auto_feature_store_rebuild_161_funding_oi_1d_snapshot_v1
+rows: 2,572,026
+features: 88
+labels: 40
+validation: warn:excessive_feature_nan
+```
+
+All-fold sleeve check with funding/OI 1d plus snapshots:
+
+| Sleeve | Regime | Label | IC | Spread | Long Tail | Short Tail |
+|---|---|---:|---:|---:|---:|---:|
+| `cross_section_spread` | `strong_bull` | 24h long | +0.2064 | +0.0384 | +0.0324 | -0.0060 |
+| `cross_section_spread` | `bear` | 24h long | +0.2083 | +0.0227 | +0.0094 | -0.0133 |
+| `cross_section_spread` | `chop_short` | 24h long | +0.2210 | +0.0186 | +0.0057 | -0.0129 |
+| `cross_section_spread` | `bull` | 24h long | +0.2988 | +0.0293 | +0.0132 | -0.0160 |
+| `high_beta_amplification` | `strong_bull` | 12h long | +0.3056 | +0.0404 | +0.0276 | -0.0129 |
+| `high_beta_amplification` | `bear` | 12h short | +0.3202 | +0.0286 | +0.0122 | -0.0163 |
+| `crowding_squeeze_reversal` | `strong_bull` | 24h long | +0.0142 | -0.0002 | +0.0088 | +0.0090 |
+| `crowding_squeeze_reversal` | `bear` | 24h short | +0.0072 | -0.0014 | -0.0006 | +0.0008 |
+| `crowding_squeeze_reversal` | `deep_bear` | 12h long | +0.0008 | -0.0005 | +0.0002 | +0.0007 |
+
+Fixed 1,000U conservative portfolio check:
+
+| Run | Final NAV | Return | Max DD | Trades | Win Rate | Leakage |
+|---|---:|---:|---:|---:|---:|---|
+| `c_auto_v2_portfolio_rebuild_161_funding_oi_1d_snapshot_fixed1000_conservative_v1` | 6,072.91 | +507.29% | -3.49% | 4,200 | 60.52% | 0 violations |
+
+Interpretation:
+
+- Funding/OI 1d does not add meaningful standalone alpha in this pass.
+- The core C-Auto edge remains price/regime cross-sectional ranking plus
+  high-beta amplification.
+- `crowding_squeeze_reversal` should stay disabled as a standalone sleeve.
+- Use funding/OI first as risk filters, and only re-test crowding after
+  supported-period `long_short` data is available.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text
