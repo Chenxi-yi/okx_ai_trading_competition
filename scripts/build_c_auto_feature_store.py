@@ -289,8 +289,11 @@ def _extra_features_for_symbol(df_1h: pd.DataFrame, symbol: str, deriv_run_id: s
 
 
 def _load_derivative(symbol: str, run_id: str, kind: str) -> pd.DataFrame:
-    path = BASE_DIR / "data" / "derivatives_structure" / run_id / _safe_symbol(symbol) / f"{kind}_5m.parquet"
-    if not path.exists():
+    symbol_dir = BASE_DIR / "data" / "derivatives_structure" / run_id / _safe_symbol(symbol)
+    candidates = [symbol_dir / f"{kind}_{tf}.parquet" for tf in ("5m", "1h", "1d")]
+    candidates.extend(sorted(symbol_dir.glob(f"{kind}_*.parquet")))
+    path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if path is None:
         return pd.DataFrame()
     df = pd.read_parquet(path)
     df.index = pd.to_datetime(df.index, utc=True)
