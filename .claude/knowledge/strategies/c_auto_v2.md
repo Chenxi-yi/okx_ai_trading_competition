@@ -411,6 +411,73 @@ Interpretation:
 - Use funding/OI first as risk filters, and only re-test crowding after
   supported-period `long_short` data is available.
 
+## Rebuild-161 1h OI Download — 2026-05-08
+
+Historical OI run:
+
+```text
+run_id: rebuild_161_open_interest_1h_20230101_20260507
+kinds: open_interest
+timeframe: 1h
+symbols: 161
+jobs: 161
+status: completed
+failed: 0
+typical rows per symbol: 709
+```
+
+Important data caveat:
+
+- OKX returned roughly 709 hourly OI rows per symbol, so the usable coverage is
+  about the most recent 30 days, not the full 2023-2026 request window.
+- This is still enough for short-horizon OI pressure research:
+  `OI up + price compressed -> higher breakout/volatility probability`.
+- Treat this as a live/paper-era monitoring feature first, not as a long
+  historical backtest feature.
+
+Research hypothesis:
+
+```text
+oi_pressure_breakout_v1:
+  oi_chg_6h/12h/24h high
+  abs(price_ret_6h/12h/24h) low
+  range or realized volatility compressed
+  -> future abs return / breakout probability increases
+```
+
+Direction should not come from OI pressure alone. Direction needs confirmation
+from funding, BTC regime, price location, breakout side, or order book behavior.
+
+## Paper Readiness — 2026-05-08
+
+C-Auto v2 is ready for limited paper trading, not live trading.
+
+Paper candidate:
+
+```text
+policy: c_auto_v2_regime_policy_v1
+dataset reference: c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1
+primary sleeves: cross_section_spread, high_beta_amplification
+disabled sleeve: crowding_squeeze_reversal
+capital assumption: fixed 1,000U notional research profile
+```
+
+Why paper is justified:
+
+- Rebuilt 161-symbol OHLCV dataset reproduced the edge.
+- Delayed-entry, explicit-cost, fixed-notional backtests are positive.
+- Fold leakage checks report 0 violations.
+- 2025+ and 2026-only slices remain positive.
+
+Paper constraints:
+
+- Paper only; do not enable live orders from this research result.
+- Use fixed small risk and max 4 positions.
+- Keep `crowding_squeeze_reversal` off until OI/long-short pressure research
+  proves incremental value.
+- Monitor realized slippage, fill latency, symbol eligibility, and stop/pause
+  behavior before any live allocation discussion.
+
 ## Proposed C-Auto v2 Architecture
 
 ```text
