@@ -66,6 +66,7 @@ nohup "$PYTHON_BIN" engine/data/refresh_scheduler.py \
   --lookback-days 3 \
   --sleep-sec 0.2 \
   --derivatives-max-symbols 150 \
+  --derivatives-run-id c_auto_live_derivatives_5m \
   --derivatives-kinds funding,open_interest,long_short \
   --derivatives-timeframe 5m \
   --derivatives-lookback-days 3 \
