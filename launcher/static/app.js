@@ -7,6 +7,8 @@ const state = {
 
 let launchOptions = { strategies: [] };
 let cAutoPaperAvailable = false;
+let latestCAutoStatus = null;
+let stopInFlight = false;
 
 const $ = (id) => document.getElementById(id);
 
@@ -94,6 +96,7 @@ function escapeAttr(value) {
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
+    cache: 'no-store',
     ...options,
   });
   const body = await res.json();
@@ -196,6 +199,7 @@ function renderStatus(data) {
 }
 
 function renderCAutoPanel(data, dataRefresh = {}) {
+  latestCAutoStatus = data || null;
   if (!data || !data.available) {
     $('cautoMode').textContent = 'not ready';
     $('cautoRunning').textContent = 'idle';
@@ -207,6 +211,7 @@ function renderCAutoPanel(data, dataRefresh = {}) {
     $('cautoDataset').textContent = '--';
     $('cautoPolicy').textContent = '--';
     $('cautoDataRefresh').textContent = dataRefresh.running ? 'running' : 'idle';
+    $('cautoPositions').innerHTML = '<div class="cauto-row stale">暂无持仓</div>';
     $('cautoCandidates').innerHTML = '<div class="cauto-row stale">暂无 C-Auto 状态</div>';
     $('cautoEvents').innerHTML = '<div class="cauto-row stale">暂无事件</div>';
     return;
@@ -236,6 +241,10 @@ function renderCAutoPanel(data, dataRefresh = {}) {
   $('cautoDataset').textContent = data.dataset_id || '--';
   $('cautoPolicy').textContent = data.policy_id || '--';
   $('cautoDataRefresh').textContent = `${refreshStatus} / cycle ${(dataRefresh.status || {}).cycle ?? '--'} / paper cycle ${scheduler.cycles ?? '--'}`;
+  const positionRows = Object.entries(positions);
+  $('cautoPositions').innerHTML = positionRows.length
+    ? positionRows.map(([symbol, pos]) => renderCAutoPosition(symbol, pos, data)).join('')
+    : '<div class="cauto-row stale">无持仓</div>';
 
   $('cautoCandidates').innerHTML = candidates.length
     ? candidates.slice(0, 8).map(renderCAutoCandidate).join('')
@@ -245,6 +254,57 @@ function renderCAutoPanel(data, dataRefresh = {}) {
   $('cautoEvents').innerHTML = ledger.length
     ? ledger.slice().reverse().slice(0, 8).map(renderCAutoEvent).join('')
     : '<div class="cauto-row stale">暂无事件</div>';
+}
+
+function renderCAutoPosition(symbol, pos, data) {
+  const side = pos.side || '--';
+  const entry = Number(pos.entry_price);
+  const mark = Number(pos.mark_price);
+  const pnl = Number(pos.unrealized_pnl);
+  const ret = Number(pos.net_return ?? pos.unrealized_pct);
+  const risk = Number(pos.risk_budget);
+  const stop = Number(pos.stop_price);
+  const tp1 = Number(pos.tp1_price);
+  const tp2 = Number(pos.tp2_price);
+  const score = Number(pos.score);
+  const entryTime = pos.entry_ts ? new Date(pos.entry_ts).toLocaleString() : '--';
+  const exitTime = pos.exit_ts ? new Date(pos.exit_ts).toLocaleString() : '--';
+  const pnlClass = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
+  const mode = data.mode || 'paper';
+  return `
+    <div class="cauto-position-card">
+      <div class="cauto-position-head">
+        <div>
+          <strong>${escapeHtml(symbol)}</strong>
+          <span>${escapeHtml(side)} / ${escapeHtml(pos.regime || '--')} / ${escapeHtml(pos.signal_family || '--')}</span>
+        </div>
+        <button class="small-danger" data-cauto-close="${escapeAttr(symbol)}" data-mode="${escapeAttr(mode)}">清仓</button>
+      </div>
+      <div class="cauto-trade-grid">
+        <div><span>入场</span><strong>${formatPrice(entry)}</strong></div>
+        <div><span>现价</span><strong>${formatPrice(mark)}</strong></div>
+        <div><span>未实现</span><strong class="${pnlClass}">${formatSignedMoney(pnl)}</strong></div>
+        <div><span>收益率</span><strong class="${pnlClass}">${Number.isFinite(ret) ? pct(ret) : '--'}</strong></div>
+        <div><span>风险额</span><strong>${formatMoney(risk)}</strong></div>
+        <div><span>Score</span><strong>${Number.isFinite(score) ? score.toFixed(4) : '--'}</strong></div>
+        <div><span>止损</span><strong>${formatPrice(stop)}</strong></div>
+        <div><span>TP1</span><strong>${formatPrice(tp1)}</strong></div>
+        <div><span>TP2</span><strong>${formatPrice(tp2)}</strong></div>
+      </div>
+      <div class="cauto-position-foot">
+        <span>进场 ${escapeHtml(entryTime)}</span>
+        <span>计划退出 ${escapeHtml(exitTime)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function formatPrice(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '--';
+  if (Math.abs(num) >= 100) return num.toFixed(2);
+  if (Math.abs(num) >= 1) return num.toFixed(4);
+  return num.toPrecision(6);
 }
 
 function renderCAutoCandidate(item) {
@@ -645,6 +705,29 @@ async function refreshStatus() {
   }
 }
 
+async function closeCAutoSymbol(symbol, mode) {
+  const data = latestCAutoStatus || {};
+  const liveMode = ['real', 'live', 'production'].includes(String(mode || data.mode || '').toLowerCase());
+  if (liveMode) {
+    const ok = window.confirm(`确认真实清仓 ${symbol}？这会撤该标的挂单并调用 OKX close position。`);
+    if (!ok) return;
+  }
+  $('lastAction').textContent = `清仓 ${symbol}...`;
+  const result = await api('/api/c-auto-v2/close-symbol', {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      state_id: data.state_id || 'fixed1000_conservative',
+      environment: data.environment || state.env,
+      mode: data.mode || 'paper',
+      confirm_live_close: liveMode,
+    }),
+  });
+  $('lastAction').textContent = result.closed ? `已清仓 ${result.symbol}` : `${symbol} 未持仓`;
+  if (result.status) renderCAutoPanel(result.status);
+  setTimeout(refreshStatus, 800);
+}
+
 async function refreshLaunchOptions() {
   const data = await api('/api/launch-options');
   renderStrategyOptions(data);
@@ -679,11 +762,27 @@ async function startSystem() {
 }
 
 async function stopSystem() {
+  if (stopInFlight) return;
+  stopInFlight = true;
+  $('stopBtn').disabled = true;
   $('lastAction').textContent = '暂停中...';
-  const result = await api('/api/stop', { method: 'POST', body: '{}' });
-  const cancel = result.order_cancel || {};
-  $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
-  setTimeout(refreshStatus, 1200);
+  try {
+    const result = await api('/api/stop', { method: 'POST', body: '{}' });
+    const status = await api('/api/status');
+    renderStatus(status);
+    const cancel = result.order_cancel || {};
+    const paperRunning = (status.pids?.c_auto_v2_paper || []).length;
+    const refreshRunning = (status.pids?.data_refresh || []).length;
+    const strategyRunning = (status.pids?.strategies || []).filter((item) => item.alive).length;
+    if (paperRunning || refreshRunning || strategyRunning) {
+      $('lastAction').textContent = `暂停异常 · paper ${paperRunning} · refresh ${refreshRunning} · strategy ${strategyRunning}`;
+      throw new Error('暂停请求已发送，但后台仍有进程运行');
+    }
+    $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
+  } finally {
+    stopInFlight = false;
+    $('stopBtn').disabled = false;
+  }
 }
 
 async function restartSystem() {
@@ -745,11 +844,7 @@ $('startBtn').addEventListener('click', () => {
   });
 });
 
-$('stopBtn').addEventListener('click', () => {
-  stopSystem().catch((err) => {
-    $('lastAction').textContent = err.message;
-  });
-});
+$('stopBtn').addEventListener('click', handleStopClick);
 
 $('restartBtn').addEventListener('click', () => {
   restartSystem().catch((err) => {
@@ -796,6 +891,28 @@ $('monsterAutoRefreshBtn').addEventListener('click', () => {
     $('monsterAutoRefreshStatus').textContent = `自动刷新：${err.message}`;
   });
 });
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#stopBtn')) {
+    handleStopClick(event);
+    return;
+  }
+  const target = event.target.closest('[data-cauto-close]');
+  if (!target) return;
+  closeCAutoSymbol(target.dataset.cautoClose, target.dataset.mode).catch((err) => {
+    $('lastAction').textContent = err.message;
+  });
+}, true);
+
+function handleStopClick(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  stopSystem().catch((err) => {
+    $('lastAction').textContent = err.message;
+    refreshStatus();
+  });
+}
 
 applySelection();
 refreshLaunchOptions().catch((err) => {

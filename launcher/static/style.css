@@ -541,9 +541,87 @@ input[type="number"] {
   margin-top: 12px;
 }
 
+.cauto-positions-block {
+  margin-top: 12px;
+}
+
+.cauto-positions-block h3,
 .cauto-grid h3 {
   margin: 0 0 8px;
   font-size: 14px;
+}
+
+.cauto-position-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cauto-position-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #b9decf;
+  border-radius: 8px;
+  background: #f6fffb;
+}
+
+.cauto-position-head,
+.cauto-position-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cauto-position-head strong {
+  display: block;
+  font-size: 16px;
+}
+
+.cauto-position-head span,
+.cauto-position-foot span,
+.cauto-trade-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.small-danger {
+  min-width: 64px;
+  min-height: 32px;
+  border: 1px solid #f0b8a8;
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--red);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.cauto-trade-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(82px, 1fr));
+  gap: 8px;
+}
+
+.cauto-trade-grid div {
+  display: grid;
+  gap: 4px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.cauto-trade-grid strong {
+  font-size: 14px;
+}
+
+.gain {
+  color: var(--green);
+}
+
+.loss {
+  color: var(--red);
 }
 
 .cauto-list {
@@ -711,9 +789,16 @@ input[type="number"] {
   .paper-metrics,
   .cauto-metrics,
   .cauto-dataset,
+  .cauto-trade-grid,
   .cauto-grid,
   .paper-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cauto-position-head,
+  .cauto-position-foot {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .button-row {

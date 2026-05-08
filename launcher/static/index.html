@@ -55,10 +55,10 @@
         </div>
 
         <div class="button-row">
-          <button id="startBtn" class="primary">启动系统</button>
-          <button id="stopBtn" class="danger">暂停全部</button>
-          <button id="restartBtn">重新开始</button>
-          <button id="refreshBtn">刷新</button>
+          <button id="startBtn" class="primary" type="button">启动系统</button>
+          <button id="stopBtn" class="danger" type="button">暂停全部</button>
+          <button id="restartBtn" type="button">重新开始</button>
+          <button id="refreshBtn" type="button">刷新</button>
         </div>
       </div>
 
@@ -99,6 +99,10 @@
         <div><span>Feature Store</span><strong id="cautoDataset">--</strong></div>
         <div><span>Policy</span><strong id="cautoPolicy">--</strong></div>
         <div><span>Data Refresh</span><strong id="cautoDataRefresh">--</strong></div>
+      </div>
+      <div class="cauto-positions-block">
+        <h3>当前持仓</h3>
+        <div id="cautoPositions" class="cauto-position-list"></div>
       </div>
       <div class="cauto-grid">
         <div>
@@ -196,6 +200,6 @@
       <pre id="downloadTail"></pre>
     </aside>
   </main>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260508_2312"></script>
 </body>
 </html>

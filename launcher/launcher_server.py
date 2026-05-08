@@ -16,6 +16,7 @@ import site
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -391,6 +392,143 @@ def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment
         }
     )
     return out
+
+
+def close_c_auto_v2_symbol(payload: dict[str, Any]) -> dict[str, Any]:
+    state_id = str(payload.get("state_id") or "fixed1000_conservative").strip()
+    environment = str(payload.get("environment") or payload.get("env") or "").strip()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise ValueError("symbol is required")
+    if environment not in ALLOWED_ENVS:
+        status = c_auto_v2_paper_status(state_id)
+        environment = str(status.get("environment") or "personal")
+    prefix = f"{state_id}_{environment}"
+    state_path = C_AUTO_V2_PAPER_DIR / f"{prefix}.json"
+    state = read_json(state_path) or {}
+    positions = dict(state.get("positions") or {})
+    matched_symbol = next((name for name in positions if name.upper() == symbol), None)
+    if not matched_symbol:
+        return {"ok": True, "closed": False, "symbol": symbol, "message": "symbol not open", "status": c_auto_v2_paper_status(state_id, environment)}
+
+    pos = dict(positions.pop(matched_symbol) or {})
+    mode = str(state.get("mode") or "paper").strip()
+    exchange_result = None
+    if mode in {"real", "live", "production"}:
+        if not bool(payload.get("confirm_live_close")):
+            raise ValueError("live close requires confirm_live_close=true")
+        exchange_result = _close_c_auto_live_symbol(matched_symbol, environment)
+        if not exchange_result.get("ok"):
+            raise RuntimeError(exchange_result.get("message") or "live close failed")
+
+    pnl = _position_unrealized_pnl(pos)
+    net_return = _position_net_return(pos)
+    realized_nav = float(state.get("realized_nav") or state.get("cash") or 1000.0) + pnl
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "ts": now,
+        "event": "manual_exit",
+        "symbol": matched_symbol,
+        "side": pos.get("side"),
+        "reason": "launcher_one_click_close",
+        "pnl": pnl,
+        "net_return": net_return,
+        "exit_price": pos.get("mark_price"),
+        "mode": mode,
+        "exchange_result": exchange_result,
+    }
+    ledger_tail = list(state.get("ledger_tail") or [])
+    ledger_tail.append(event)
+    state["positions"] = positions
+    state["ledger_tail"] = ledger_tail[-40:]
+    state["realized_nav"] = realized_nav
+    state["cash"] = realized_nav
+    state["realized_pnl"] = realized_nav - 1000.0
+    state["unrealized_pnl"] = sum(_position_unrealized_pnl(dict(p)) for p in positions.values())
+    state["nav"] = realized_nav + float(state["unrealized_pnl"])
+    state["open_risk"] = sum(float(dict(p).get("risk_budget") or 0.0) for p in positions.values())
+    state["updated_at"] = now
+    C_AUTO_V2_PAPER_DIR.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+    with (C_AUTO_V2_PAPER_DIR / f"{prefix}_ledger.jsonl").open("a") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+    return {"ok": True, "closed": True, "symbol": matched_symbol, "mode": mode, "event": event, "exchange_result": exchange_result, "status": c_auto_v2_paper_status(state_id, environment)}
+
+
+def _close_c_auto_live_symbol(symbol: str, environment: str) -> dict[str, Any]:
+    profile = "live" if environment == "competition" else environment
+    inst_id = _symbol_to_swap_inst_id(symbol)
+    cancel_result = _cancel_profile_symbol_open_orders(profile, inst_id)
+    close_result = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "cross", "--posSide", "net"])
+    return {
+        "ok": close_result["returncode"] == 0,
+        "profile": profile,
+        "inst_id": inst_id,
+        "cancel_orders": cancel_result,
+        "close_position": close_result,
+        "message": close_result["message"],
+    }
+
+
+def _cancel_profile_symbol_open_orders(profile: str, inst_id: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "profile": profile,
+        "inst_id": inst_id,
+        "orders_found": 0,
+        "orders_cancelled": 0,
+        "orders_failed": 0,
+        "errors": [],
+        "cancelled": [],
+    }
+    resp = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
+    if resp["returncode"] != 0:
+        result["errors"].append(resp["message"])
+        return result
+    orders = _as_order_list(resp["data"])
+    result["orders_found"] = len(orders)
+    for order in orders:
+        ord_id = str(order.get("ordId") or order.get("ord_id") or order.get("orderId") or "").strip()
+        if not ord_id:
+            result["orders_failed"] += 1
+            result["errors"].append(f"missing ordId in order: {order}")
+            continue
+        cancel = _run_okx_json(["okx", "--profile", profile, "swap", "cancel", inst_id, "--ordId", ord_id])
+        if cancel["returncode"] == 0:
+            result["orders_cancelled"] += 1
+            result["cancelled"].append({"instId": inst_id, "ordId": ord_id})
+        else:
+            result["orders_failed"] += 1
+            result["errors"].append(cancel["message"])
+    return result
+
+
+def _position_unrealized_pnl(pos: dict[str, Any]) -> float:
+    try:
+        return float(pos.get("unrealized_pnl"))
+    except Exception:
+        pass
+    net_return = _position_net_return(pos)
+    try:
+        return float(pos.get("risk_budget") or 0.0) * net_return
+    except Exception:
+        return 0.0
+
+
+def _position_net_return(pos: dict[str, Any]) -> float:
+    try:
+        return float(pos.get("net_return"))
+    except Exception:
+        pass
+    try:
+        entry = float(pos.get("entry_price"))
+        mark = float(pos.get("mark_price"))
+    except Exception:
+        return 0.0
+    if entry <= 0 or mark <= 0:
+        return 0.0
+    raw = mark / entry - 1.0
+    gross = raw if pos.get("side") == "long" else -raw
+    return gross - 0.0014
 
 
 def start_c_auto_v2_paper(environment: str) -> dict[str, Any]:
@@ -1648,6 +1786,10 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if path == "/api/monster-auto-refresh-start":
                 self.send_json(200, start_monster_auto_refresh())
                 return
+            if path == "/api/c-auto-v2/close-symbol":
+                payload = self.read_json_body()
+                self.send_json(200, close_c_auto_v2_symbol(payload))
+                return
             self.send_json(404, {"ok": False, "error": "unknown route"})
         except ValueError as exc:
             self.send_json(400, {"ok": False, "error": str(exc)})
@@ -1783,6 +1925,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(content)))
+        if static_path.suffix in {".html", ".js", ".css"}:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(content)
 

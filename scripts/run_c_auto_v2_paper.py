@@ -205,6 +205,7 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
                 "net_return": None,
             }
         )
+    positions = _enrich_live_positions(positions, latest_features, args)
     nav = _mark_live_nav(realized_nav, positions, latest_features, args)
     equity_tail = _upsert_equity_point(
         list(previous.get("equity", [])),
@@ -677,13 +678,50 @@ def _open_live_positions(
 def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> float:
     nav = float(realized_nav)
     for symbol, pos in positions.items():
-        mark = _latest_price(latest_features, symbol)
+        mark = float(pos.get("mark_price") or _latest_price(latest_features, symbol))
         entry = float(pos.get("entry_price") or 0.0)
         notional = float(pos.get("risk_budget") or 0.0)
         if not _valid_number(mark) or entry <= 0 or notional <= 0:
             continue
         nav += notional * _net_return(str(pos.get("side")), entry, mark, args)
     return nav
+
+
+def _enrich_live_positions(
+    positions: dict[str, dict[str, Any]],
+    latest_features: pd.DataFrame,
+    args: argparse.Namespace,
+) -> dict[str, dict[str, Any]]:
+    enriched: dict[str, dict[str, Any]] = {}
+    for symbol, raw_pos in positions.items():
+        pos = dict(raw_pos)
+        mark = _latest_price(latest_features, symbol)
+        entry = float(pos.get("entry_price") or 0.0)
+        notional = float(pos.get("risk_budget") or 0.0)
+        if _valid_number(mark) and entry > 0 and notional > 0:
+            net_return = _net_return(str(pos.get("side")), entry, mark, args)
+            pos["mark_price"] = mark
+            pos["net_return"] = net_return
+            pos["unrealized_pnl"] = notional * net_return
+            pos["unrealized_pct"] = net_return
+            pos["mark_ts"] = latest_features.index.get_level_values("timestamp").max().isoformat()
+            pos["distance_to_stop_pct"] = _distance_pct(str(pos.get("side")), mark, pos.get("stop_price"))
+            pos["distance_to_tp1_pct"] = _distance_pct(str(pos.get("side")), mark, pos.get("tp1_price"))
+            pos["distance_to_tp2_pct"] = _distance_pct(str(pos.get("side")), mark, pos.get("tp2_price"))
+        enriched[symbol] = pos
+    return enriched
+
+
+def _distance_pct(side: str, mark: float, target: Any) -> float | None:
+    try:
+        target_price = float(target)
+    except Exception:
+        return None
+    if not _valid_number(mark) or not _valid_number(target_price) or mark <= 0:
+        return None
+    if side == "short":
+        return float(mark / target_price - 1.0)
+    return float(target_price / mark - 1.0)
 
 
 def _latest_price(latest_features: pd.DataFrame, symbol: str) -> float:
