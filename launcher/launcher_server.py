@@ -112,6 +112,7 @@ def pid_snapshot() -> dict[str, Any]:
         "pro_paper": find_pro_paper_processes(),
         "c_auto_v2_paper": find_c_auto_v2_paper_processes(),
         "data_refresh": find_data_refresh_processes(),
+        "c_auto_daily_review": find_c_auto_daily_review_processes(),
     }
 
 
@@ -293,6 +294,43 @@ def find_c_auto_v2_paper_processes(state_id: str | None = None) -> list[dict[str
                 "state_id": found_state,
                 "environment": found_env,
                 "source_mode": source_mode,
+            }
+        )
+    return matches
+
+
+def find_c_auto_daily_review_processes() -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/run_c_auto_daily_review_scheduler.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        matches.append(
+            {
+                "pid": pid,
+                "command": command,
+                "state_id": _command_arg(command, "--state-id"),
+                "environment": _command_arg(command, "--environment"),
             }
         )
     return matches
@@ -827,6 +865,55 @@ def data_refresh_status() -> dict[str, Any]:
         "progress_tail": iter_jsonl(progress_path)[-20:],
         "status_path": str(status_path.relative_to(ROOT_DIR)) if status_path.exists() else None,
     }
+
+
+def c_auto_daily_review_status() -> dict[str, Any]:
+    status_path = C_AUTO_V2_PAPER_DIR / "daily_review_scheduler.json"
+    status = read_json(status_path) or {}
+    processes = find_c_auto_daily_review_processes()
+    if not status and not processes:
+        return {"available": False, "running": False, "message": "no daily review scheduler found"}
+    return {
+        "available": True,
+        "running": bool(processes),
+        "processes": processes,
+        "status": status,
+        "status_path": str(status_path.relative_to(ROOT_DIR)) if status_path.exists() else None,
+    }
+
+
+def start_c_auto_daily_review(environment: str) -> dict[str, Any]:
+    existing = find_c_auto_daily_review_processes()
+    live_existing = [proc for proc in existing if (proc.get("environment") or environment) == environment]
+    if live_existing:
+        return {"ok": True, "already_running": True, "processes": live_existing, "status": c_auto_daily_review_status()}
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_c_auto_daily_review_scheduler.py",
+            "--state-id",
+            C_AUTO_V2_STATE_ID,
+            "--environment",
+            environment,
+            "--time",
+            "23:58",
+            "--run-on-start",
+        ],
+        f"c_auto_daily_review_{environment}",
+    )
+    result.update({"ok": True, "service": "c_auto_daily_review", "environment": environment})
+    return result
+
+
+def stop_c_auto_daily_review() -> dict[str, Any]:
+    stopped: list[int] = []
+    for proc in find_c_auto_daily_review_processes():
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped}
 
 
 def start_data_refresh() -> dict[str, Any]:
@@ -1878,8 +1965,10 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
         if option["kind"] == "professional":
             if mode == "paper":
+                daily_review = start_c_auto_daily_review(env)
                 result = start_pro_paper(strategy, env)
                 result["data_refresh"] = data_refresh
+                result["daily_review"] = daily_review
                 result["kill_switch"] = kill_switch
                 return result
             if not option.get("real_supported"):
@@ -1888,8 +1977,10 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
         if option["kind"] == "c_auto_v2":
             if mode == "paper":
+                daily_review = start_c_auto_daily_review(env)
                 result = start_c_auto_v2_paper(env, fresh_start=bool(payload.get("fresh_start", False)))
                 result["data_refresh"] = data_refresh
+                result["daily_review"] = daily_review
                 result["kill_switch"] = kill_switch
                 return result
             raise ValueError("C-Auto v2 还没有通过 live gate，不能启动真实交易")
@@ -1924,6 +2015,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
         pro = stop_pro_paper()
         c_auto_v2 = stop_c_auto_v2_paper()
         data_refresh = stop_data_refresh()
+        daily_review = stop_c_auto_daily_review()
         order_cancel = cancel_all_open_swap_orders()
         result.update(
             {
@@ -1933,6 +2025,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "pro_paper": pro,
                 "c_auto_v2_paper": c_auto_v2,
                 "data_refresh": data_refresh,
+                "daily_review": daily_review,
             }
         )
         return result
@@ -1958,6 +2051,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "pro_paper": pro_paper_status(),
             "c_auto_v2_paper": c_auto_v2_paper_status(),
             "data_refresh": data_refresh_status(),
+            "daily_review": c_auto_daily_review_status(),
             "kill_switch": kill_switch_status(),
             "launcher_logs": latest_launcher_logs(),
         }

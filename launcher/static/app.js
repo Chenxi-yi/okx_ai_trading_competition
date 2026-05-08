@@ -267,6 +267,14 @@ function renderCAutoPosition(symbol, pos, data) {
   const tp1 = Number(pos.tp1_price);
   const tp2 = Number(pos.tp2_price);
   const score = Number(pos.score);
+  const source = pos.source_strategy_id || pos.signal_family || '--';
+  const expectedEv = Number(pos.expected_ev);
+  const pTarget = Number(pos.p_target);
+  const stopDist = priceDistance(mark, stop, side);
+  const tp1Dist = priceDistance(mark, tp1, side);
+  const tp2Dist = priceDistance(mark, tp2, side);
+  const decisionId = pos.decision_id ? String(pos.decision_id).slice(0, 12) : '--';
+  const committeeReason = pos.committee_reason || '';
   const entryTime = pos.entry_ts ? new Date(pos.entry_ts).toLocaleString() : '--';
   const exitTime = pos.exit_ts ? new Date(pos.exit_ts).toLocaleString() : '--';
   const pnlClass = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
@@ -276,7 +284,7 @@ function renderCAutoPosition(symbol, pos, data) {
       <div class="cauto-position-head">
         <div>
           <strong>${escapeHtml(symbol)}</strong>
-          <span>${escapeHtml(side)} / ${escapeHtml(pos.regime || '--')} / ${escapeHtml(pos.signal_family || '--')}</span>
+          <span>${escapeHtml(side)} / ${escapeHtml(pos.regime || '--')} / ${escapeHtml(source)}</span>
         </div>
         <button class="small-danger" data-cauto-close="${escapeAttr(symbol)}" data-mode="${escapeAttr(mode)}">清仓</button>
       </div>
@@ -287,16 +295,31 @@ function renderCAutoPosition(symbol, pos, data) {
         <div><span>收益率</span><strong class="${pnlClass}">${Number.isFinite(ret) ? pct(ret) : '--'}</strong></div>
         <div><span>风险额</span><strong>${formatMoney(risk)}</strong></div>
         <div><span>Score</span><strong>${Number.isFinite(score) ? score.toFixed(4) : '--'}</strong></div>
+        <div><span>目标概率</span><strong>${Number.isFinite(pTarget) ? pct(pTarget) : '--'}</strong></div>
+        <div><span>预期EV</span><strong class="${Number.isFinite(expectedEv) && expectedEv < 0 ? 'loss' : 'gain'}">${Number.isFinite(expectedEv) ? pct(expectedEv) : '--'}</strong></div>
         <div><span>止损</span><strong>${formatPrice(stop)}</strong></div>
         <div><span>TP1</span><strong>${formatPrice(tp1)}</strong></div>
         <div><span>TP2</span><strong>${formatPrice(tp2)}</strong></div>
+        <div><span>距止损</span><strong>${Number.isFinite(stopDist) ? pct(stopDist) : '--'}</strong></div>
+        <div><span>距TP1</span><strong>${Number.isFinite(tp1Dist) ? pct(tp1Dist) : '--'}</strong></div>
+        <div><span>距TP2</span><strong>${Number.isFinite(tp2Dist) ? pct(tp2Dist) : '--'}</strong></div>
       </div>
       <div class="cauto-position-foot">
         <span>进场 ${escapeHtml(entryTime)}</span>
         <span>计划退出 ${escapeHtml(exitTime)}</span>
       </div>
+      <div class="cauto-position-foot">
+        <span>决策 ${escapeHtml(decisionId)}</span>
+        <span>${escapeHtml(committeeReason || 'committee accepted')}</span>
+      </div>
     </div>
   `;
+}
+
+function priceDistance(mark, target, side) {
+  if (!Number.isFinite(mark) || !Number.isFinite(target) || mark <= 0 || target <= 0) return NaN;
+  const raw = target / mark - 1;
+  return side === 'short' ? -raw : raw;
 }
 
 function formatPrice(value) {
@@ -330,13 +353,20 @@ function renderCAutoEvent(item) {
   const ts = item.ts ? new Date(item.ts).toLocaleTimeString() : '--';
   const reason = item.reason ? ` / ${item.reason}` : '';
   const pnl = item.pnl === undefined || item.pnl === null ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
+  const source = item.source_strategy_id ? ` / ${item.source_strategy_id}` : '';
+  const ev = Number(item.expected_ev);
+  const pTarget = Number(item.p_target);
+  const committee = item.committee_reason ? ` / ${item.committee_reason}` : '';
+  const edge = Number.isFinite(ev) || Number.isFinite(pTarget)
+    ? ` / p ${Number.isFinite(pTarget) ? pct(pTarget) : '--'} ev ${Number.isFinite(ev) ? pct(ev) : '--'}`
+    : '';
   return `
     <div class="cauto-row ${event.includes('reject') || event === 'skip' ? 'stale' : ''}">
       <div class="paper-row-head">
         <strong>${escapeHtml(symbol)}</strong>
         <b>${escapeHtml(event)}</b>
       </div>
-      <span>${escapeHtml(ts + reason + pnl)}</span>
+      <span>${escapeHtml(ts + source + reason + pnl + edge + committee)}</span>
     </div>
   `;
 }
