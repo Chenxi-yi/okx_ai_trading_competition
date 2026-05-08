@@ -356,7 +356,7 @@ input[type="number"] {
   white-space: pre-wrap;
 }
 
-.yolo-panel {
+.cauto-panel {
   margin-top: 14px;
   padding: 14px;
 }
@@ -503,13 +503,71 @@ input[type="number"] {
   color: var(--muted);
 }
 
-.yolo-panel iframe {
-  display: block;
-  width: 100%;
-  height: min(760px, 72vh);
+.cauto-metrics {
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+}
+
+.cauto-dataset {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) minmax(220px, 1.2fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.cauto-dataset div {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
+  background: #fbfcfe;
+}
+
+.cauto-dataset span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cauto-dataset strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.cauto-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.cauto-grid h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.cauto-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cauto-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #b9decf;
+  border-radius: 8px;
+  background: #f6fffb;
+  font-size: 12px;
+}
+
+.cauto-row.stale {
+  border-color: var(--line);
+  background: #fbfcfe;
+}
+
+.cauto-row span {
+  color: var(--muted);
 }
 
 .panel-head a {
@@ -651,6 +709,9 @@ input[type="number"] {
   }
 
   .paper-metrics,
+  .cauto-metrics,
+  .cauto-dataset,
+  .cauto-grid,
   .paper-grid {
     grid-template-columns: 1fr;
   }

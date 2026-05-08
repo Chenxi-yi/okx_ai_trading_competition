@@ -82,12 +82,34 @@
       </div>
     </section>
 
-    <section class="panel yolo-panel">
+    <section class="panel cauto-panel">
       <div class="panel-head">
-        <h2>YOLO 页面</h2>
-        <a id="openYolo" href="http://127.0.0.1:8080/yolo" target="_blank" rel="noreferrer">新窗口打开</a>
+        <h2>C-Auto 策略监控</h2>
+        <span id="cautoMode">--</span>
       </div>
-      <iframe id="yoloFrame" title="YOLO dashboard" src="about:blank"></iframe>
+      <div class="metrics cauto-metrics">
+        <div><span>运行</span><strong id="cautoRunning">--</strong></div>
+        <div><span>环境</span><strong id="cautoEnv">--</strong></div>
+        <div><span>数据新鲜度</span><strong id="cautoFreshness">--</strong></div>
+        <div><span>候选数</span><strong id="cautoCandidateCount">--</strong></div>
+        <div><span>持仓数</span><strong id="cautoPositionCount">--</strong></div>
+        <div><span>Live Gate</span><strong id="cautoLiveGate">--</strong></div>
+      </div>
+      <div class="cauto-dataset">
+        <div><span>Feature Store</span><strong id="cautoDataset">--</strong></div>
+        <div><span>Policy</span><strong id="cautoPolicy">--</strong></div>
+        <div><span>Data Refresh</span><strong id="cautoDataRefresh">--</strong></div>
+      </div>
+      <div class="cauto-grid">
+        <div>
+          <h3>最新候选</h3>
+          <div id="cautoCandidates" class="cauto-list"></div>
+        </div>
+        <div>
+          <h3>最近事件</h3>
+          <div id="cautoEvents" class="cauto-list"></div>
+        </div>
+      </div>
     </section>
 
     <section class="panel monster-panel">

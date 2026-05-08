@@ -16,14 +16,6 @@ function setActive(groupId, value) {
   });
 }
 
-function yoloUrl() {
-  return `http://127.0.0.1:${state.port}/yolo`;
-}
-
-function dashboardUrl() {
-  return `http://127.0.0.1:${state.port}/`;
-}
-
 function applySelection() {
   setActive('modeGroup', state.mode);
   $('envSelect').value = state.env;
@@ -32,11 +24,6 @@ function applySelection() {
   $('portInput').value = state.port;
   $('realConfirmBox').classList.toggle('hidden', state.mode !== 'real');
   $('competitionConfirmLine').classList.toggle('hidden', !(state.mode === 'real' && state.env === 'competition'));
-  $('openYolo').href = yoloUrl();
-  if ($('yoloFrame').src === 'about:blank' || $('yoloFrame').dataset.port !== String(state.port)) {
-    $('yoloFrame').src = yoloUrl();
-    $('yoloFrame').dataset.port = String(state.port);
-  }
   localStorage.setItem('launcher.env', state.env);
   localStorage.setItem('launcher.mode', state.mode);
   localStorage.setItem('launcher.strategy', state.strategy);
@@ -82,6 +69,13 @@ function renderSelectedStrategyMeta() {
     <span>${escapeHtml(caps)}</span>
     <small>${escapeHtml(item.description || '')}</small>
   `;
+}
+
+function launchPidText(result) {
+  if (result.pid) return `pid=${result.pid}`;
+  const pid = (result.processes || [])[0]?.pid;
+  if (pid) return `pid=${pid}`;
+  return result.already_running ? 'already running' : 'submitted';
 }
 
 function escapeHtml(value) {
@@ -147,6 +141,7 @@ function renderStatus(data) {
   const dataRefresh = data.data_refresh || {};
   const dataRefreshStatus = dataRefresh.status || {};
   cAutoPaperAvailable = Boolean(cauto.available);
+  renderCAutoPanel(cauto, dataRefresh);
   const scheduler = pro.scheduler || {};
   $('proPaperState').textContent = pro.running ? `running #${(pro.processes || [])[0]?.pid || '-'}` : (pro.available ? (scheduler.scheduler_status || 'idle') : 'idle');
   $('proPaperCycles').textContent = scheduler.cycles === undefined ? '--' : String(scheduler.cycles);
@@ -198,6 +193,92 @@ function renderStatus(data) {
 
   const latestLog = (data.launcher_logs || [])[0];
   $('logTail').textContent = latestLog ? latestLog.tail.join('\n') : 'launcher logs will appear here';
+}
+
+function renderCAutoPanel(data, dataRefresh = {}) {
+  if (!data || !data.available) {
+    $('cautoMode').textContent = 'not ready';
+    $('cautoRunning').textContent = 'idle';
+    $('cautoEnv').textContent = state.env;
+    $('cautoFreshness').textContent = '--';
+    $('cautoCandidateCount').textContent = '--';
+    $('cautoPositionCount').textContent = '--';
+    $('cautoLiveGate').textContent = '--';
+    $('cautoDataset').textContent = '--';
+    $('cautoPolicy').textContent = '--';
+    $('cautoDataRefresh').textContent = dataRefresh.running ? 'running' : 'idle';
+    $('cautoCandidates').innerHTML = '<div class="cauto-row stale">暂无 C-Auto 状态</div>';
+    $('cautoEvents').innerHTML = '<div class="cauto-row stale">暂无事件</div>';
+    return;
+  }
+
+  const processes = data.processes || [];
+  const positions = data.positions || {};
+  const candidates = data.latest_candidates || [];
+  const freshness = data.freshness || {};
+  const passed = freshness.passed === true;
+  const reasons = (freshness.reasons || []).join(', ');
+  const freshText = passed
+    ? `pass / ${freshness.fresh_symbols ?? '--'}`
+    : `wait / ${freshness.fresh_symbols ?? '--'}${reasons ? ` / ${reasons}` : ''}`;
+  const scheduler = data.scheduler || {};
+  const refreshStatus = dataRefresh.running
+    ? `running #${(dataRefresh.processes || [])[0]?.pid || '-'}`
+    : ((dataRefresh.status || {}).scheduler_status || 'idle');
+
+  $('cautoMode').textContent = `${data.mode || 'paper'} / ${data.source_mode || 'live'}`;
+  $('cautoRunning').textContent = data.running ? `running #${processes[0]?.pid || '-'}` : (data.runner_status || 'idle');
+  $('cautoEnv').textContent = data.environment || state.env;
+  $('cautoFreshness').textContent = freshText;
+  $('cautoCandidateCount').textContent = String(candidates.length || 0);
+  $('cautoPositionCount').textContent = String(Object.keys(positions).length);
+  $('cautoLiveGate').textContent = data.live_gates_enabled ? `on / ${data.live_gate_pass_count || 0}` : 'off';
+  $('cautoDataset').textContent = data.dataset_id || '--';
+  $('cautoPolicy').textContent = data.policy_id || '--';
+  $('cautoDataRefresh').textContent = `${refreshStatus} / cycle ${(dataRefresh.status || {}).cycle ?? '--'} / paper cycle ${scheduler.cycles ?? '--'}`;
+
+  $('cautoCandidates').innerHTML = candidates.length
+    ? candidates.slice(0, 8).map(renderCAutoCandidate).join('')
+    : '<div class="cauto-row stale">暂无候选</div>';
+
+  const ledger = data.ledger_tail || [];
+  $('cautoEvents').innerHTML = ledger.length
+    ? ledger.slice().reverse().slice(0, 8).map(renderCAutoEvent).join('')
+    : '<div class="cauto-row stale">暂无事件</div>';
+}
+
+function renderCAutoCandidate(item) {
+  const score = Number(item.score);
+  const side = item.side || '--';
+  const eligible = item.eligible ? 'eligible' : 'blocked';
+  const blocked = item.blocked_by_crowding ? ' / crowding' : '';
+  return `
+    <div class="cauto-row ${item.eligible ? '' : 'stale'}">
+      <div class="paper-row-head">
+        <strong>${escapeHtml(item.symbol || '--')}</strong>
+        <b>${escapeHtml(side)}</b>
+      </div>
+      <span>${eligible}${blocked} / regime ${escapeHtml(item.regime || '--')}</span>
+      <span>score ${Number.isFinite(score) ? score.toFixed(3) : '--'}</span>
+    </div>
+  `;
+}
+
+function renderCAutoEvent(item) {
+  const event = item.event || '?';
+  const symbol = item.symbol || '--';
+  const ts = item.ts ? new Date(item.ts).toLocaleTimeString() : '--';
+  const reason = item.reason ? ` / ${item.reason}` : '';
+  const pnl = item.pnl === undefined || item.pnl === null ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
+  return `
+    <div class="cauto-row ${event.includes('reject') || event === 'skip' ? 'stale' : ''}">
+      <div class="paper-row-head">
+        <strong>${escapeHtml(symbol)}</strong>
+        <b>${escapeHtml(event)}</b>
+      </div>
+      <span>${escapeHtml(ts + reason + pnl)}</span>
+    </div>
+  `;
 }
 
 function renderDownloadStatus(data) {
@@ -593,9 +674,7 @@ async function startSystem() {
       confirm_competition: confirmCompetition,
     }),
   });
-  $('lastAction').textContent = `启动请求已提交 pid=${result.pid}`;
-  $('openYolo').href = result.yolo_url || yoloUrl();
-  $('yoloFrame').src = result.yolo_url || yoloUrl();
+  $('lastAction').textContent = `启动请求已提交 ${launchPidText(result)}`;
   setTimeout(refreshStatus, 1500);
 }
 
@@ -622,9 +701,7 @@ async function restartSystem() {
       confirm_competition: $('competitionConfirm').checked,
     }),
   });
-  $('lastAction').textContent = `重新开始已提交 pid=${result.pid}`;
-  $('openYolo').href = result.yolo_url || yoloUrl();
-  $('yoloFrame').src = result.yolo_url || yoloUrl();
+  $('lastAction').textContent = `重新开始已提交 ${launchPidText(result)}`;
   setTimeout(refreshStatus, 1500);
 }
 
