@@ -362,6 +362,688 @@
       "updated_at": "2026-05-05T09:28:43.704260+00:00"
     },
     {
+      "created_at": "2026-05-08T05:20:57.234393+00:00",
+      "dataset_id": "raw_ohlcv_rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507_5m_15m_1h_4h_1d",
+      "end": "2026-05-07",
+      "kind": "raw_ohlcv",
+      "metadata": {
+        "download_status": "completed",
+        "quality": {
+          "coverage_max": 1.000818,
+          "coverage_median": 0.454824,
+          "coverage_min": 0.0004,
+          "dataset_type": "training_history",
+          "failed_jobs": 50,
+          "first_ts": "2023-01-01 00:00:00+00:00",
+          "generated_at": "2026-05-08T05:20:57.233275+00:00",
+          "last_ts": "2026-05-07 20:00:00+00:00",
+          "low_coverage_jobs": 570,
+          "missing_cache_files": 0,
+          "missing_jobs": 0,
+          "ok_jobs": 855,
+          "rows": 44685943,
+          "run_id": "rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507",
+          "total_jobs": 905,
+          "validation_status": "warn",
+          "warnings": {
+            "failed_records": [
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=36 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BILL/USDT",
+                "timeframe": "1h",
+                "ts": "2026-05-07T19:38:49.946283+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=10 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BILL/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:13:26.126825+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=56 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "UB/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:14:30.600987+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=51 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "AI/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:14:35.851530+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=98 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "CHIP/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:17:25.718454+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=45 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "MEGA/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:17:48.266518+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=56 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "PROS/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:19:15.307478+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=51 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BLEND/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:20:35.529251+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=87 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "OPG/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:21:08.063513+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=52 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "ARM/USDT",
+                "timeframe": "4h",
+                "ts": "2026-05-07T20:24:18.616108+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=64 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "CL/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:26:15.548458+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=35 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BSB/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:26:25.787260+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=44 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BZ/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:27:07.039681+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=1 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BILL/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:27:21.324727+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=9 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "UB/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:28:10.328494+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=8 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "AI/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:28:12.722488+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=64 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "SNDK/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:29:06.150122+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=38 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BASED/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:29:15.104513+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=70 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "INTC/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:30:03.827903+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=70 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "CRCL/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:30:20.701911+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=57 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "AMD/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:30:54.285427+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=16 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "CHIP/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:31:10.490949+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=64 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "MU/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:31:47.225880+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=7 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "MEGA/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:31:59.706626+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=64 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "NVDA/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:32:51.422630+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=9 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "PROS/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:32:53.599568+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=36 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "EDGE/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:33:47.715395+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=8 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "BLEND/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:33:58.433964+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=71 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "MSTR/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:34:37.632957+00:00"
+              },
+              {
+                "elapsed_sec": 0.0,
+                "end": "2026-05-07",
+                "error": "insufficient history coverage rows=91 min_rows=100",
+                "start": "2023-01-01",
+                "status": "failed",
+                "symbol": "TRIA/USDT",
+                "timeframe": "1d",
+                "ts": "2026-05-07T20:34:49.481388+00:00"
+              }
+            ],
+            "low_coverage_jobs": [
+              {
+                "coverage": 0.152255,
+                "symbol": "LAB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.148468,
+                "symbol": "ZEC/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.051706,
+                "symbol": "CL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.116474,
+                "symbol": "RAVE/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.359357,
+                "symbol": "HYPE/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.028104,
+                "symbol": "BSB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.148536,
+                "symbol": "DASH/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.61439,
+                "symbol": "WIF/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.035469,
+                "symbol": "BZ/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.485356,
+                "symbol": "TAO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.0004,
+                "symbol": "BILL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.413081,
+                "symbol": "PENGU/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.589003,
+                "symbol": "NOT/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.006811,
+                "symbol": "UB/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.006044,
+                "symbol": "AI/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.242161,
+                "symbol": "PUMP/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.386481,
+                "symbol": "TRUMP/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.694723,
+                "symbol": "JTO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.052027,
+                "symbol": "SNDK/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.205633,
+                "symbol": "XPL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.522091,
+                "symbol": "ONDO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.209671,
+                "symbol": "WLFI/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.030691,
+                "symbol": "BASED/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.189436,
+                "symbol": "ENA/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.057003,
+                "symbol": "INTC/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.399504,
+                "symbol": "BIO/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.41835,
+                "symbol": "VIRTUAL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.411429,
+                "symbol": "FARTCOIN/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.057418,
+                "symbol": "CRCL/USDT",
+                "timeframe": "5m"
+              },
+              {
+                "coverage": 0.20071,
+                "symbol": "OKB/USDT",
+                "timeframe": "5m"
+              }
+            ],
+            "missing_cache_files": [],
+            "missing_jobs": []
+          }
+        },
+        "run_id": "rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507",
+        "summary": {
+          "failed": 50,
+          "ok": 758,
+          "skipped_existing": 97,
+          "total_jobs": 905
+        }
+      },
+      "path": "engine/data/training_history/rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507",
+      "rows": 44685943,
+      "source": "okx_ccxt",
+      "start": "2023-01-01",
+      "status": "warn",
+      "symbols": [
+        "ETH/USDT",
+        "BTC/USDT",
+        "LAB/USDT",
+        "ZEC/USDT",
+        "DOGE/USDT",
+        "SOL/USDT",
+        "TON/USDT",
+        "CL/USDT",
+        "PEPE/USDT",
+        "FIL/USDT",
+        "XRP/USDT",
+        "RAVE/USDT",
+        "HYPE/USDT",
+        "BSB/USDT",
+        "DASH/USDT",
+        "WIF/USDT",
+        "BZ/USDT",
+        "TAO/USDT",
+        "SUI/USDT",
+        "ADA/USDT",
+        "BILL/USDT",
+        "BNB/USDT",
+        "BCH/USDT",
+        "ICP/USDT",
+        "PENGU/USDT",
+        "NOT/USDT",
+        "NEAR/USDT",
+        "LINK/USDT",
+        "UB/USDT",
+        "AI/USDT",
+        "PUMP/USDT",
+        "TRUMP/USDT",
+        "ORDI/USDT",
+        "LTC/USDT",
+        "WLD/USDT",
+        "JTO/USDT",
+        "SNDK/USDT",
+        "AVAX/USDT",
+        "XPL/USDT",
+        "ONDO/USDT",
+        "AR/USDT",
+        "WLFI/USDT",
+        "BASED/USDT",
+        "STX/USDT",
+        "AAVE/USDT",
+        "ENA/USDT",
+        "GALA/USDT",
+        "INTC/USDT",
+        "SHIB/USDT",
+        "CFX/USDT",
+        "UNI/USDT",
+        "BIO/USDT",
+        "DOT/USDT",
+        "VIRTUAL/USDT",
+        "APT/USDT",
+        "FARTCOIN/USDT",
+        "CRCL/USDT",
+        "OKB/USDT",
+        "MON/USDT",
+        "AMD/USDT",
+        "ZEN/USDT",
+        "CHIP/USDT",
+        "OP/USDT",
+        "ASTER/USDT",
+        "PIPPIN/USDT",
+        "MU/USDT",
+        "MEGA/USDT",
+        "ETC/USDT",
+        "IP/USDT",
+        "GIGGLE/USDT",
+        "CHZ/USDT",
+        "LUNA/USDT",
+        "RIVER/USDT",
+        "PENDLE/USDT",
+        "EIGEN/USDT",
+        "PI/USDT",
+        "CRV/USDT",
+        "ARB/USDT",
+        "NVDA/USDT",
+        "STRK/USDT",
+        "PROS/USDT",
+        "HBAR/USDT",
+        "BONK/USDT",
+        "MERL/USDT",
+        "XLM/USDT",
+        "APE/USDT",
+        "TRX/USDT",
+        "EDGE/USDT",
+        "BABY/USDT",
+        "MOODENG/USDT",
+        "ATOM/USDT",
+        "PNUT/USDT",
+        "ONT/USDT",
+        "BLEND/USDT",
+        "PIEVERSE/USDT",
+        "MSTR/USDT",
+        "RENDER/USDT",
+        "TRIA/USDT",
+        "ARKM/USDT",
+        "HMSTR/USDT",
+        "OPG/USDT",
+        "ALGO/USDT",
+        "LDO/USDT",
+        "RESOLV/USDT",
+        "LIT/USDT",
+        "TSLA/USDT",
+        "ZBT/USDT",
+        "JUP/USDT",
+        "ZIL/USDT",
+        "ZRO/USDT",
+        "ETHFI/USDT",
+        "AXS/USDT",
+        "OFC/USDT",
+        "TIA/USDT",
+        "KAT/USDT",
+        "LPT/USDT",
+        "NEIRO/USDT",
+        "AIXBT/USDT",
+        "GRASS/USDT",
+        "PEOPLE/USDT",
+        "H/USDT",
+        "ZK/USDT",
+        "BEAT/USDT",
+        "SPACE/USDT",
+        "DYDX/USDT",
+        "NIGHT/USDT",
+        "MORPHO/USDT",
+        "CORE/USDT",
+        "OL/USDT",
+        "TRB/USDT",
+        "BLUR/USDT",
+        "ENSO/USDT",
+        "BOME/USDT",
+        "PARTI/USDT",
+        "SAND/USDT",
+        "GOOGL/USDT",
+        "INJ/USDT",
+        "TURBO/USDT",
+        "POL/USDT",
+        "QQQ/USDT",
+        "FOGO/USDT",
+        "ATH/USDT",
+        "ACT/USDT",
+        "POPCAT/USDT",
+        "ENJ/USDT",
+        "ARM/USDT",
+        "SPY/USDT",
+        "KAITO/USDT",
+        "BERA/USDT",
+        "EWY/USDT",
+        "SPK/USDT",
+        "KITE/USDT",
+        "ORCL/USDT",
+        "OPN/USDT",
+        "SAHARA/USDT",
+        "LINEA/USDT",
+        "IOTA/USDT",
+        "RLS/USDT",
+        "USELESS/USDT",
+        "SOON/USDT",
+        "COIN/USDT",
+        "2Z/USDT",
+        "YGG/USDT",
+        "HOOD/USDT",
+        "MEME/USDT",
+        "ROBO/USDT",
+        "WET/USDT",
+        "W/USDT",
+        "EGLD/USDT",
+        "TSM/USDT",
+        "ACU/USDT",
+        "PYTH/USDT",
+        "ENS/USDT",
+        "XPT/USDT",
+        "CRO/USDT",
+        "SPX/USDT",
+        "SEI/USDT",
+        "PLTR/USDT",
+        "FLOKI/USDT",
+        "AMZN/USDT",
+        "NG/USDT"
+      ],
+      "timeframe": "5m,15m,1h,4h,1d",
+      "updated_at": "2026-05-08T05:20:57.235361+00:00"
+    },
+    {
       "created_at": "2026-05-03T16:06:00.051733+00:00",
       "dataset_id": "raw_ohlcv_train_hist_134_5m_20240101_20260424_5m",
       "end": "2026-04-24",

@@ -1,0 +1,1902 @@
+{
+  "count": 161,
+  "created_at": "2026-05-08T05:18:57.670074+00:00",
+  "end": "2026-05-07",
+  "first_available_by_symbol": {
+    "2Z/USDT": "2025-10-02",
+    "AAVE/USDT": "2023-01-01",
+    "ACT/USDT": "2024-11-14",
+    "ACU/USDT": "2026-01-23",
+    "ADA/USDT": "2023-01-01",
+    "AI/USDT": "2026-04-29",
+    "AIXBT/USDT": "2025-01-03",
+    "ALGO/USDT": "2023-01-01",
+    "AMD/USDT": "2026-03-11",
+    "AMZN/USDT": "2026-02-26",
+    "APE/USDT": "2023-01-01",
+    "APT/USDT": "2023-01-01",
+    "AR/USDT": "2023-02-14",
+    "ARB/USDT": "2023-03-23",
+    "ARKM/USDT": "2024-11-21",
+    "ARM/USDT": "2026-04-29",
+    "ASTER/USDT": "2025-09-22",
+    "ATH/USDT": "2024-06-13",
+    "ATOM/USDT": "2023-01-01",
+    "AVAX/USDT": "2023-01-01",
+    "AXS/USDT": "2023-01-01",
+    "BABY/USDT": "2025-04-10",
+    "BASED/USDT": "2026-03-30",
+    "BCH/USDT": "2023-01-01",
+    "BEAT/USDT": "2025-11-12",
+    "BERA/USDT": "2025-02-06",
+    "BILL/USDT": "2026-05-06",
+    "BIO/USDT": "2025-01-03",
+    "BLEND/USDT": "2026-04-29",
+    "BLUR/USDT": "2023-02-15",
+    "BNB/USDT": "2023-01-01",
+    "BOME/USDT": "2024-08-15",
+    "BONK/USDT": "2024-01-08",
+    "BSB/USDT": "2026-04-02",
+    "BTC/USDT": "2023-01-01",
+    "BZ/USDT": "2026-03-24",
+    "CFX/USDT": "2023-01-01",
+    "CHIP/USDT": "2026-04-21",
+    "CHZ/USDT": "2023-01-01",
+    "CL/USDT": "2026-03-04",
+    "COIN/USDT": "2026-02-26",
+    "CORE/USDT": "2023-02-08",
+    "CRCL/USDT": "2026-02-26",
+    "CRO/USDT": "2023-01-01",
+    "CRV/USDT": "2023-01-01",
+    "DASH/USDT": "2025-11-06",
+    "DOGE/USDT": "2023-01-01",
+    "DOT/USDT": "2023-01-01",
+    "DYDX/USDT": "2023-01-01",
+    "EDGE/USDT": "2026-04-01",
+    "EGLD/USDT": "2023-01-01",
+    "EIGEN/USDT": "2024-10-01",
+    "ENA/USDT": "2025-09-17",
+    "ENJ/USDT": "2024-03-01",
+    "ENS/USDT": "2023-01-01",
+    "ENSO/USDT": "2025-10-29",
+    "ETC/USDT": "2023-01-01",
+    "ETH/USDT": "2023-01-01",
+    "ETHFI/USDT": "2024-03-18",
+    "EWY/USDT": "2026-03-11",
+    "FARTCOIN/USDT": "2024-12-20",
+    "FIL/USDT": "2023-01-01",
+    "FLOKI/USDT": "2023-02-20",
+    "FOGO/USDT": "2026-01-10",
+    "GALA/USDT": "2023-01-01",
+    "GIGGLE/USDT": "2025-10-25",
+    "GOOGL/USDT": "2026-03-04",
+    "GRASS/USDT": "2024-10-28",
+    "H/USDT": "2025-07-03",
+    "HBAR/USDT": "2023-08-16",
+    "HMSTR/USDT": "2024-09-26",
+    "HOOD/USDT": "2026-02-25",
+    "HYPE/USDT": "2025-02-21",
+    "ICP/USDT": "2023-01-01",
+    "INJ/USDT": "2023-11-30",
+    "INTC/USDT": "2026-02-26",
+    "IOTA/USDT": "2023-01-01",
+    "IP/USDT": "2025-02-13",
+    "JTO/USDT": "2024-01-08",
+    "JUP/USDT": "2024-01-31",
+    "KAITO/USDT": "2025-02-20",
+    "KAT/USDT": "2026-03-02",
+    "KITE/USDT": "2026-04-09",
+    "LAB/USDT": "2025-11-01",
+    "LDO/USDT": "2023-02-02",
+    "LINEA/USDT": "2025-09-01",
+    "LINK/USDT": "2023-01-01",
+    "LIT/USDT": "2025-12-24",
+    "LPT/USDT": "2023-01-01",
+    "LTC/USDT": "2023-01-01",
+    "LUNA/USDT": "2023-01-01",
+    "MEGA/USDT": "2026-04-30",
+    "MEME/USDT": "2023-11-03",
+    "MERL/USDT": "2024-04-19",
+    "MON/USDT": "2025-10-10",
+    "MOODENG/USDT": "2024-10-03",
+    "MORPHO/USDT": "2024-11-25",
+    "MSTR/USDT": "2026-02-25",
+    "MU/USDT": "2026-03-04",
+    "NEAR/USDT": "2023-01-01",
+    "NEIRO/USDT": "2024-10-03",
+    "NG/USDT": "2026-03-10",
+    "NIGHT/USDT": "2025-12-09",
+    "NOT/USDT": "2024-05-16",
+    "NVDA/USDT": "2026-03-04",
+    "OFC/USDT": "2026-04-09",
+    "OKB/USDT": "2025-09-04",
+    "OL/USDT": "2025-10-29",
+    "ONDO/USDT": "2024-08-06",
+    "ONT/USDT": "2023-01-01",
+    "OP/USDT": "2023-01-01",
+    "OPG/USDT": "2026-04-23",
+    "OPN/USDT": "2026-02-23",
+    "ORCL/USDT": "2026-03-11",
+    "ORDI/USDT": "2023-05-21",
+    "PARTI/USDT": "2025-03-25",
+    "PENDLE/USDT": "2025-09-17",
+    "PENGU/USDT": "2024-12-17",
+    "PEOPLE/USDT": "2023-01-01",
+    "PEPE/USDT": "2023-05-03",
+    "PI/USDT": "2025-02-20",
+    "PIEVERSE/USDT": "2025-11-16",
+    "PIPPIN/USDT": "2025-12-02",
+    "PLTR/USDT": "2026-02-26",
+    "PNUT/USDT": "2024-11-12",
+    "POL/USDT": "2024-09-24",
+    "POPCAT/USDT": "2024-08-29",
+    "PROS/USDT": "2026-04-28",
+    "PUMP/USDT": "2025-07-14",
+    "PYTH/USDT": "2023-11-20",
+    "QQQ/USDT": "2026-03-04",
+    "RAVE/USDT": "2025-12-15",
+    "RENDER/USDT": "2024-08-08",
+    "RESOLV/USDT": "2025-06-10",
+    "RIVER/USDT": "2026-01-09",
+    "RLS/USDT": "2025-12-02",
+    "ROBO/USDT": "2026-02-27",
+    "SAHARA/USDT": "2025-06-26",
+    "SAND/USDT": "2023-01-01",
+    "SEI/USDT": "2025-11-14",
+    "SHIB/USDT": "2023-01-01",
+    "SNDK/USDT": "2026-03-04",
+    "SOL/USDT": "2023-01-01",
+    "SOON/USDT": "2025-05-23",
+    "SPACE/USDT": "2026-01-23",
+    "SPK/USDT": "2025-06-17",
+    "SPX/USDT": "2025-07-17",
+    "SPY/USDT": "2026-03-04",
+    "STRK/USDT": "2024-02-20",
+    "STX/USDT": "2023-02-21",
+    "SUI/USDT": "2023-05-05",
+    "TAO/USDT": "2024-09-20",
+    "TIA/USDT": "2023-10-31",
+    "TON/USDT": "2023-01-01",
+    "TRB/USDT": "2023-01-01",
+    "TRIA/USDT": "2026-02-05",
+    "TRUMP/USDT": "2025-01-19",
+    "TRX/USDT": "2023-01-01",
+    "TSLA/USDT": "2026-02-25",
+    "TSM/USDT": "2026-03-11",
+    "TURBO/USDT": "2023-12-14",
+    "UB/USDT": "2026-04-28",
+    "UNI/USDT": "2023-01-01",
+    "USELESS/USDT": "2025-07-25",
+    "VIRTUAL/USDT": "2024-12-11",
+    "W/USDT": "2024-04-03",
+    "WET/USDT": "2025-12-09",
+    "WIF/USDT": "2024-04-15",
+    "WLD/USDT": "2023-07-24",
+    "WLFI/USDT": "2025-08-23",
+    "XLM/USDT": "2023-01-01",
+    "XPL/USDT": "2025-08-28",
+    "XPT/USDT": "2026-02-02",
+    "XRP/USDT": "2023-01-01",
+    "YGG/USDT": "2023-01-01",
+    "ZBT/USDT": "2025-10-17",
+    "ZEC/USDT": "2025-11-06",
+    "ZEN/USDT": "2025-11-03",
+    "ZIL/USDT": "2023-01-01",
+    "ZK/USDT": "2024-06-18",
+    "ZRO/USDT": "2024-06-20"
+  },
+  "inst_ids": [
+    "ETH-USDT-SWAP",
+    "BTC-USDT-SWAP",
+    "LAB-USDT-SWAP",
+    "ZEC-USDT-SWAP",
+    "DOGE-USDT-SWAP",
+    "SOL-USDT-SWAP",
+    "TON-USDT-SWAP",
+    "CL-USDT-SWAP",
+    "PEPE-USDT-SWAP",
+    "FIL-USDT-SWAP",
+    "XRP-USDT-SWAP",
+    "RAVE-USDT-SWAP",
+    "HYPE-USDT-SWAP",
+    "DASH-USDT-SWAP",
+    "WIF-USDT-SWAP",
+    "TAO-USDT-SWAP",
+    "SUI-USDT-SWAP",
+    "ADA-USDT-SWAP",
+    "BNB-USDT-SWAP",
+    "BCH-USDT-SWAP",
+    "ICP-USDT-SWAP",
+    "PENGU-USDT-SWAP",
+    "NOT-USDT-SWAP",
+    "NEAR-USDT-SWAP",
+    "LINK-USDT-SWAP",
+    "PUMP-USDT-SWAP",
+    "TRUMP-USDT-SWAP",
+    "ORDI-USDT-SWAP",
+    "LTC-USDT-SWAP",
+    "WLD-USDT-SWAP",
+    "JTO-USDT-SWAP",
+    "SNDK-USDT-SWAP",
+    "AVAX-USDT-SWAP",
+    "XPL-USDT-SWAP",
+    "ONDO-USDT-SWAP",
+    "AR-USDT-SWAP",
+    "WLFI-USDT-SWAP",
+    "STX-USDT-SWAP",
+    "AAVE-USDT-SWAP",
+    "ENA-USDT-SWAP",
+    "GALA-USDT-SWAP",
+    "INTC-USDT-SWAP",
+    "SHIB-USDT-SWAP",
+    "CFX-USDT-SWAP",
+    "UNI-USDT-SWAP",
+    "BIO-USDT-SWAP",
+    "DOT-USDT-SWAP",
+    "VIRTUAL-USDT-SWAP",
+    "APT-USDT-SWAP",
+    "FARTCOIN-USDT-SWAP",
+    "CRCL-USDT-SWAP",
+    "OKB-USDT-SWAP",
+    "MON-USDT-SWAP",
+    "ZEN-USDT-SWAP",
+    "OP-USDT-SWAP",
+    "ASTER-USDT-SWAP",
+    "PIPPIN-USDT-SWAP",
+    "MU-USDT-SWAP",
+    "ETC-USDT-SWAP",
+    "IP-USDT-SWAP",
+    "GIGGLE-USDT-SWAP",
+    "CHZ-USDT-SWAP",
+    "LUNA-USDT-SWAP",
+    "RIVER-USDT-SWAP",
+    "PENDLE-USDT-SWAP",
+    "EIGEN-USDT-SWAP",
+    "PI-USDT-SWAP",
+    "CRV-USDT-SWAP",
+    "ARB-USDT-SWAP",
+    "NVDA-USDT-SWAP",
+    "STRK-USDT-SWAP",
+    "HBAR-USDT-SWAP",
+    "BONK-USDT-SWAP",
+    "MERL-USDT-SWAP",
+    "XLM-USDT-SWAP",
+    "APE-USDT-SWAP",
+    "TRX-USDT-SWAP",
+    "BABY-USDT-SWAP",
+    "MOODENG-USDT-SWAP",
+    "ATOM-USDT-SWAP",
+    "PNUT-USDT-SWAP",
+    "ONT-USDT-SWAP",
+    "PIEVERSE-USDT-SWAP",
+    "MSTR-USDT-SWAP",
+    "RENDER-USDT-SWAP",
+    "TRIA-USDT-SWAP",
+    "ARKM-USDT-SWAP",
+    "HMSTR-USDT-SWAP",
+    "ALGO-USDT-SWAP",
+    "LDO-USDT-SWAP",
+    "RESOLV-USDT-SWAP",
+    "LIT-USDT-SWAP",
+    "TSLA-USDT-SWAP",
+    "ZBT-USDT-SWAP",
+    "JUP-USDT-SWAP",
+    "ZIL-USDT-SWAP",
+    "ZRO-USDT-SWAP",
+    "ETHFI-USDT-SWAP",
+    "AXS-USDT-SWAP",
+    "TIA-USDT-SWAP",
+    "KAT-USDT-SWAP",
+    "LPT-USDT-SWAP",
+    "NEIRO-USDT-SWAP",
+    "AIXBT-USDT-SWAP",
+    "GRASS-USDT-SWAP",
+    "PEOPLE-USDT-SWAP",
+    "H-USDT-SWAP",
+    "ZK-USDT-SWAP",
+    "BEAT-USDT-SWAP",
+    "SPACE-USDT-SWAP",
+    "DYDX-USDT-SWAP",
+    "NIGHT-USDT-SWAP",
+    "MORPHO-USDT-SWAP",
+    "CORE-USDT-SWAP",
+    "OL-USDT-SWAP",
+    "TRB-USDT-SWAP",
+    "BLUR-USDT-SWAP",
+    "ENSO-USDT-SWAP",
+    "BOME-USDT-SWAP",
+    "PARTI-USDT-SWAP",
+    "SAND-USDT-SWAP",
+    "GOOGL-USDT-SWAP",
+    "INJ-USDT-SWAP",
+    "TURBO-USDT-SWAP",
+    "POL-USDT-SWAP",
+    "QQQ-USDT-SWAP",
+    "FOGO-USDT-SWAP",
+    "ATH-USDT-SWAP",
+    "ACT-USDT-SWAP",
+    "POPCAT-USDT-SWAP",
+    "ENJ-USDT-SWAP",
+    "SPY-USDT-SWAP",
+    "KAITO-USDT-SWAP",
+    "BERA-USDT-SWAP",
+    "SPK-USDT-SWAP",
+    "OPN-USDT-SWAP",
+    "SAHARA-USDT-SWAP",
+    "LINEA-USDT-SWAP",
+    "IOTA-USDT-SWAP",
+    "RLS-USDT-SWAP",
+    "USELESS-USDT-SWAP",
+    "SOON-USDT-SWAP",
+    "COIN-USDT-SWAP",
+    "2Z-USDT-SWAP",
+    "YGG-USDT-SWAP",
+    "HOOD-USDT-SWAP",
+    "MEME-USDT-SWAP",
+    "ROBO-USDT-SWAP",
+    "WET-USDT-SWAP",
+    "W-USDT-SWAP",
+    "EGLD-USDT-SWAP",
+    "ACU-USDT-SWAP",
+    "PYTH-USDT-SWAP",
+    "ENS-USDT-SWAP",
+    "XPT-USDT-SWAP",
+    "CRO-USDT-SWAP",
+    "SPX-USDT-SWAP",
+    "SEI-USDT-SWAP",
+    "PLTR-USDT-SWAP",
+    "FLOKI-USDT-SWAP",
+    "AMZN-USDT-SWAP"
+  ],
+  "latest_status_by_symbol": {
+    "2Z/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AAVE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ACT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ACU/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ADA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AI/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "AIXBT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ALGO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AMD/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AMZN/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "APE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "APT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AR/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ARB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ARKM/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ARM/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "ASTER/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ATH/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ATOM/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AVAX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "AXS/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BABY/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BASED/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BCH/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BEAT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BERA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BILL/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "failed",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "BIO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BLEND/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "BLUR/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BNB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BOME/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BONK/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BSB/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BTC/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "BZ/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CFX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CHIP/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "CHZ/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CL/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "COIN/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CORE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CRCL/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CRO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "CRV/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "DASH/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "DOGE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "DOT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "DYDX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "EDGE/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "EGLD/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "EIGEN/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ENA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ENJ/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ENS/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ENSO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ETC/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ETH/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ETHFI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "EWY/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "FARTCOIN/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "FIL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "FLOKI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "FOGO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "GALA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "GIGGLE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "GOOGL/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "GRASS/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "H/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "HBAR/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "HMSTR/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "HOOD/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "HYPE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ICP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "INJ/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "INTC/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "IOTA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "IP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "JTO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "JUP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "KAITO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "KAT/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "KITE/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LAB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LDO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LINEA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LINK/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LIT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LPT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LTC/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "LUNA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MEGA/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "MEME/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MERL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MON/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MOODENG/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MORPHO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MSTR/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "MU/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NEAR/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NEIRO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NG/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NIGHT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NOT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "NVDA/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "OFC/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "OKB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "OL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ONDO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ONT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "OP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "OPG/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "OPN/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ORCL/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ORDI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PARTI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PENDLE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PENGU/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PEOPLE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PEPE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PIEVERSE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PIPPIN/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PLTR/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PNUT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "POL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "POPCAT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PROS/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "PUMP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "PYTH/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "QQQ/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "RAVE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "RENDER/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "RESOLV/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "RIVER/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "RLS/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ROBO/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SAHARA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SAND/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SEI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SHIB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SNDK/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SOL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SOON/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SPACE/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SPK/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SPX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SPY/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "STRK/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "STX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "SUI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TAO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TIA/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TON/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TRB/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TRIA/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TRUMP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TRX/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TSLA/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TSM/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "TURBO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "UB/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "failed",
+      "5m": "ok"
+    },
+    "UNI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "USELESS/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "VIRTUAL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "W/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "WET/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "WIF/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "WLD/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "WLFI/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "XLM/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "XPL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "XPT/USDT": {
+      "15m": "ok",
+      "1d": "failed",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "XRP/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "YGG/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZBT/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZEC/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZEN/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZIL/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZK/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    },
+    "ZRO/USDT": {
+      "15m": "ok",
+      "1d": "ok",
+      "1h": "ok",
+      "4h": "ok",
+      "5m": "ok"
+    }
+  },
+  "listing_cutoff": "2026-03-08",
+  "removed": [
+    {
+      "first_available_ts": "2026-04-02",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "BSB/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-24",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "BZ/USDT"
+    },
+    {
+      "first_available_ts": "2026-05-06",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "BILL/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-28",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "UB/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-29",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "AI/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-30",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "BASED/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-11",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "AMD/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-21",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "CHIP/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-30",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "MEGA/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-28",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "PROS/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-01",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "EDGE/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-29",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "BLEND/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-23",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "OPG/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-09",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "OFC/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-29",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "ARM/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-11",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "EWY/USDT"
+    },
+    {
+      "first_available_ts": "2026-04-09",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "KITE/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-11",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "ORCL/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-11",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "TSM/USDT"
+    },
+    {
+      "first_available_ts": "2026-03-10",
+      "reason": "first_available_ts >= 2026-03-08",
+      "symbol": "NG/USDT"
+    }
+  ],
+  "removed_count": 20,
+  "removed_recent_count": 20,
+  "removed_unknown_count": 0,
+  "run_id": "okx_usdt_swap_ge2m_20260507_listed_before_20260308",
+  "selection_rule": "USDT-SWAP and volCcy24h * last >= 2,000,000 USD; project stablecoin/exclude list removed; capped to top 181 by 24h quote volume for this run + exclude first_available_ts >= 2026-03-08",
+  "source_training_path": "engine/data/training_history/rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507",
+  "source_training_run_id": "rebuild_181_ohlcv_only_5m_15m_1h_4h_1d_20230101_20260507",
+  "source_universe": "engine/data/universe/okx_usdt_swap_ge2m_20260507/manifest.json",
+  "start": "2023-01-01",
+  "symbols": [
+    "ETH/USDT",
+    "BTC/USDT",
+    "LAB/USDT",
+    "ZEC/USDT",
+    "DOGE/USDT",
+    "SOL/USDT",
+    "TON/USDT",
+    "CL/USDT",
+    "PEPE/USDT",
+    "FIL/USDT",
+    "XRP/USDT",
+    "RAVE/USDT",
+    "HYPE/USDT",
+    "DASH/USDT",
+    "WIF/USDT",
+    "TAO/USDT",
+    "SUI/USDT",
+    "ADA/USDT",
+    "BNB/USDT",
+    "BCH/USDT",
+    "ICP/USDT",
+    "PENGU/USDT",
+    "NOT/USDT",
+    "NEAR/USDT",
+    "LINK/USDT",
+    "PUMP/USDT",
+    "TRUMP/USDT",
+    "ORDI/USDT",
+    "LTC/USDT",
+    "WLD/USDT",
+    "JTO/USDT",
+    "SNDK/USDT",
+    "AVAX/USDT",
+    "XPL/USDT",
+    "ONDO/USDT",
+    "AR/USDT",
+    "WLFI/USDT",
+    "STX/USDT",
+    "AAVE/USDT",
+    "ENA/USDT",
+    "GALA/USDT",
+    "INTC/USDT",
+    "SHIB/USDT",
+    "CFX/USDT",
+    "UNI/USDT",
+    "BIO/USDT",
+    "DOT/USDT",
+    "VIRTUAL/USDT",
+    "APT/USDT",
+    "FARTCOIN/USDT",
+    "CRCL/USDT",
+    "OKB/USDT",
+    "MON/USDT",
+    "ZEN/USDT",
+    "OP/USDT",
+    "ASTER/USDT",
+    "PIPPIN/USDT",
+    "MU/USDT",
+    "ETC/USDT",
+    "IP/USDT",
+    "GIGGLE/USDT",
+    "CHZ/USDT",
+    "LUNA/USDT",
+    "RIVER/USDT",
+    "PENDLE/USDT",
+    "EIGEN/USDT",
+    "PI/USDT",
+    "CRV/USDT",
+    "ARB/USDT",
+    "NVDA/USDT",
+    "STRK/USDT",
+    "HBAR/USDT",
+    "BONK/USDT",
+    "MERL/USDT",
+    "XLM/USDT",
+    "APE/USDT",
+    "TRX/USDT",
+    "BABY/USDT",
+    "MOODENG/USDT",
+    "ATOM/USDT",
+    "PNUT/USDT",
+    "ONT/USDT",
+    "PIEVERSE/USDT",
+    "MSTR/USDT",
+    "RENDER/USDT",
+    "TRIA/USDT",
+    "ARKM/USDT",
+    "HMSTR/USDT",
+    "ALGO/USDT",
+    "LDO/USDT",
+    "RESOLV/USDT",
+    "LIT/USDT",
+    "TSLA/USDT",
+    "ZBT/USDT",
+    "JUP/USDT",
+    "ZIL/USDT",
+    "ZRO/USDT",
+    "ETHFI/USDT",
+    "AXS/USDT",
+    "TIA/USDT",
+    "KAT/USDT",
+    "LPT/USDT",
+    "NEIRO/USDT",
+    "AIXBT/USDT",
+    "GRASS/USDT",
+    "PEOPLE/USDT",
+    "H/USDT",
+    "ZK/USDT",
+    "BEAT/USDT",
+    "SPACE/USDT",
+    "DYDX/USDT",
+    "NIGHT/USDT",
+    "MORPHO/USDT",
+    "CORE/USDT",
+    "OL/USDT",
+    "TRB/USDT",
+    "BLUR/USDT",
+    "ENSO/USDT",
+    "BOME/USDT",
+    "PARTI/USDT",
+    "SAND/USDT",
+    "GOOGL/USDT",
+    "INJ/USDT",
+    "TURBO/USDT",
+    "POL/USDT",
+    "QQQ/USDT",
+    "FOGO/USDT",
+    "ATH/USDT",
+    "ACT/USDT",
+    "POPCAT/USDT",
+    "ENJ/USDT",
+    "SPY/USDT",
+    "KAITO/USDT",
+    "BERA/USDT",
+    "SPK/USDT",
+    "OPN/USDT",
+    "SAHARA/USDT",
+    "LINEA/USDT",
+    "IOTA/USDT",
+    "RLS/USDT",
+    "USELESS/USDT",
+    "SOON/USDT",
+    "COIN/USDT",
+    "2Z/USDT",
+    "YGG/USDT",
+    "HOOD/USDT",
+    "MEME/USDT",
+    "ROBO/USDT",
+    "WET/USDT",
+    "W/USDT",
+    "EGLD/USDT",
+    "ACU/USDT",
+    "PYTH/USDT",
+    "ENS/USDT",
+    "XPT/USDT",
+    "CRO/USDT",
+    "SPX/USDT",
+    "SEI/USDT",
+    "PLTR/USDT",
+    "FLOKI/USDT",
+    "AMZN/USDT"
+  ],
+  "timeframes": [
+    "5m",
+    "15m",
+    "1h",
+    "4h",
+    "1d"
+  ]
+}
