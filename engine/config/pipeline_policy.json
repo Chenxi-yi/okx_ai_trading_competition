@@ -1,0 +1,118 @@
+{
+  "capital": {
+    "base_capital_usdt": 3000.0,
+    "monthly_return_target_pct": 0.20,
+    "target_is_guarantee": false
+  },
+  "environment_order": [
+    "paper",
+    "competition",
+    "personal"
+  ],
+  "layers": [
+    {
+      "id": 1,
+      "name": "automated_data_update",
+      "owner_module": "engine/data",
+      "required_artifacts": [
+        "data_refresh/status.json",
+        "data/catalog.json",
+        "dataset quality report"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "automated_strategy_research",
+      "owner_module": "engine/research",
+      "required_artifacts": [
+        "strategy hypothesis",
+        "parameter set",
+        "research report"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "automated_strategy_evaluation",
+      "owner_module": "engine/backtest",
+      "required_artifacts": [
+        "backtest summary",
+        "walk-forward report",
+        "stress test report"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "paper_trading",
+      "owner_module": "engine/runtime",
+      "required_artifacts": [
+        "paper state",
+        "decision journal",
+        "stop and leverage audit"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "competition_account_production",
+      "owner_module": "engine/execution",
+      "required_artifacts": [
+        "competition read-only account check",
+        "protective stop dry-run",
+        "small-capital live audit"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "personal_account_production",
+      "owner_module": "engine/execution",
+      "required_artifacts": [
+        "competition evidence",
+        "owner approval",
+        "personal-account allocation record"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "investment_committee",
+      "owner_module": "engine/arbitration",
+      "required_artifacts": [
+        "trade plan",
+        "allocation decision",
+        "leverage decision"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "position_management_and_strategy_review",
+      "owner_module": "engine/position",
+      "required_artifacts": [
+        "position lifecycle log",
+        "stop/target monitoring",
+        "daily strategy review"
+      ]
+    }
+  ],
+  "promotion_gates": {
+    "paper_to_competition": {
+      "min_calendar_days": 3,
+      "min_closed_trades": 12,
+      "max_drawdown_pct": 0.03,
+      "max_daily_loss_pct": 0.015,
+      "min_stop_execution_rate": 1.0,
+      "max_stale_data_events": 0,
+      "max_leverage": 1.0,
+      "max_gross_leverage": 0.25,
+      "requires_owner_approval": true
+    },
+    "competition_to_personal": {
+      "min_calendar_days": 7,
+      "min_closed_trades": 25,
+      "max_drawdown_pct": 0.04,
+      "max_daily_loss_pct": 0.02,
+      "min_stop_execution_rate": 1.0,
+      "max_reconciliation_errors": 0,
+      "max_leverage": 1.0,
+      "max_gross_leverage": 0.25,
+      "requires_owner_approval": true
+    }
+  }
+}

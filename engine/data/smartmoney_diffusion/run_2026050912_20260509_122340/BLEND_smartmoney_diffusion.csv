@@ -1,0 +1,11 @@
+ccy,dataVersion,longRatio,longTraders,netNotionalUsdt,shortRatio,shortTraders,totalNotionalUsdt,tradersQualified,tradersWithPosition,weightedLongRatio,weightedShortRatio,ts,d_traders_with_position,d_total_notional_usdt,d_net_notional_usdt,d_weighted_long_ratio,smartmoney_direction,long_diffusion_event,long_exit_event,short_diffusion_event,short_exit_event,close,fwd_ret_1h,fwd_ret_3h,fwd_ret_6h,fwd_ret_12h,fwd_ret_24h
+BLEND,2026050720,1,1,5644.54800000005,0,0,5644.54800000005,100,1,1,0,2026-05-07 20:00:00+00:00,,,,,long,False,False,False,False,,,,,,
+BLEND,2026050812,1,1,7880.758000000046,0,0,7880.758000000046,100,1,1,0,2026-05-08 12:00:00+00:00,0.0,2236.2099999999964,2236.2099999999964,0.0,long,True,False,False,False,,,,,,
+BLEND,2026050819,1,1,11878.22000000015,0,0,11878.22000000015,100,1,1,0,2026-05-08 19:00:00+00:00,0.0,3997.462000000104,3997.462000000104,0.0,long,True,False,False,False,,,,,,
+BLEND,2026050820,1,1,11878.22000000015,0,0,11878.22000000015,100,1,1,0,2026-05-08 20:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,
+BLEND,2026050821,1,1,11878.22000000015,0,0,11878.22000000015,100,1,1,0,2026-05-08 21:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,
+BLEND,2026050822,1,1,11878.22000000015,0,0,11878.22000000015,100,1,1,0,2026-05-08 22:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,
+BLEND,2026050823,1,1,11878.22000000015,0,0,11878.22000000015,100,1,1,0,2026-05-08 23:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,
+BLEND,2026050910,1,1,12660.0,0,0,12660.0,100,1,1,0,2026-05-09 10:00:00+00:00,0.0,781.7799999998497,781.7799999998497,0.0,long,True,False,False,False,,,,,,
+BLEND,2026050911,1,1,12660.0,0,0,12660.0,100,1,1,0,2026-05-09 11:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,
+BLEND,2026050912,1,1,12660.0,0,0,12660.0,100,1,1,0,2026-05-09 12:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,,,,,,

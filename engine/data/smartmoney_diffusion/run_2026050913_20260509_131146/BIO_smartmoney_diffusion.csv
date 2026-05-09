@@ -1,0 +1,6 @@
+ccy,dataVersion,longRatio,longTraders,netNotionalUsdt,shortRatio,shortTraders,totalNotionalUsdt,tradersQualified,tradersWithPosition,weightedLongRatio,weightedShortRatio,ts,d_traders_with_position,d_total_notional_usdt,d_net_notional_usdt,d_weighted_long_ratio,smartmoney_direction,long_diffusion_event,long_exit_event,short_diffusion_event,short_exit_event,close,fwd_ret_1h,fwd_ret_3h,fwd_ret_6h,fwd_ret_12h,fwd_ret_24h
+BIO,2026050908,0,0,-27.125,1,1,27.125,100,1,0,1,2026-05-09 08:00:00+00:00,,,,,short,False,False,False,False,0.05067,-0.007499506611407081,-0.007696862048549469,,,
+BIO,2026050910,1,1,44199.782010000534,0,0,44199.782010000534,100,1,1,0,2026-05-09 10:00:00+00:00,0.0,44172.657010000534,44226.907010000534,1.0,long,True,False,False,False,0.05052,-0.004750593824228155,-0.008115597783056261,,,
+BIO,2026050911,1,1,44199.782010000534,0,0,44199.782010000534,100,1,1,0,2026-05-09 11:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,0.05028,0.007756563245823411,,,,
+BIO,2026050912,1,1,44199.782010000534,0,0,44199.782010000534,100,1,1,0,2026-05-09 12:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,0.05067,-0.0110519044799684,,,,
+BIO,2026050913,1,1,44199.782010000534,0,0,44199.782010000534,100,1,1,0,2026-05-09 13:00:00+00:00,0.0,0.0,0.0,0.0,long,False,False,False,False,0.05011,,,,,

@@ -32,11 +32,13 @@ CONTROL_DIR = ROOT_DIR / "engine" / "control"
 LOGS_DIR = ROOT_DIR / "engine" / "logs"
 PRO_PAPER_DIR = LOGS_DIR / "pro_paper"
 C_AUTO_V2_PAPER_DIR = LOGS_DIR / "c_auto_v2_paper"
+C_AUTO_V2_MICRO_LIVE_DIR = LOGS_DIR / "c_auto_v2_micro_live"
 TRAINING_HISTORY_DIR = ROOT_DIR / "engine" / "data" / "training_history"
 DERIVATIVES_STRUCTURE_DIR = ROOT_DIR / "engine" / "data" / "derivatives_structure"
 MONSTER_EVENTS_DIR = ROOT_DIR / "engine" / "data" / "monster_events"
 MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
 DATA_REFRESH_DIR = LOGS_DIR / "data_refresh"
+SMARTMONEY_DIFFUSION_DIR = LOGS_DIR / "smartmoney_diffusion"
 PYTHON_BIN = os.environ.get("OKX_TRADING_SYSTEM_PYTHON", sys.executable)
 KILL_SWITCH_PATH = CONTROL_DIR / "kill.switch"
 
@@ -52,6 +54,7 @@ DEFAULT_DERIVATIVES_RUN_ID = "deriv_struct_132_5m_20240101_20260424"
 DEFAULT_MONSTER_WATCHLIST_ID = "monster_watchlist_5m_live_gated_20260426"
 C_AUTO_V2_STRATEGY_ID = "c_auto_v2_fixed1000_conservative"
 C_AUTO_V2_STATE_ID = "fixed1000_conservative"
+C_AUTO_V2_CAPITAL_USDT = 3000.0
 
 
 def read_text(path: Path) -> str | None:
@@ -111,7 +114,9 @@ def pid_snapshot() -> dict[str, Any]:
         "strategies": strategies,
         "pro_paper": find_pro_paper_processes(),
         "c_auto_v2_paper": find_c_auto_v2_paper_processes(),
+        "c_auto_v2_micro_live": find_c_auto_v2_micro_live_processes(),
         "data_refresh": find_data_refresh_processes(),
+        "smartmoney_diffusion": find_smartmoney_diffusion_processes(),
         "c_auto_daily_review": find_c_auto_daily_review_processes(),
     }
 
@@ -143,12 +148,12 @@ def strategy_options() -> list[dict[str, Any]]:
             "book": "core",
             "status": "paper-candidate",
             "kind": "c_auto_v2",
-            "description": "BTC regime + alt rank + high-beta booster, fixed 1000U notional live-paper runner.",
-            "live_enabled": False,
-            "live_allocation_pct": 0.0,
+            "description": "BTC regime + alt rank + high-beta booster with parallel paper and 50U/day micro-live validation.",
+            "live_enabled": True,
+            "live_allocation_pct": 0.0167,
             "default_parameter_set_id": "c_auto_v2.fixed1000_conservative",
             "paper_supported": True,
-            "real_supported": False,
+            "real_supported": True,
             "primary": True,
         }
     ]
@@ -299,6 +304,48 @@ def find_c_auto_v2_paper_processes(state_id: str | None = None) -> list[dict[str
     return matches
 
 
+def find_c_auto_v2_micro_live_processes(state_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/run_c_auto_v2_micro_live.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        found_state = _command_arg(command, "--state-id")
+        found_env = _command_arg(command, "--environment")
+        if state_id and found_state != state_id:
+            continue
+        matches.append(
+            {
+                "pid": pid,
+                "command": command,
+                "state_id": found_state,
+                "environment": found_env,
+                "source_mode": "micro_live",
+            }
+        )
+    return matches
+
+
 def find_c_auto_daily_review_processes() -> list[dict[str, Any]]:
     try:
         proc = subprocess.run(
@@ -434,6 +481,48 @@ def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment
     return out
 
 
+def c_auto_v2_micro_live_status(state_id: str = "micro_live_competition", environment: str = "competition") -> dict[str, Any]:
+    processes = find_c_auto_v2_micro_live_processes(state_id)
+    prefix = f"{state_id}_{environment}"
+    state_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}.json"
+    scheduler_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}_scheduler.json"
+    state = read_json(state_path) or {}
+    scheduler = read_json(scheduler_path) or {}
+    if not state and not scheduler and not processes:
+        return {"available": False, "state_id": state_id, "message": "no c-auto v2 micro-live state found"}
+    out = dict(state)
+    out.update(
+        {
+            "available": True,
+            "running": bool(processes),
+            "processes": processes,
+            "scheduler": scheduler,
+            "state_path": str(state_path.relative_to(ROOT_DIR)) if state_path.exists() else None,
+            "scheduler_status_path": str(scheduler_path.relative_to(ROOT_DIR)) if scheduler_path.exists() else None,
+        }
+    )
+    return out
+
+
+def eight_layer_pipeline_status() -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            [PYTHON_BIN, "scripts/evaluate_8_layer_pipeline.py", "--json"],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or proc.stdout).strip()}
+    try:
+        return {"ok": True, **json.loads(proc.stdout)}
+    except Exception as exc:
+        return {"ok": False, "error": f"invalid pipeline status json: {exc}", "raw": proc.stdout[-2000:]}
+
+
 def close_c_auto_v2_symbol(payload: dict[str, Any]) -> dict[str, Any]:
     state_id = str(payload.get("state_id") or "fixed1000_conservative").strip()
     environment = str(payload.get("environment") or payload.get("env") or "").strip()
@@ -510,6 +599,108 @@ def _close_c_auto_live_symbol(symbol: str, environment: str) -> dict[str, Any]:
     }
 
 
+def close_c_auto_v2_micro_live_symbol(payload: dict[str, Any]) -> dict[str, Any]:
+    state_id = str(payload.get("state_id") or "micro_live_competition").strip()
+    environment = str(payload.get("environment") or payload.get("env") or "competition").strip()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise ValueError("symbol is required")
+    if environment != "competition":
+        raise ValueError("micro-live close is only enabled for competition environment")
+    if not bool(payload.get("confirm_live_close")):
+        raise ValueError("live close requires confirm_live_close=true")
+
+    prefix = f"{state_id}_{environment}"
+    state_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}.json"
+    state = read_json(state_path) or {}
+    positions = dict(state.get("positions") or {})
+    matched_symbol = next((name for name in positions if name.upper() == symbol), None)
+    if not matched_symbol:
+        return {"ok": True, "closed": False, "symbol": symbol, "message": "symbol not open", "status": c_auto_v2_micro_live_status(state_id, environment)}
+
+    pos = dict(positions.pop(matched_symbol) or {})
+    inst_id = str(pos.get("inst_id") or _symbol_to_swap_inst_id(matched_symbol))
+    cancel_orders = _cancel_profile_symbol_open_orders("live", inst_id)
+    cancel_algos = _cancel_profile_symbol_algo_orders("live", inst_id)
+    close_result = _run_okx_json(["okx", "--profile", "live", "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
+    if close_result["returncode"] != 0:
+        raise RuntimeError(close_result["message"] or "micro-live close failed")
+
+    pnl = _position_unrealized_pnl(pos)
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "ts": now,
+        "event": "manual_exit",
+        "symbol": matched_symbol,
+        "side": pos.get("side"),
+        "reason": "launcher_micro_live_one_click_close",
+        "pnl": pnl,
+        "net_return": _position_net_return(pos),
+        "exit_price": pos.get("mark_price"),
+        "exchange_result": {
+            "close_position": close_result,
+            "cancel_orders": cancel_orders,
+            "cancel_algo_orders": cancel_algos,
+        },
+    }
+    ledger_tail = list(state.get("ledger_tail") or [])
+    ledger_tail.append(event)
+    state["positions"] = positions
+    state["ledger_tail"] = ledger_tail[-80:]
+    state["realized_pnl"] = float(state.get("realized_pnl") or 0.0) + pnl
+    state["unrealized_pnl"] = sum(_position_unrealized_pnl(dict(p)) for p in positions.values())
+    base_nav = float(state.get("daily_budget_usdt") or state.get("cash") or 50.0)
+    state["nav"] = base_nav + float(state["realized_pnl"]) + float(state["unrealized_pnl"])
+    state["open_risk"] = sum(float(dict(p).get("risk_budget") or 0.0) for p in positions.values())
+    state["updated_at"] = now
+    C_AUTO_V2_MICRO_LIVE_DIR.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+    with (C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}_ledger.jsonl").open("a") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+    with (C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}_equity.jsonl").open("a") as fh:
+        fh.write(json.dumps({"ts": now, "nav": state["nav"], "open_positions": len(positions)}, ensure_ascii=False) + "\n")
+    return {"ok": True, "closed": True, "symbol": matched_symbol, "event": event, "status": c_auto_v2_micro_live_status(state_id, environment)}
+
+
+def close_monster_paper_symbol(payload: dict[str, Any]) -> dict[str, Any]:
+    state_id = str(payload.get("state_id") or "lottery_live").strip()
+    symbol = str(payload.get("symbol") or "").strip().upper()
+    if not symbol:
+        raise ValueError("symbol is required")
+    state_path = MONSTER_PAPER_DIR / f"{state_id}.json"
+    state = read_json(state_path) or {}
+    positions = dict(state.get("positions") or {})
+    matched_symbol = next((name for name in positions if name.upper() == symbol), None)
+    if not matched_symbol:
+        return {"ok": True, "closed": False, "symbol": symbol, "message": "symbol not open", "status": monster_paper_status(state_id)}
+    pos = dict(positions.pop(matched_symbol) or {})
+    pnl = _position_unrealized_pnl(pos)
+    now = datetime.now(timezone.utc).isoformat()
+    event = {
+        "ts": now,
+        "event": "manual_exit",
+        "symbol": matched_symbol,
+        "side": pos.get("side"),
+        "reason": "launcher_monster_one_click_close",
+        "pnl": pnl,
+        "net_return": _position_net_return(pos),
+        "exit_price": pos.get("mark_price"),
+    }
+    state["positions"] = positions
+    state["cash"] = float(state.get("cash") or state.get("nav") or 1000.0) + pnl
+    state["realized_pnl"] = float(state.get("realized_pnl") or 0.0) + pnl
+    state["unrealized_pnl"] = sum(_position_unrealized_pnl(dict(p)) for p in positions.values())
+    state["nav"] = float(state["cash"]) + float(state["unrealized_pnl"])
+    state["updated_at"] = now
+    MONSTER_PAPER_DIR.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+    with (MONSTER_PAPER_DIR / f"{state_id}_ledger.jsonl").open("a") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+    with (MONSTER_PAPER_DIR / f"{state_id}_equity.jsonl").open("a") as fh:
+        fh.write(json.dumps({"ts": now, "nav": state["nav"], "open_positions": len(positions)}, ensure_ascii=False) + "\n")
+    return {"ok": True, "closed": True, "symbol": matched_symbol, "event": event, "status": monster_paper_status(state_id)}
+
+
 def _cancel_profile_symbol_open_orders(profile: str, inst_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "profile": profile,
@@ -536,6 +727,38 @@ def _cancel_profile_symbol_open_orders(profile: str, inst_id: str) -> dict[str, 
         if cancel["returncode"] == 0:
             result["orders_cancelled"] += 1
             result["cancelled"].append({"instId": inst_id, "ordId": ord_id})
+        else:
+            result["orders_failed"] += 1
+            result["errors"].append(cancel["message"])
+    return result
+
+
+def _cancel_profile_symbol_algo_orders(profile: str, inst_id: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "profile": profile,
+        "inst_id": inst_id,
+        "orders_found": 0,
+        "orders_cancelled": 0,
+        "orders_failed": 0,
+        "errors": [],
+        "cancelled": [],
+    }
+    resp = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "algo", "orders", "--instId", inst_id])
+    if resp["returncode"] != 0:
+        result["errors"].append(resp["message"])
+        return result
+    orders = _as_order_list(resp["data"])
+    result["orders_found"] = len(orders)
+    for order in orders:
+        algo_id = str(order.get("algoId") or order.get("algo_id") or "").strip()
+        if not algo_id:
+            result["orders_failed"] += 1
+            result["errors"].append(f"missing algoId in order: {order}")
+            continue
+        cancel = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "algo", "cancel", "--instId", inst_id, "--algoId", algo_id])
+        if cancel["returncode"] == 0:
+            result["orders_cancelled"] += 1
+            result["cancelled"].append({"instId": inst_id, "algoId": algo_id})
         else:
             result["orders_failed"] += 1
             result["errors"].append(cancel["message"])
@@ -602,9 +825,9 @@ def start_c_auto_v2_paper(environment: str, fresh_start: bool = False) -> dict[s
             "--environment",
             environment,
             "--initial-capital",
-            "1000",
+            f"{C_AUTO_V2_CAPITAL_USDT:g}",
             "--fixed-notional-capital",
-            "1000",
+            f"{C_AUTO_V2_CAPITAL_USDT:g}",
             "--dataset-id",
             "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
             "--quality-id",
@@ -641,6 +864,73 @@ def start_c_auto_v2_paper(environment: str, fresh_start: bool = False) -> dict[s
             "archived_session": archived_session,
         }
     )
+    return result
+
+
+def start_c_auto_v2_micro_live(environment: str, confirm: bool = False) -> dict[str, Any]:
+    if environment != "competition":
+        raise ValueError("micro-live 只允许比赛账户环境")
+    if not confirm:
+        raise ValueError("micro-live requires confirm_real=true and confirm_competition=true")
+    state_id = "micro_live_competition"
+    existing = find_c_auto_v2_micro_live_processes(state_id)
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": c_auto_v2_micro_live_status(state_id, environment)}
+    stop_path = CONTROL_DIR / f"c_auto_v2_micro_live_{state_id}_{environment}.stop"
+    try:
+        stop_path.unlink()
+    except FileNotFoundError:
+        pass
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_c_auto_v2_micro_live.py",
+            "--state-id",
+            state_id,
+            "--paper-state-id",
+            C_AUTO_V2_STATE_ID,
+            "--environment",
+            environment,
+            "--initial-capital",
+            f"{C_AUTO_V2_CAPITAL_USDT:g}",
+            "--fixed-notional-capital",
+            f"{C_AUTO_V2_CAPITAL_USDT:g}",
+            "--dataset-id",
+            "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+            "--quality-id",
+            "c_auto_dataset_quality_rebuild_161_ohlcv_v1",
+            "--deriv-run-id",
+            "c_auto_live_derivatives_5m",
+            "--snapshot-run-id",
+            "rebuild_161_market_snapshot_20260508",
+            "--max-symbols",
+            "80",
+            "--refresh-max-symbols",
+            "0",
+            "--max-market-age-sec",
+            "7200",
+            "--min-fresh-symbols",
+            "40",
+            "--daily-budget-usdt",
+            "50",
+            "--per-symbol-margin-usdt",
+            "10",
+            "--first-48h-max-positions",
+            "2",
+            "--steady-state-max-positions",
+            "5",
+            "--default-leverage",
+            "1",
+            "--max-leverage",
+            "1",
+            "--interval-sec",
+            "300",
+            "--run-on-start-entry",
+            "--confirm-micro-live",
+        ],
+        f"c_auto_v2_micro_live_{environment}",
+    )
+    result.update({"ok": True, "strategy": C_AUTO_V2_STRATEGY_ID, "environment": environment, "mode": "real", "source_mode": "micro_live"})
     return result
 
 
@@ -720,6 +1010,56 @@ def stop_c_auto_v2_paper() -> dict[str, Any]:
         except OSError:
             continue
     return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files, "flattened_state_files": flattened}
+
+
+def stop_c_auto_v2_micro_live() -> dict[str, Any]:
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    stopped: list[int] = []
+    stop_files: list[str] = []
+    flattened: list[dict[str, Any]] = []
+    for proc in find_c_auto_v2_micro_live_processes():
+        state_id = proc.get("state_id") or "micro_live_competition"
+        environment = proc.get("environment") or "competition"
+        stop_path = CONTROL_DIR / f"c_auto_v2_micro_live_{state_id}_{environment}.stop"
+        stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
+        flattened.append(flatten_c_auto_v2_micro_live_state(str(state_id), str(environment), "launcher_stop"))
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files, "flattened": flattened}
+
+
+def flatten_c_auto_v2_micro_live_state(state_id: str, environment: str, reason: str) -> dict[str, Any]:
+    state_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{state_id}_{environment}.json"
+    state = read_json(state_path)
+    if not isinstance(state, dict):
+        return {"ok": False, "reason": "missing_state"}
+    positions = dict(state.get("positions") or {})
+    events: list[dict[str, Any]] = []
+    for symbol, pos in positions.items():
+        inst_id = str(pos.get("inst_id") or _symbol_to_swap_inst_id(symbol))
+        close_result = _run_okx_json(["okx", "--profile", "live", "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
+        events.append(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "event": "forced_exit",
+                "symbol": symbol,
+                "side": pos.get("side"),
+                "reason": reason,
+                "close": close_result,
+            }
+        )
+    state["positions"] = {}
+    state["open_risk"] = 0.0
+    state["unrealized_pnl"] = 0.0
+    state["runner_status"] = "stopped_flat"
+    state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    state["ledger_tail"] = (list(state.get("ledger_tail", [])) + events)[-80:]
+    state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    return {"ok": True, "positions_closed": len(positions), "events": events}
 
 
 def flatten_c_auto_v2_paper_state(state_id: str, environment: str, reason: str) -> str | None:
@@ -850,6 +1190,36 @@ def find_data_refresh_processes() -> list[dict[str, Any]]:
     return matches
 
 
+def find_smartmoney_diffusion_processes() -> list[dict[str, Any]]:
+    try:
+        proc = subprocess.run(
+            ["ps", "-axo", "pid=,command="],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    if proc.returncode != 0:
+        return []
+    matches: list[dict[str, Any]] = []
+    self_pid = os.getpid()
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/run_smartmoney_diffusion_collector.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == self_pid:
+            continue
+        matches.append({"pid": pid, "command": command})
+    return matches
+
+
 def data_refresh_status() -> dict[str, Any]:
     status_path = DATA_REFRESH_DIR / "status.json"
     progress_path = DATA_REFRESH_DIR / "progress.jsonl"
@@ -863,6 +1233,21 @@ def data_refresh_status() -> dict[str, Any]:
         "processes": processes,
         "status": status,
         "progress_tail": iter_jsonl(progress_path)[-20:],
+        "status_path": str(status_path.relative_to(ROOT_DIR)) if status_path.exists() else None,
+    }
+
+
+def smartmoney_diffusion_status() -> dict[str, Any]:
+    status_path = SMARTMONEY_DIFFUSION_DIR / "collector_status.json"
+    status = read_json(status_path) or {}
+    processes = find_smartmoney_diffusion_processes()
+    if not status and not processes:
+        return {"available": False, "running": False, "message": "no smartmoney diffusion collector found"}
+    return {
+        "available": True,
+        "running": bool(processes),
+        "processes": processes,
+        "status": status,
         "status_path": str(status_path.relative_to(ROOT_DIR)) if status_path.exists() else None,
     }
 
@@ -951,6 +1336,33 @@ def start_data_refresh() -> dict[str, Any]:
     return result
 
 
+def start_smartmoney_diffusion() -> dict[str, Any]:
+    existing = find_smartmoney_diffusion_processes()
+    if existing:
+        return {"ok": True, "already_running": True, "processes": existing, "status": smartmoney_diffusion_status()}
+    result = run_script(
+        [
+            "python3",
+            "scripts/run_smartmoney_diffusion_collector.py",
+            "--symbols",
+            "auto",
+            "--max-symbols",
+            "80",
+            "--limit",
+            "72",
+            "--period",
+            "7",
+            "--lmt-num",
+            "100",
+            "--interval-sec",
+            "3600",
+        ],
+        "smartmoney_diffusion",
+    )
+    result.update({"ok": True, "service": "smartmoney_diffusion"})
+    return result
+
+
 def stop_data_refresh() -> dict[str, Any]:
     stopped: list[int] = []
     for proc in find_data_refresh_processes():
@@ -960,6 +1372,20 @@ def stop_data_refresh() -> dict[str, Any]:
         except OSError:
             continue
     return {"ok": True, "stopped_pids": stopped}
+
+
+def stop_smartmoney_diffusion() -> dict[str, Any]:
+    CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    stopped: list[int] = []
+    stop_path = CONTROL_DIR / "smartmoney_diffusion_collector.stop"
+    stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+    for proc in find_smartmoney_diffusion_processes():
+        try:
+            os.kill(int(proc["pid"]), 15)
+            stopped.append(int(proc["pid"]))
+        except OSError:
+            continue
+    return {"ok": True, "stopped_pids": stopped, "stop_file": str(stop_path.relative_to(ROOT_DIR))}
 
 
 def activate_kill_switch(reason: str = "launcher stop all") -> dict[str, Any]:
@@ -1862,8 +2288,17 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if path == "/api/c-auto-v2-paper":
                 self.send_json(200, {"ok": True, **c_auto_v2_paper_status()})
                 return
+            if path == "/api/c-auto-v2-micro-live":
+                self.send_json(200, {"ok": True, **c_auto_v2_micro_live_status()})
+                return
+            if path == "/api/8-layer-pipeline":
+                self.send_json(200, eight_layer_pipeline_status())
+                return
             if path == "/api/data-refresh":
                 self.send_json(200, {"ok": True, **data_refresh_status()})
+                return
+            if path == "/api/smartmoney-diffusion":
+                self.send_json(200, {"ok": True, **smartmoney_diffusion_status()})
                 return
             if path == "/api/download-status":
                 self.send_json(200, download_status())
@@ -1930,9 +2365,28 @@ class LauncherHandler(BaseHTTPRequestHandler):
             if path == "/api/monster-auto-refresh-start":
                 self.send_json(200, start_monster_auto_refresh())
                 return
+            if path == "/api/c-auto-v2-micro-live-start":
+                payload = self.read_json_body()
+                confirm = bool(payload.get("confirm_real")) and bool(payload.get("confirm_competition"))
+                self.send_json(200, start_c_auto_v2_micro_live("competition", confirm=confirm))
+                return
+            if path == "/api/smartmoney-diffusion-start":
+                self.send_json(200, start_smartmoney_diffusion())
+                return
+            if path == "/api/smartmoney-diffusion-stop":
+                self.send_json(200, stop_smartmoney_diffusion())
+                return
             if path == "/api/c-auto-v2/close-symbol":
                 payload = self.read_json_body()
                 self.send_json(200, close_c_auto_v2_symbol(payload))
+                return
+            if path == "/api/c-auto-v2-micro-live/close-symbol":
+                payload = self.read_json_body()
+                self.send_json(200, close_c_auto_v2_micro_live_symbol(payload))
+                return
+            if path == "/api/monster-paper/close-symbol":
+                payload = self.read_json_body()
+                self.send_json(200, close_monster_paper_symbol(payload))
                 return
             self.send_json(404, {"ok": False, "error": "unknown route"})
         except ValueError as exc:
@@ -1943,6 +2397,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
     def handle_start(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = payload if payload is not None else self.read_json_body()
         data_refresh = start_data_refresh()
+        smartmoney_diffusion = start_smartmoney_diffusion()
         env = str(payload.get("env", "personal")).strip()
         mode = str(payload.get("mode", "paper")).strip()
         strategy = str(payload.get("strategy", "core_c_auto_h24_regression_v1")).strip()
@@ -1968,6 +2423,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 daily_review = start_c_auto_daily_review(env)
                 result = start_pro_paper(strategy, env)
                 result["data_refresh"] = data_refresh
+                result["smartmoney_diffusion"] = smartmoney_diffusion
                 result["daily_review"] = daily_review
                 result["kill_switch"] = kill_switch
                 return result
@@ -1980,10 +2436,27 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 daily_review = start_c_auto_daily_review(env)
                 result = start_c_auto_v2_paper(env, fresh_start=bool(payload.get("fresh_start", False)))
                 result["data_refresh"] = data_refresh
+                result["smartmoney_diffusion"] = smartmoney_diffusion
                 result["daily_review"] = daily_review
                 result["kill_switch"] = kill_switch
                 return result
-            raise ValueError("C-Auto v2 还没有通过 live gate，不能启动真实交易")
+            if env != "competition":
+                raise ValueError("C-Auto micro-live 只允许比赛真实交易环境")
+            daily_review = start_c_auto_daily_review(env)
+            paper = start_c_auto_v2_paper(env, fresh_start=False)
+            micro_live = start_c_auto_v2_micro_live(env, confirm=confirm_real and confirm_competition)
+            return {
+                "ok": True,
+                "strategy": strategy,
+                "env": env,
+                "mode": "real",
+                "paper": paper,
+                "micro_live": micro_live,
+                "data_refresh": data_refresh,
+                "smartmoney_diffusion": smartmoney_diffusion,
+                "daily_review": daily_review,
+                "kill_switch": kill_switch,
+            }
 
         if mode == "paper":
             raise ValueError("legacy 策略没有接入纸面交易模式；请选择 professional 策略")
@@ -2004,6 +2477,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "dashboard_url": f"http://127.0.0.1:{port}/",
                 "yolo_url": f"http://127.0.0.1:{port}/yolo",
                 "data_refresh": data_refresh,
+                "smartmoney_diffusion": smartmoney_diffusion,
                 "kill_switch": kill_switch,
             }
         )
@@ -2014,7 +2488,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
         result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
         pro = stop_pro_paper()
         c_auto_v2 = stop_c_auto_v2_paper()
+        c_auto_v2_micro_live = stop_c_auto_v2_micro_live()
         data_refresh = stop_data_refresh()
+        smartmoney_diffusion = stop_smartmoney_diffusion()
         daily_review = stop_c_auto_daily_review()
         order_cancel = cancel_all_open_swap_orders()
         result.update(
@@ -2024,7 +2500,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 "order_cancel": order_cancel,
                 "pro_paper": pro,
                 "c_auto_v2_paper": c_auto_v2,
+                "c_auto_v2_micro_live": c_auto_v2_micro_live,
                 "data_refresh": data_refresh,
+                "smartmoney_diffusion": smartmoney_diffusion,
                 "daily_review": daily_review,
             }
         )
@@ -2050,7 +2528,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "pids": pids,
             "pro_paper": pro_paper_status(),
             "c_auto_v2_paper": c_auto_v2_paper_status(),
+            "c_auto_v2_micro_live": c_auto_v2_micro_live_status(),
             "data_refresh": data_refresh_status(),
+            "smartmoney_diffusion": smartmoney_diffusion_status(),
             "daily_review": c_auto_daily_review_status(),
             "kill_switch": kill_switch_status(),
             "launcher_logs": latest_launcher_logs(),

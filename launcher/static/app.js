@@ -3,12 +3,17 @@ const state = {
   mode: localStorage.getItem('launcher.mode') || 'paper',
   strategy: localStorage.getItem('launcher.strategy') || 'core_c_auto_h24_regression_v1',
   port: Number(localStorage.getItem('launcher.port') || 8080),
+  page: localStorage.getItem('launcher.page') || 'overview',
 };
 
 let launchOptions = { strategies: [] };
 let cAutoPaperAvailable = false;
 let latestCAutoStatus = null;
+let latestMicroLiveStatus = null;
+let latestMonsterPaperStatus = null;
+let latestPipelineStatus = null;
 let stopInFlight = false;
+let downloadCollapsed = localStorage.getItem('launcher.downloadCollapsed') === 'true';
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +21,30 @@ function setActive(groupId, value) {
   document.querySelectorAll(`#${groupId} [data-value]`).forEach((node) => {
     node.classList.toggle('active', node.dataset.value === value);
   });
+}
+
+function setActivePage(page) {
+  state.page = page;
+  document.querySelectorAll('.main-nav [data-page]').forEach((node) => {
+    node.classList.toggle('active', node.dataset.page === page);
+  });
+  document.querySelectorAll('.app-page').forEach((node) => {
+    node.classList.toggle('active', node.id === `page-${page}`);
+  });
+  localStorage.setItem('launcher.page', page);
+  requestAnimationFrame(() => {
+    if (latestCAutoStatus) renderCAutoChart(latestCAutoStatus);
+    if (latestMonsterPaperStatus) renderMonsterPaperBlock(latestMonsterPaperStatus);
+    if (latestCAutoStatus) renderPaperPanel(latestCAutoStatus);
+    if (latestMicroLiveStatus) renderMicroLivePanel(latestMicroLiveStatus);
+  });
+}
+
+function applyDownloadCollapsed() {
+  $('downloadWidget').classList.toggle('collapsed', downloadCollapsed);
+  $('toggleDownloadBtn').textContent = downloadCollapsed ? '展开' : '收起';
+  $('toggleDownloadBtn').setAttribute('aria-expanded', downloadCollapsed ? 'false' : 'true');
+  localStorage.setItem('launcher.downloadCollapsed', String(downloadCollapsed));
 }
 
 function applySelection() {
@@ -112,6 +141,21 @@ function formatMoney(value) {
   return num.toFixed(2);
 }
 
+function formatBeijingTime(value, withDate = false) {
+  if (!value) return '--';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    month: withDate ? '2-digit' : undefined,
+    day: withDate ? '2-digit' : undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 function summaryNav(summary) {
   if (!summary) return null;
   if (typeof summary.nav === 'number') return summary.nav;
@@ -132,7 +176,7 @@ function renderStatus(data) {
   $('rootPath').textContent = data.root || '';
   const killSwitch = data.kill_switch || {};
   $('launcherStatus').textContent = killSwitch.active ? `paused: ${killSwitch.reason || 'kill switch'}` : 'ready';
-  $('updatedAt').textContent = new Date().toLocaleTimeString();
+  $('updatedAt').textContent = `北京时间 ${formatBeijingTime(new Date())}`;
 
   const dashboard = data.pids?.dashboard || {};
   const strategies = data.pids?.strategies || [];
@@ -141,10 +185,12 @@ function renderStatus(data) {
   $('strategyState').textContent = running.length ? `${running.length} running` : 'stopped';
   const pro = data.pro_paper || {};
   const cauto = data.c_auto_v2_paper || {};
+  const microLive = data.c_auto_v2_micro_live || {};
   const dataRefresh = data.data_refresh || {};
   const dataRefreshStatus = dataRefresh.status || {};
   cAutoPaperAvailable = Boolean(cauto.available);
   renderCAutoPanel(cauto, dataRefresh);
+  renderMicroLivePanel(microLive);
   const scheduler = pro.scheduler || {};
   $('proPaperState').textContent = pro.running ? `running #${(pro.processes || [])[0]?.pid || '-'}` : (pro.available ? (scheduler.scheduler_status || 'idle') : 'idle');
   $('proPaperCycles').textContent = scheduler.cycles === undefined ? '--' : String(scheduler.cycles);
@@ -172,17 +218,24 @@ function renderStatus(data) {
       <b>alive</b>
     </div>
   `);
+  const microRows = (data.pids?.c_auto_v2_micro_live || []).map((item) => `
+    <div class="run-row">
+      <span>c-auto-v2 / ${item.environment || 'competition'} / micro-live / pid ${item.pid}</span>
+      <b>alive</b>
+    </div>
+  `);
   const dataRows = (data.pids?.data_refresh || []).map((item) => `
     <div class="run-row">
       <span>data-refresh / pid ${item.pid}</span>
       <b>alive</b>
     </div>
   `);
-  if (!strategies.length && !proRows.length && !cautoRows.length && !dataRows.length) {
+  if (!strategies.length && !proRows.length && !cautoRows.length && !microRows.length && !dataRows.length) {
     list.innerHTML = '<div class="run-row stale"><span>暂无策略 pid 文件</span><b>idle</b></div>';
   } else {
     list.innerHTML = [
       ...dataRows,
+      ...microRows,
       ...cautoRows,
       ...proRows,
       ...strategies.map((item) => `
@@ -208,12 +261,15 @@ function renderCAutoPanel(data, dataRefresh = {}) {
     $('cautoCandidateCount').textContent = '--';
     $('cautoPositionCount').textContent = '--';
     $('cautoLiveGate').textContent = '--';
+    $('cautoNav').textContent = '--';
+    $('cautoPnl').textContent = '--';
     $('cautoDataset').textContent = '--';
     $('cautoPolicy').textContent = '--';
     $('cautoDataRefresh').textContent = dataRefresh.running ? 'running' : 'idle';
     $('cautoPositions').innerHTML = '<div class="cauto-row stale">暂无持仓</div>';
     $('cautoCandidates').innerHTML = '<div class="cauto-row stale">暂无 C-Auto 状态</div>';
     $('cautoEvents').innerHTML = '<div class="cauto-row stale">暂无事件</div>';
+    renderCAutoChart(null);
     return;
   }
 
@@ -238,6 +294,8 @@ function renderCAutoPanel(data, dataRefresh = {}) {
   $('cautoCandidateCount').textContent = String(candidates.length || 0);
   $('cautoPositionCount').textContent = String(Object.keys(positions).length);
   $('cautoLiveGate').textContent = data.live_gates_enabled ? `on / ${data.live_gate_pass_count || 0}` : 'off';
+  $('cautoNav').textContent = formatMoney(data.nav);
+  $('cautoPnl').textContent = formatSignedMoney(data.unrealized_pnl);
   $('cautoDataset').textContent = data.dataset_id || '--';
   $('cautoPolicy').textContent = data.policy_id || '--';
   $('cautoDataRefresh').textContent = `${refreshStatus} / cycle ${(dataRefresh.status || {}).cycle ?? '--'} / paper cycle ${scheduler.cycles ?? '--'}`;
@@ -254,6 +312,7 @@ function renderCAutoPanel(data, dataRefresh = {}) {
   $('cautoEvents').innerHTML = ledger.length
     ? ledger.slice().reverse().slice(0, 8).map(renderCAutoEvent).join('')
     : '<div class="cauto-row stale">暂无事件</div>';
+  renderCAutoChart(data);
 }
 
 function renderCAutoPosition(symbol, pos, data) {
@@ -275,8 +334,8 @@ function renderCAutoPosition(symbol, pos, data) {
   const tp2Dist = priceDistance(mark, tp2, side);
   const decisionId = pos.decision_id ? String(pos.decision_id).slice(0, 12) : '--';
   const committeeReason = pos.committee_reason || '';
-  const entryTime = pos.entry_ts ? new Date(pos.entry_ts).toLocaleString() : '--';
-  const exitTime = pos.exit_ts ? new Date(pos.exit_ts).toLocaleString() : '--';
+  const entryTime = pos.entry_ts ? formatBeijingTime(pos.entry_ts, true) : '--';
+  const exitTime = pos.exit_ts ? formatBeijingTime(pos.exit_ts, true) : '--';
   const pnlClass = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
   const mode = data.mode || 'paper';
   return `
@@ -350,7 +409,7 @@ function renderCAutoCandidate(item) {
 function renderCAutoEvent(item) {
   const event = item.event || '?';
   const symbol = item.symbol || '--';
-  const ts = item.ts ? new Date(item.ts).toLocaleTimeString() : '--';
+  const ts = item.ts ? formatBeijingTime(item.ts) : '--';
   const reason = item.reason ? ` / ${item.reason}` : '';
   const pnl = item.pnl === undefined || item.pnl === null ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
   const source = item.source_strategy_id ? ` / ${item.source_strategy_id}` : '';
@@ -369,6 +428,64 @@ function renderCAutoEvent(item) {
       <span>${escapeHtml(ts + source + reason + pnl + edge + committee)}</span>
     </div>
   `;
+}
+
+function renderPipelineStatus(data) {
+  latestPipelineStatus = data || null;
+  if (!data || data.ok === false) {
+    $('pipelineUpdated').textContent = data?.error || 'error';
+    $('pipelineCapital').textContent = '--';
+    $('pipelineTarget').textContent = '--';
+    $('pipelinePassed').textContent = '--';
+    $('pipelineBlocked').textContent = '--';
+    $('pipelineMissing').textContent = '--';
+    $('pipelineLayers').innerHTML = '<div class="pipeline-row block"><strong>8层状态不可用</strong><span>等待 API 返回</span></div>';
+    return;
+  }
+  const capital = data.capital || {};
+  const summary = data.summary || {};
+  $('pipelineUpdated').textContent = data.generated_at ? `北京时间 ${formatBeijingTime(data.generated_at)}` : '--';
+  $('pipelineCapital').textContent = `${formatMoney(capital.base_capital_usdt)}U`;
+  $('pipelineTarget').textContent = Number.isFinite(Number(capital.monthly_return_target_pct))
+    ? pct(capital.monthly_return_target_pct)
+    : '--';
+  $('pipelinePassed').textContent = String(summary.passed_layers ?? '--');
+  $('pipelineBlocked').textContent = String(summary.blocked_layers ?? '--');
+  $('pipelineMissing').textContent = String(summary.missing_layers ?? '--');
+  $('pipelineLayers').innerHTML = (data.layers || []).map(renderPipelineLayer).join('');
+}
+
+function renderPipelineLayer(layer) {
+  const status = layer.status || 'missing';
+  const evidence = layer.evidence || {};
+  const paperGate = evidence.paper_gate || null;
+  const failed = paperGate?.failed_checks || [];
+  const stats = paperGate?.stats || {};
+  const detail = paperGate
+    ? [
+        `days ${formatNumber(stats.calendar_days, 2)}`,
+        `closed ${stats.closed_trades ?? 0}`,
+        `stop ${Number.isFinite(Number(stats.stop_execution_rate)) ? pct(stats.stop_execution_rate) : '--'}`,
+        `gross ${Number.isFinite(Number(stats.gross_leverage)) ? pct(stats.gross_leverage) : '--'}`,
+      ].join(' / ')
+    : (layer.next_action || 'ok');
+  const failedText = failed.length ? `<span class="pipeline-failed">${failed.map(escapeHtml).join(', ')}</span>` : '';
+  return `
+    <div class="pipeline-row ${escapeAttr(status)}">
+      <div>
+        <strong>${layer.id}. ${escapeHtml(layer.name || '--')}</strong>
+        <span>${escapeHtml(detail)}</span>
+        ${failedText}
+      </div>
+      <b>${escapeHtml(status)}</b>
+    </div>
+  `;
+}
+
+function formatNumber(value, digits = 2) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '--';
+  return num.toFixed(digits);
 }
 
 function renderDownloadStatus(data) {
@@ -429,8 +546,11 @@ function renderMonster(data) {
     $('monsterFresh').textContent = '--';
     $('monsterLiquidity').textContent = '--';
     $('monsterCandidates').textContent = '--';
+    $('monsterPaperNav').textContent = '--';
+    $('monsterPaperPnl').textContent = '--';
     $('monsterUpdated').textContent = data.message || '--';
     $('monsterList').innerHTML = '<div class="monster-row stale"><span>暂无扫描结果</span></div>';
+    renderMonsterPaperBlock(null);
     return;
   }
 
@@ -441,7 +561,7 @@ function renderMonster(data) {
   const running = (data.processes || []).length > 0;
   $('monsterUpdated').textContent = running
     ? `running #${data.processes[0].pid}`
-    : (data.updated_at ? new Date(data.updated_at).toLocaleTimeString() : '--');
+    : (data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--');
   renderOrderbookStatus(data.orderbook || {});
   renderDerivativesStatus(data.derivatives || {});
   renderPaperStatus(data.paper || {});
@@ -499,6 +619,8 @@ function renderDerivativesStatus(data) {
 }
 
 function renderPaperStatus(data) {
+  latestMonsterPaperStatus = data || null;
+  renderMonsterPaperBlock(data || null);
   if (!data.available) {
     $('monsterPaperStatus').textContent = `纸面 lottery：${data.message || '--'}`;
     return;
@@ -516,6 +638,29 @@ function renderPaperStatus(data) {
   if (!cAutoPaperAvailable) renderPaperPanel(data);
 }
 
+function renderMonsterPaperBlock(data) {
+  if (!data || !data.available) {
+    $('monsterPaperNav').textContent = '--';
+    $('monsterPaperPnl').textContent = '--';
+    $('monsterPaperPositions').innerHTML = '<div class="paper-row stale">暂无妖币纸面持仓</div>';
+    $('monsterPaperLedger').innerHTML = '<div class="paper-row stale">暂无交易事件</div>';
+    drawEquityChart('monsterChart', [], [], { emptyText: '等待妖币纸面权益历史' });
+    return;
+  }
+  $('monsterPaperNav').textContent = formatMoney(data.nav);
+  $('monsterPaperPnl').textContent = formatSignedMoney(data.unrealized_pnl);
+  const positions = data.positions || {};
+  const rows = Object.entries(positions);
+  $('monsterPaperPositions').innerHTML = rows.length
+    ? rows.map(([symbol, pos]) => renderPaperPosition(symbol, pos, { closeAttr: 'data-monster-close' })).join('')
+    : '<div class="paper-row stale">无持仓</div>';
+  const ledger = data.ledger_tail || [];
+  $('monsterPaperLedger').innerHTML = ledger.length
+    ? ledger.slice().reverse().slice(0, 20).map(renderPaperEvent).join('')
+    : '<div class="paper-row stale">暂无事件</div>';
+  drawEquityChart('monsterChart', data.equity || [], ledger, { emptyText: '等待妖币纸面权益历史' });
+}
+
 function renderPaperPanel(data) {
   if (!data.available) {
     $('paperUpdated').textContent = data.message || '--';
@@ -524,11 +669,11 @@ function renderPaperPanel(data) {
     });
     $('paperPositions').innerHTML = '<div class="paper-row stale">暂无纸面状态</div>';
     $('paperLedger').innerHTML = '<div class="paper-row stale">暂无事件</div>';
-    drawPaperChart([]);
+    drawEquityChart('paperChart', [], [], { emptyText: '等待纸面权益历史' });
     return;
   }
   const metrics = data.metrics || {};
-  $('paperUpdated').textContent = data.updated_at ? new Date(data.updated_at).toLocaleTimeString() : '--';
+  $('paperUpdated').textContent = data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--';
   $('paperNav').textContent = formatMoney(data.nav);
   $('paperCash').textContent = formatMoney(data.cash);
   $('paperUnrealized').textContent = formatSignedMoney(data.unrealized_pnl);
@@ -540,10 +685,72 @@ function renderPaperPanel(data) {
 
   const positions = data.positions || {};
   const rows = Object.entries(positions);
-  $('paperPositions').innerHTML = rows.length ? rows.map(([symbol, pos]) => renderPaperPosition(symbol, pos)).join('') : '<div class="paper-row stale">无持仓</div>';
+  $('paperPositions').innerHTML = rows.length ? rows.map(([symbol, pos]) => renderPaperPosition(symbol, pos, { closeAttr: 'data-paper-close' })).join('') : '<div class="paper-row stale">无持仓</div>';
   const ledger = data.ledger_tail || [];
   $('paperLedger').innerHTML = ledger.length ? ledger.slice().reverse().map(renderPaperEvent).join('') : '<div class="paper-row stale">暂无事件</div>';
-  drawPaperChart(data.equity || []);
+  drawEquityChart('paperChart', data.equity || [], ledger, { emptyText: '等待纸面权益历史' });
+}
+
+function renderMicroLivePanel(data) {
+  latestMicroLiveStatus = data || null;
+  if (!data || !data.available) {
+    $('microLiveUpdated').textContent = data?.message || '--';
+    ['microLiveRunning', 'microLiveBudget', 'microLiveNav', 'microLiveUnrealized', 'microLiveRealized', 'microLivePositionsCount', 'microLiveRisk', 'microLiveGate'].forEach((id) => {
+      $(id).textContent = '--';
+    });
+    $('microLivePositions').innerHTML = '<div class="paper-row stale">暂无 micro-live 状态</div>';
+    $('microLiveLedger').innerHTML = '<div class="paper-row stale">暂无事件</div>';
+    drawEquityChart('microLiveChart', [], [], { emptyText: '等待 Micro Live 权益历史' });
+    return;
+  }
+  const processes = data.processes || [];
+  const positions = data.positions || {};
+  const daily = data.daily_risk || {};
+  $('microLiveUpdated').textContent = data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--';
+  $('microLiveRunning').textContent = data.running ? `running #${processes[0]?.pid || '-'}` : ((data.scheduler || {}).scheduler_status || data.runner_status || 'idle');
+  $('microLiveBudget').textContent = `${formatMoney(data.daily_budget_usdt)} / ${formatMoney(data.per_symbol_margin_usdt)} each`;
+  $('microLiveNav').textContent = formatMoney(data.nav);
+  $('microLiveUnrealized').textContent = formatSignedMoney(data.unrealized_pnl);
+  $('microLiveRealized').textContent = formatSignedMoney(data.realized_pnl);
+  $('microLivePositionsCount').textContent = `${Object.keys(positions).length} / ${data.max_positions ?? '--'}`;
+  $('microLiveRisk').textContent = daily.allow_new_entries === false
+    ? `blocked / ${daily.block_reason || 'risk'}`
+    : `${formatSignedMoney(daily.realized_pnl_usdt)} today`;
+  $('microLiveGate').textContent = data.live_gates_enabled ? `on / ${data.live_gate_pass_count || 0}` : 'off';
+  const rows = Object.entries(positions);
+  $('microLivePositions').innerHTML = rows.length ? rows.map(([symbol, pos]) => renderMicroLivePosition(symbol, pos)).join('') : '<div class="paper-row stale">无真实小仓</div>';
+  const ledger = data.ledger_tail || [];
+  $('microLiveLedger').innerHTML = ledger.length ? ledger.slice().reverse().slice(0, 20).map(renderPaperEvent).join('') : '<div class="paper-row stale">暂无事件</div>';
+  drawEquityChart('microLiveChart', data.equity || [], ledger, { emptyText: '等待 Micro Live 权益历史' });
+}
+
+function renderMicroLivePosition(symbol, pos) {
+  const side = pos.side || '--';
+  const margin = Number(pos.margin_usdt);
+  const notional = Number(pos.notional_usdt);
+  const lev = Number(pos.leverage);
+  const pnl = Number(pos.unrealized_pnl);
+  const contracts = Number(pos.contracts);
+  const stop = Number(pos.stop_price);
+  const tp1 = Number(pos.tp1_price);
+  const mark = Number(pos.mark_price);
+  const exitTime = pos.exit_ts ? formatBeijingTime(pos.exit_ts, true) : '--';
+  const cls = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
+  return `
+    <div class="paper-row">
+      <div class="paper-row-head">
+        <strong>${escapeHtml(symbol)}</strong>
+        <span class="row-actions">
+          <b>${escapeHtml(side)} · ${Number.isFinite(lev) ? lev.toFixed(1) : '--'}x</b>
+          <button class="small-danger" data-micro-live-close="${escapeAttr(symbol)}">清仓</button>
+        </span>
+      </div>
+      <span>margin ${formatMoney(margin)} / notional ${formatMoney(notional)} / contracts ${Number.isFinite(contracts) ? contracts : '--'}</span>
+      <span>mark ${formatPrice(mark)} / SL ${formatPrice(stop)} / TP ref ${formatPrice(tp1)} / stop attached ${pos.exchange_stop_attached ? 'yes' : 'no'}</span>
+      <span>计划退出 ${escapeHtml(exitTime)} / 交易所止盈 ${pos.exchange_tp_attached ? 'yes' : 'no'}</span>
+      <span>unrealized <strong class="${cls}">${formatSignedMoney(pnl)}</strong> / decision ${escapeHtml(String(pos.decision_id || '').slice(0, 12) || '--')}</span>
+    </div>
+  `;
 }
 
 function formatSignedMoney(value) {
@@ -553,7 +760,7 @@ function formatSignedMoney(value) {
   return `${sign}${num.toFixed(2)}`;
 }
 
-function renderPaperPosition(symbol, pos) {
+function renderPaperPosition(symbol, pos, options = {}) {
   const side = pos.side || 'long';
   const score = Number(pos.score);
   const risk = Number(pos.risk_budget);
@@ -565,15 +772,22 @@ function renderPaperPosition(symbol, pos) {
   const funding = Number(pos.live_funding_rate);
   const lsr = Number(pos.live_long_short_ratio);
   const regime = pos.regime ? ` / ${pos.regime}` : '';
+  const pnl = Number(pos.unrealized_pnl);
+  const closeAttr = options.closeAttr || '';
+  const closeButton = closeAttr ? `<button class="small-danger" ${closeAttr}="${escapeAttr(symbol)}">清仓</button>` : '';
   return `
     <div class="paper-row">
       <div class="paper-row-head">
-        <strong>${symbol}</strong>
-        <b>${side}</b>
+        <strong>${escapeHtml(symbol)}</strong>
+        <span class="row-actions">
+          <b>${escapeHtml(side)}</b>
+          ${closeButton}
+        </span>
       </div>
       <span>score ${Number.isFinite(score) ? score.toFixed(3) : '--'} / risk ${Number.isFinite(risk) ? risk.toFixed(0) : '--'}${regime}</span>
       <span>entry ${Number.isFinite(entry) ? entry.toPrecision(6) : '--'} / stop ${Number.isFinite(stop) ? stop.toPrecision(6) : '--'}</span>
       <span>tp1 ${Number.isFinite(tp1) ? tp1.toPrecision(6) : '--'} / tp2 ${Number.isFinite(tp2) ? tp2.toPrecision(6) : '--'}</span>
+      <span>unrealized <strong class="${Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain'}">${formatSignedMoney(pnl)}</strong></span>
       <span>oi ${compactNumber(oi)} / funding ${Number.isFinite(funding) ? (funding * 100).toFixed(4) + '%' : '--'} / l/s ${Number.isFinite(lsr) ? lsr.toFixed(2) : '--'}</span>
     </div>
   `;
@@ -584,7 +798,7 @@ function renderPaperEvent(item) {
   const symbol = item.symbol || '--';
   const pnl = item.pnl === undefined ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
   const reason = item.reason ? ` / ${item.reason}` : '';
-  const ts = item.ts ? new Date(item.ts).toLocaleTimeString() : '--';
+  const ts = item.ts ? formatBeijingTime(item.ts) : '--';
   return `
     <div class="paper-row ${event.includes('reject') ? 'stale' : ''}">
       <div class="paper-row-head">
@@ -596,8 +810,22 @@ function renderPaperEvent(item) {
   `;
 }
 
-function drawPaperChart(points) {
-  const canvas = $('paperChart');
+function renderCAutoChart(data) {
+  drawEquityChart('cautoChart', data?.equity || [], data?.ledger_tail || [], { emptyText: '等待 C-Auto 权益历史' });
+}
+
+function eventIsEntry(event) {
+  return ['entry', 'manual_entry', 'buy'].includes(String(event || '').toLowerCase());
+}
+
+function eventIsExit(event) {
+  const name = String(event || '').toLowerCase();
+  return name.includes('exit') || name.includes('flatten') || name.includes('stop');
+}
+
+function drawEquityChart(canvasId, points, events = [], options = {}) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const width = canvas.width;
   const height = canvas.height;
@@ -613,11 +841,18 @@ function drawPaperChart(points) {
     ctx.lineTo(width, y);
     ctx.stroke();
   }
-  const navs = (points || []).map((p) => Number(p.nav)).filter(Number.isFinite);
+  const cleanPoints = (points || [])
+    .map((p, index) => ({
+      index,
+      ts: p.ts ? new Date(p.ts).getTime() : index,
+      nav: Number(p.nav),
+    }))
+    .filter((p) => Number.isFinite(p.nav));
+  const navs = cleanPoints.map((p) => p.nav);
   if (navs.length < 1) {
     ctx.fillStyle = '#687385';
     ctx.font = '13px system-ui';
-    ctx.fillText('等待权益历史', 14, 28);
+    ctx.fillText(options.emptyText || '等待权益历史', 14, 28);
     return;
   }
   const min = Math.min(...navs);
@@ -628,8 +863,9 @@ function drawPaperChart(points) {
   ctx.strokeStyle = '#12825c';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  navs.forEach((nav, i) => {
-    const x = navs.length === 1 ? width - 18 : (i / (navs.length - 1)) * (width - 24) + 12;
+  cleanPoints.forEach((point, i) => {
+    const nav = point.nav;
+    const x = cleanPoints.length === 1 ? width - 18 : (i / (cleanPoints.length - 1)) * (width - 24) + 12;
     const y = height - 18 - ((nav - lo) / (hi - lo)) * (height - 36);
     if (i === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
@@ -643,11 +879,52 @@ function drawPaperChart(points) {
     ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  const tradeEvents = (events || []).filter((item) => eventIsEntry(item.event) || eventIsExit(item.event));
+  tradeEvents.slice(-30).forEach((item) => {
+    const rawTs = item.ts ? new Date(item.ts).getTime() : NaN;
+    const idx = Number.isFinite(rawTs)
+      ? nearestPointIndex(cleanPoints, rawTs)
+      : cleanPoints.length - 1;
+    const point = cleanPoints[idx] || cleanPoints[cleanPoints.length - 1];
+    if (!point) return;
+    const x = cleanPoints.length === 1 ? width - 18 : (idx / (cleanPoints.length - 1)) * (width - 24) + 12;
+    const y = height - 18 - ((point.nav - lo) / (hi - lo)) * (height - 36);
+    const isEntry = eventIsEntry(item.event);
+    const label = isEntry ? (item.side === 'short' ? '开空' : '买入') : '退出';
+    ctx.fillStyle = isEntry ? '#1d5fd1' : '#b42318';
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '11px system-ui';
+    const text = `${label}${item.symbol ? ` ${String(item.symbol).replace('/USDT', '')}` : ''}`;
+    const textWidth = ctx.measureText(text).width + 8;
+    const boxX = Math.max(6, Math.min(width - textWidth - 6, x - textWidth / 2));
+    const boxY = isEntry ? Math.max(24, y - 24) : Math.min(height - 28, y + 10);
+    ctx.fillStyle = isEntry ? 'rgba(29, 95, 209, 0.12)' : 'rgba(180, 35, 24, 0.12)';
+    ctx.fillRect(boxX, boxY, textWidth, 17);
+    ctx.fillStyle = isEntry ? '#1d5fd1' : '#b42318';
+    ctx.fillText(text, boxX + 4, boxY + 12);
+  });
+
   ctx.fillStyle = '#17202a';
   ctx.font = '12px system-ui';
   ctx.fillText(`NAV ${navs[navs.length - 1].toFixed(2)}`, 14, 20);
   ctx.fillStyle = '#687385';
   ctx.fillText(`min ${min.toFixed(2)} / max ${max.toFixed(2)}`, 14, height - 10);
+}
+
+function nearestPointIndex(points, ts) {
+  let best = 0;
+  let bestDist = Infinity;
+  points.forEach((point, index) => {
+    const dist = Math.abs((Number.isFinite(point.ts) ? point.ts : index) - ts);
+    if (dist < bestDist) {
+      best = index;
+      bestDist = dist;
+    }
+  });
+  return best;
 }
 
 function renderAutoRefreshStatus(data) {
@@ -735,6 +1012,15 @@ async function refreshStatus() {
   }
 }
 
+async function refreshPipelineStatus() {
+  try {
+    const data = await api('/api/8-layer-pipeline');
+    renderPipelineStatus(data);
+  } catch (err) {
+    renderPipelineStatus({ ok: false, error: err.message });
+  }
+}
+
 async function closeCAutoSymbol(symbol, mode) {
   const data = latestCAutoStatus || {};
   const liveMode = ['real', 'live', 'production'].includes(String(mode || data.mode || '').toLowerCase());
@@ -756,6 +1042,40 @@ async function closeCAutoSymbol(symbol, mode) {
   $('lastAction').textContent = result.closed ? `已清仓 ${result.symbol}` : `${symbol} 未持仓`;
   if (result.status) renderCAutoPanel(result.status);
   setTimeout(refreshStatus, 800);
+}
+
+async function closeMicroLiveSymbol(symbol) {
+  const ok = window.confirm(`确认真实 Micro Live 清仓 ${symbol}？这会撤该标的挂单并调用 OKX close position。`);
+  if (!ok) return;
+  const data = latestMicroLiveStatus || {};
+  $('lastAction').textContent = `Micro Live 清仓 ${symbol}...`;
+  const result = await api('/api/c-auto-v2-micro-live/close-symbol', {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      state_id: data.state_id || 'micro_live_competition',
+      environment: data.environment || 'competition',
+      confirm_live_close: true,
+    }),
+  });
+  $('lastAction').textContent = result.closed ? `Micro Live 已清仓 ${result.symbol}` : `${symbol} 未持仓`;
+  if (result.status) renderMicroLivePanel(result.status);
+  setTimeout(refreshStatus, 1000);
+}
+
+async function closeMonsterSymbol(symbol) {
+  const data = latestMonsterPaperStatus || {};
+  $('lastAction').textContent = `妖币纸面清仓 ${symbol}...`;
+  const result = await api('/api/monster-paper/close-symbol', {
+    method: 'POST',
+    body: JSON.stringify({
+      symbol,
+      state_id: data.state_id || 'lottery_live',
+    }),
+  });
+  $('lastAction').textContent = result.closed ? `妖币纸面已清仓 ${result.symbol}` : `${symbol} 未持仓`;
+  if (result.status) renderMonsterPaperBlock(result.status);
+  setTimeout(refreshMonsterStatus, 800);
 }
 
 async function refreshLaunchOptions() {
@@ -804,10 +1124,11 @@ async function stopSystem() {
     renderStatus(status);
     const cancel = result.order_cancel || {};
     const paperRunning = (status.pids?.c_auto_v2_paper || []).length;
+    const microRunning = (status.pids?.c_auto_v2_micro_live || []).length;
     const refreshRunning = (status.pids?.data_refresh || []).length;
     const strategyRunning = (status.pids?.strategies || []).filter((item) => item.alive).length;
-    if (paperRunning || refreshRunning || strategyRunning) {
-      $('lastAction').textContent = `暂停异常 · paper ${paperRunning} · refresh ${refreshRunning} · strategy ${strategyRunning}`;
+    if (paperRunning || microRunning || refreshRunning || strategyRunning) {
+      $('lastAction').textContent = `暂停异常 · paper ${paperRunning} · micro ${microRunning} · refresh ${refreshRunning} · strategy ${strategyRunning}`;
       throw new Error('暂停请求已发送，但后台仍有进程运行');
     }
     $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
@@ -855,6 +1176,10 @@ document.querySelectorAll('#modeGroup [data-value]').forEach((node) => {
   });
 });
 
+document.querySelectorAll('.main-nav [data-page]').forEach((node) => {
+  node.addEventListener('click', () => setActivePage(node.dataset.page));
+});
+
 $('envSelect').addEventListener('change', () => {
   state.env = $('envSelect').value;
   applySelection();
@@ -897,6 +1222,10 @@ $('resumeDownloadBtn').addEventListener('click', () => {
     $('downloadTail').textContent = err.message;
   });
 });
+$('toggleDownloadBtn').addEventListener('click', () => {
+  downloadCollapsed = !downloadCollapsed;
+  applyDownloadCollapsed();
+});
 $('monsterRefreshBtn').addEventListener('click', () => {
   refreshMonsterData().catch((err) => {
     $('monsterUpdated').textContent = 'error';
@@ -928,9 +1257,30 @@ document.addEventListener('click', (event) => {
     handleStopClick(event);
     return;
   }
-  const target = event.target.closest('[data-cauto-close]');
-  if (!target) return;
-  closeCAutoSymbol(target.dataset.cautoClose, target.dataset.mode).catch((err) => {
+  const cautoTarget = event.target.closest('[data-cauto-close]');
+  if (cautoTarget) {
+    closeCAutoSymbol(cautoTarget.dataset.cautoClose, cautoTarget.dataset.mode).catch((err) => {
+      $('lastAction').textContent = err.message;
+    });
+    return;
+  }
+  const paperTarget = event.target.closest('[data-paper-close]');
+  if (paperTarget) {
+    closeCAutoSymbol(paperTarget.dataset.paperClose, 'paper').catch((err) => {
+      $('lastAction').textContent = err.message;
+    });
+    return;
+  }
+  const microTarget = event.target.closest('[data-micro-live-close]');
+  if (microTarget) {
+    closeMicroLiveSymbol(microTarget.dataset.microLiveClose).catch((err) => {
+      $('lastAction').textContent = err.message;
+    });
+    return;
+  }
+  const monsterTarget = event.target.closest('[data-monster-close]');
+  if (!monsterTarget) return;
+  closeMonsterSymbol(monsterTarget.dataset.monsterClose).catch((err) => {
     $('lastAction').textContent = err.message;
   });
 }, true);
@@ -947,12 +1297,16 @@ function handleStopClick(event) {
 }
 
 applySelection();
+setActivePage(state.page);
+applyDownloadCollapsed();
 refreshLaunchOptions().catch((err) => {
   $('lastAction').textContent = err.message;
 });
 refreshStatus();
+refreshPipelineStatus();
 refreshDownloadStatus();
 refreshMonsterStatus();
 setInterval(refreshStatus, 5000);
+setInterval(refreshPipelineStatus, 15000);
 setInterval(refreshDownloadStatus, 5000);
 setInterval(refreshMonsterStatus, 10000);

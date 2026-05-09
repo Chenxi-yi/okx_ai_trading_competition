@@ -106,6 +106,8 @@ def _c_auto_signal(
             "regime": row.get("btc_regime_6"),
             "score": score,
             "risk_scalar": risk_scalar,
+            "leverage": 1.0,
+            "size_semantics": "notional_usdt",
         },
     )
 

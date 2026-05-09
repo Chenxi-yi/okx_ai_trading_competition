@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 PAPER_DIR = ROOT / "engine" / "logs" / "c_auto_v2_paper"
 REVIEW_DIR = PAPER_DIR / "reviews"
+RESEARCH_QUEUE_DIR = ROOT / "engine" / "research" / "queue"
+RESEARCH_QUEUE_PATH = RESEARCH_QUEUE_DIR / "c_auto_research_tasks.jsonl"
 LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 
 
@@ -111,13 +113,152 @@ def summarize_events(events: list[dict]) -> dict:
     by_source: dict[str, dict[str, float]] = defaultdict(lambda: {"events": 0, "pnl": 0.0})
     by_symbol: dict[str, dict[str, float]] = defaultdict(lambda: {"events": 0, "pnl": 0.0})
     for item in events:
-        source = str(item.get("source_strategy_id") or item.get("signal_family") or "unknown")
+        source = str(item.get("source_strategy_id") or item.get("signal_family") or item.get("entry_reason") or item.get("reason") or "unknown")
         symbol = str(item.get("symbol") or "--")
         by_source[source]["events"] += 1
         by_source[source]["pnl"] += num(item.get("pnl"))
         by_symbol[symbol]["events"] += 1
         by_symbol[symbol]["pnl"] += num(item.get("pnl"))
     return {"counts": counts, "realized_pnl": realized_pnl, "by_source": by_source, "by_symbol": by_symbol}
+
+
+def event_context(ledger: list[dict]) -> dict[str, dict]:
+    entries: dict[str, dict] = {}
+    for item in ledger:
+        if item.get("event") != "entry":
+            continue
+        decision_id = str(item.get("decision_id") or "")
+        if decision_id:
+            entries[decision_id] = item
+        symbol = str(item.get("symbol") or "")
+        if symbol:
+            entries[f"symbol:{symbol}"] = item
+    return entries
+
+
+def enrich_event(item: dict, entries: dict[str, dict]) -> dict:
+    decision_id = str(item.get("decision_id") or "")
+    source = entries.get(decision_id) if decision_id else None
+    if source is None and item.get("symbol"):
+        source = entries.get(f"symbol:{item.get('symbol')}")
+    out = dict(item)
+    if source:
+        for key in ("expected_ev", "p_target", "leverage_policy", "notional_usdt", "leverage"):
+            out.setdefault(key, source.get(key))
+        out.setdefault("entry_reason", source.get("reason"))
+        out.setdefault("source_strategy_id", source.get("source_strategy_id"))
+    return out
+
+
+def build_quality_findings(day_events: list[dict], positions: dict) -> tuple[list[str], list[dict]]:
+    findings: list[str] = []
+    research_tasks: list[dict] = []
+    exits = [item for item in day_events if item.get("event") == "exit"]
+    losses = [item for item in exits if num(item.get("pnl")) < 0]
+    stop_losses = [item for item in losses if item.get("reason") == "stop"]
+    horizon_losses = [item for item in losses if item.get("reason") == "horizon"]
+    if losses:
+        worst = min(losses, key=lambda item: num(item.get("pnl")))
+        findings.append(
+            f"最大亏损来自 `{worst.get('symbol')}`，原因 `{worst.get('reason')}`，PnL {money(worst.get('pnl'))}。"
+        )
+        research_tasks.append(
+            research_task(
+                key=f"loss_attribution_{worst.get('symbol')}_{worst.get('reason')}",
+                title=f"复盘 {worst.get('symbol')} {worst.get('reason')} 亏损",
+                priority="p1",
+                reason="daily_review_loss",
+                payload={"symbol": worst.get("symbol"), "reason": worst.get("reason"), "pnl": num(worst.get("pnl"))},
+            )
+        )
+    if stop_losses:
+        findings.append(f"今日有 {len(stop_losses)} 笔 stop 亏损，需要确认 stop 是否按预期限制尾部亏损。")
+    if horizon_losses:
+        findings.append(f"今日有 {len(horizon_losses)} 笔 horizon 亏损，优先检查信号方向和持有期。")
+        research_tasks.append(
+            research_task(
+                key="horizon_loss_exit_policy",
+                title="测试 C-Auto horizon 亏损的提前退出规则",
+                priority="p1",
+                reason="daily_review_horizon_loss",
+                payload={"horizon_losses": len(horizon_losses)},
+            )
+        )
+    open_by_side = Counter(str(pos.get("side") or "--") for pos in positions.values())
+    if open_by_side:
+        side, count = open_by_side.most_common(1)[0]
+        if count >= 3:
+            findings.append(f"当前持仓方向集中：{count} 笔 `{side}`，需要观察同向拥挤风险。")
+            research_tasks.append(
+                research_task(
+                    key=f"same_side_concentration_{side}",
+                    title=f"评估 C-Auto {side} 同向持仓拥挤过滤",
+                    priority="p2",
+                    reason="daily_review_concentration",
+                    payload={"side": side, "count": count},
+                )
+            )
+    missing_stop = [symbol for symbol, pos in positions.items() if pos.get("stop_price") is None]
+    if missing_stop:
+        findings.append("存在未带 stop 的持仓：" + ", ".join(sorted(missing_stop)))
+        research_tasks.append(
+            research_task(
+                key="missing_stop_position_manager",
+                title="修复持仓管理中未带 stop 的持仓入口",
+                priority="p0",
+                reason="daily_review_missing_stop",
+                payload={"symbols": sorted(missing_stop)},
+            )
+        )
+    if not findings:
+        findings.append("今日未发现新的亏损归因或持仓治理异常。")
+    return findings, research_tasks
+
+
+def research_task(key: str, title: str, priority: str, reason: str, payload: dict) -> dict:
+    safe_key = safe_task_key(key)
+    return {
+        "task_id": f"c_auto_{safe_key}",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "strategy_id": "c_auto_v2_fixed1000_conservative",
+        "priority": priority,
+        "status": "open",
+        "title": title,
+        "reason": reason,
+        "payload": payload,
+    }
+
+
+def append_research_tasks(tasks: list[dict]) -> list[dict]:
+    if not tasks:
+        return []
+    RESEARCH_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    existing_ids = set()
+    if RESEARCH_QUEUE_PATH.exists():
+        for item in iter_jsonl(RESEARCH_QUEUE_PATH):
+            task_id = str(item.get("task_id") or "")
+            if task_id:
+                existing_ids.add(task_id)
+                existing_ids.add(safe_task_id(task_id))
+    written = []
+    with RESEARCH_QUEUE_PATH.open("a") as fh:
+        for task in tasks:
+            if task["task_id"] in existing_ids:
+                continue
+            fh.write(json.dumps(task, sort_keys=True) + "\n")
+            existing_ids.add(task["task_id"])
+            written.append(task)
+    return written
+
+
+def safe_task_key(key: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in key)
+
+
+def safe_task_id(task_id: str) -> str:
+    if task_id.startswith("c_auto_"):
+        return f"c_auto_{safe_task_key(task_id.removeprefix('c_auto_'))}"
+    return safe_task_key(task_id)
 
 
 def table(headers: list[str], rows: list[list[str]]) -> list[str]:
@@ -139,10 +280,13 @@ def generate(args: argparse.Namespace) -> Path:
     scheduler = read_json(scheduler_path)
     ledger = iter_jsonl(ledger_path)
     equity = iter_jsonl(equity_path)
-    day_events = [item for item in ledger if in_local_day(item, review_date)]
+    entries_by_key = event_context(ledger)
+    day_events = [enrich_event(item, entries_by_key) for item in ledger if in_local_day(item, review_date)]
     summary = summarize_events(day_events)
     positions = state.get("positions") if isinstance(state.get("positions"), dict) else {}
     candidates = state.get("latest_candidates") if isinstance(state.get("latest_candidates"), list) else []
+    findings, research_tasks = build_quality_findings(day_events, positions)
+    written_tasks = append_research_tasks(research_tasks)
     generated_at = datetime.now(LOCAL_TZ).isoformat(timespec="seconds")
 
     lines: list[str] = [
@@ -151,13 +295,14 @@ def generate(args: argparse.Namespace) -> Path:
         f"- 生成时间: {generated_at}",
         f"- 环境: `{args.environment}`",
         f"- 状态文件: `{state_path.relative_to(ROOT)}`",
-        f"- 调度状态: `{scheduler.get('status', '--')}` / cycles `{scheduler.get('cycles', '--')}`",
+        f"- 调度状态: `{scheduler.get('scheduler_status', scheduler.get('status', '--'))}` / cycles `{scheduler.get('cycles', '--')}`",
         "",
         "## 账户概览",
         "",
     ]
-    nav = num(state.get("nav") or state.get("realized_nav") or state.get("cash") or 1000.0)
-    realized_pnl = num(state.get("realized_pnl"), nav - 1000.0)
+    initial_nav = num((state.get("metrics") or {}).get("initial_nav"), num(state.get("cash"), 3000.0))
+    nav = num(state.get("nav") or state.get("realized_nav") or state.get("cash") or initial_nav)
+    realized_pnl = num(state.get("realized_pnl"), nav - initial_nav)
     unrealized_pnl = num(state.get("unrealized_pnl"))
     lines += table(
         ["NAV", "已实现", "未实现", "开仓数", "开放风险", "今日事件PnL", "Equity点数"],
@@ -196,7 +341,7 @@ def generate(args: argparse.Namespace) -> Path:
                 str(item.get("event") or "--"),
                 str(item.get("symbol") or "--"),
                 str(item.get("side") or "--"),
-                str(item.get("source_strategy_id") or item.get("signal_family") or "--"),
+                str(item.get("source_strategy_id") or item.get("signal_family") or item.get("entry_reason") or item.get("reason") or "--"),
                 money(item.get("pnl")) if item.get("pnl") is not None else "--",
                 str(item.get("reason") or item.get("committee_reason") or "--")[:80],
             ]
@@ -205,6 +350,18 @@ def generate(args: argparse.Namespace) -> Path:
     lines += ["", "## 分组复盘", ""]
     source_rows = [[source, str(int(data["events"])), money(data["pnl"])] for source, data in sorted(summary["by_source"].items())]
     lines += table(["Source", "Events", "PnL"], source_rows)
+    lines += ["", "## 质量判断", ""]
+    lines += [f"- {item}" for item in findings]
+    lines += ["", "## Research Queue", ""]
+    if written_tasks:
+        lines += table(
+            ["Task", "Priority", "Reason"],
+            [[task["title"], task["priority"], task["reason"]] for task in written_tasks],
+        )
+    elif research_tasks:
+        lines += ["_相关 research task 已存在，未重复写入。_"]
+    else:
+        lines += ["_无新增 research task。_"]
     lines += ["", "## 最新候选", ""]
     candidate_rows = []
     for item in candidates[:12]:

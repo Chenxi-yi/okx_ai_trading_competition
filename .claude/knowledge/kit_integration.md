@@ -91,10 +91,37 @@ engine/logs/kit/audit.jsonl
 Current installed CLI after upgrade:
 
 ```text
-@okx_ai/okx-trade-cli 1.3.2
-@okx_ai/okx-trade-mcp 1.3.2
-okx --version: 1.3.2 (1bb94dcd)
+@okx_ai/okx-trade-cli 1.3.3
+okx --version: 1.3.3 (e6ad1d1e)
 ```
+
+## Smart-Money Research Interface
+
+CLI 1.3.3 replaced the older `smartmoney signal/signal-history/overview`
+commands with:
+
+```text
+traders-by-filter
+performance-by-trader
+trader-positions
+trader-positions-history
+trader-orders-history
+search-trader
+signal-overview-by-filter
+signal-overview-by-trader
+signal-trend-by-filter
+signal-trend-by-trader
+```
+
+For signal time series, `asOfTime` uses `yyyyMMddHH` in UTC:
+
+```bash
+okx smartmoney signal-trend-by-filter --instCcy NOT --asOfTime 2026050905 --granularity 1h --limit 24 --json
+```
+
+The observed fields are suitable for strategy research: `tradersWithPosition`,
+`longTraders`, `shortTraders`, `weightedLongRatio`, `weightedShortRatio`,
+`netNotionalUsdt`, and `totalNotionalUsdt`.
 
 Diagnostics:
 

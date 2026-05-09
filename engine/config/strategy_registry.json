@@ -2,48 +2,22 @@
   "created_at": "2026-05-03T00:00:00+00:00",
   "parameter_sets": [
     {
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "notes": "Baseline trend momentum default parameters are currently read from profiles.py.",
-      "parameter_set_id": "core_trend_momentum_v1.default",
-      "params": {},
+      "created_at": "2026-05-09T04:54:31.175481+00:00",
+      "notes": "3000U production-like paper profile for the 8-layer pipeline.",
+      "parameter_set_id": "c_auto_v2_fixed1000_conservative.3000u_v1",
+      "params": {
+        "base_risk": 0.06,
+        "capital_usdt": 3000,
+        "default_leverage": 1.0,
+        "max_gross_leverage": 0.25,
+        "max_leverage": 1.0,
+        "max_position_nav_loss_pct": 0.0015,
+        "max_positions": 4,
+        "max_stop_margin_loss_pct": 0.15,
+        "rebalance_hours": 6
+      },
       "parent_parameter_set_id": null,
-      "strategy_id": "core_trend_momentum_v1",
-      "version": "1"
-    },
-    {
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "notes": "Baseline cross-sectional momentum default parameters are currently read from profiles.py.",
-      "parameter_set_id": "core_cross_sectional_momentum_v1.default",
-      "params": {},
-      "parent_parameter_set_id": null,
-      "strategy_id": "core_cross_sectional_momentum_v1",
-      "version": "1"
-    },
-    {
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "notes": "Baseline funding carry default parameters are currently read from profiles.py.",
-      "parameter_set_id": "core_funding_carry_v1.default",
-      "params": {},
-      "parent_parameter_set_id": null,
-      "strategy_id": "core_funding_carry_v1",
-      "version": "1"
-    },
-    {
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "notes": "Tactical microstructure strategy. Current implementation remains in competition/strategies/elite_flow.py until migration.",
-      "parameter_set_id": "tactical_elite_flow_v1.default",
-      "params": {},
-      "parent_parameter_set_id": null,
-      "strategy_id": "tactical_elite_flow_v1",
-      "version": "1"
-    },
-    {
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "notes": "Speculative martingale momentum strategy. Live allocation defaults to zero.",
-      "parameter_set_id": "spec_yolo_momentum_v1.default",
-      "params": {},
-      "parent_parameter_set_id": null,
-      "strategy_id": "spec_yolo_momentum_v1",
+      "strategy_id": "c_auto_v2_fixed1000_conservative",
       "version": "1"
     },
     {
@@ -79,16 +53,16 @@
         "min_abs_prediction": 0.0015,
         "min_symbols": 2,
         "min_train_rows": 400,
-        "ridge_alpha": 10.0,
-        "rolling_windows": [
-          12,
-          24,
-          72
-        ],
         "return_windows": [
           1,
           3,
           6,
+          12,
+          24,
+          72
+        ],
+        "ridge_alpha": 10.0,
+        "rolling_windows": [
           12,
           24,
           72
@@ -101,6 +75,51 @@
       "parent_parameter_set_id": null,
       "strategy_id": "core_c_auto_h24_regression_v1",
       "version": "1"
+    },
+    {
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "notes": "Baseline cross-sectional momentum default parameters are currently read from profiles.py.",
+      "parameter_set_id": "core_cross_sectional_momentum_v1.default",
+      "params": {},
+      "parent_parameter_set_id": null,
+      "strategy_id": "core_cross_sectional_momentum_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "notes": "Baseline funding carry default parameters are currently read from profiles.py.",
+      "parameter_set_id": "core_funding_carry_v1.default",
+      "params": {},
+      "parent_parameter_set_id": null,
+      "strategy_id": "core_funding_carry_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "notes": "Baseline trend momentum default parameters are currently read from profiles.py.",
+      "parameter_set_id": "core_trend_momentum_v1.default",
+      "params": {},
+      "parent_parameter_set_id": null,
+      "strategy_id": "core_trend_momentum_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "notes": "Speculative martingale momentum strategy. Live allocation defaults to zero.",
+      "parameter_set_id": "spec_yolo_momentum_v1.default",
+      "params": {},
+      "parent_parameter_set_id": null,
+      "strategy_id": "spec_yolo_momentum_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "notes": "Tactical microstructure strategy. Current implementation remains in competition/strategies/elite_flow.py until migration.",
+      "parameter_set_id": "tactical_elite_flow_v1.default",
+      "params": {},
+      "parent_parameter_set_id": null,
+      "strategy_id": "tactical_elite_flow_v1",
+      "version": "1"
     }
   ],
   "performance": [],
@@ -108,28 +127,61 @@
   "strategies": [
     {
       "book": "core",
-      "class_name": "TrendMomentumStrategy",
-      "created_at": "2026-05-03T00:00:00+00:00",
-      "default_parameter_set_id": "core_trend_momentum_v1.default",
-      "description": "Baseline regime-aware trend/momentum sleeve.",
+      "class_name": "CAutoV2PaperRunner",
+      "created_at": "2026-05-09T04:54:21.358114+00:00",
+      "default_parameter_set_id": "c_auto_v2_fixed1000_conservative.3000u_v1",
+      "description": "C-Auto v2 conservative live-paper stream with stop-aware accounting and committee leverage policy.",
       "live_allocation_pct": 0.0,
       "live_enabled": false,
-      "module": "strategies.trend_momentum",
-      "name": "Core Trend Momentum",
-      "notes": "Must be wrapped through TargetWeightStrategyAdapter before entering new runtime.",
+      "module": "scripts.run_c_auto_v2_paper",
+      "name": "C-Auto v2 Fixed Conservative",
+      "notes": "Registered under the 8-layer structure. Current critical path: paper -> competition -> personal.",
+      "owner": "personal",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.02,
+        "max_drawdown_pct": 0.06,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.25,
+        "notes": "3000U paper-first profile. Competition before personal. Gross cap 25% NAV; no live allocation by default."
+      },
+      "status": "paper",
+      "strategy_id": "c_auto_v2_fixed1000_conservative",
+      "tags": [
+        "core",
+        "c_auto",
+        "paper",
+        "8_layer"
+      ],
+      "updated_at": "2026-05-09T04:54:31.175688+00:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "core",
+      "class_name": "CAutoH24RegressionStrategy",
+      "created_at": "2026-05-03T00:00:00+00:00",
+      "default_parameter_set_id": "core_c_auto_h24_regression_v1.default",
+      "description": "C-Auto H24 rolling regression strategy: point-in-time ML prediction, cross-sectional ranking, signal-only output.",
+      "live_allocation_pct": 0.0,
+      "live_enabled": false,
+      "module": "strategies.c_auto_h24_regression",
+      "name": "Core C-Auto H24 Regression",
+      "notes": "Migrates the c_auto method, not work-computer code. Must pass research/backtest/paper gates before live allocation.",
       "owner": "personal",
       "risk_budget": {
         "max_daily_loss_pct": 0.02,
         "max_drawdown_pct": 0.08,
         "max_leverage": 1.5,
-        "max_nav_pct": 0.25,
-        "notes": "Core book baseline."
+        "max_nav_pct": 0.3,
+        "notes": "Core ML sleeve; allocation starts at zero until paper evidence exists."
       },
       "status": "research",
-      "strategy_id": "core_trend_momentum_v1",
+      "strategy_id": "core_c_auto_h24_regression_v1",
       "tags": [
-        "baseline",
-        "trend"
+        "core",
+        "c_auto",
+        "ml",
+        "h24",
+        "cross_sectional"
       ],
       "updated_at": "2026-05-03T00:00:00+00:00",
       "version": "1.0.0"
@@ -178,7 +230,7 @@
         "max_daily_loss_pct": 0.015,
         "max_drawdown_pct": 0.06,
         "max_leverage": 1.2,
-        "max_nav_pct": 0.20,
+        "max_nav_pct": 0.2,
         "notes": "Carry is cost/funding sensitive."
       },
       "status": "research",
@@ -191,30 +243,29 @@
       "version": "1.0.0"
     },
     {
-      "book": "tactical",
-      "class_name": "EliteFlowStrategy",
+      "book": "core",
+      "class_name": "TrendMomentumStrategy",
       "created_at": "2026-05-03T00:00:00+00:00",
-      "default_parameter_set_id": "tactical_elite_flow_v1.default",
-      "description": "Order-flow, crowding, and regime-gated tactical strategy.",
+      "default_parameter_set_id": "core_trend_momentum_v1.default",
+      "description": "Baseline regime-aware trend/momentum sleeve.",
       "live_allocation_pct": 0.0,
       "live_enabled": false,
-      "module": "competition.strategies.elite_flow",
-      "name": "Tactical Elite Flow",
-      "notes": "Needs migration from standalone loop to Signal-only strategy.",
+      "module": "strategies.trend_momentum",
+      "name": "Core Trend Momentum",
+      "notes": "Must be wrapped through TargetWeightStrategyAdapter before entering new runtime.",
       "owner": "personal",
       "risk_budget": {
-        "max_daily_loss_pct": 0.03,
-        "max_drawdown_pct": 0.10,
-        "max_leverage": 3.0,
-        "max_nav_pct": 0.15,
-        "notes": "Tactical book, strict freshness and spread gates."
+        "max_daily_loss_pct": 0.02,
+        "max_drawdown_pct": 0.08,
+        "max_leverage": 1.5,
+        "max_nav_pct": 0.25,
+        "notes": "Core book baseline."
       },
       "status": "research",
-      "strategy_id": "tactical_elite_flow_v1",
+      "strategy_id": "core_trend_momentum_v1",
       "tags": [
-        "tactical",
-        "microstructure",
-        "crowding"
+        "baseline",
+        "trend"
       ],
       "updated_at": "2026-05-03T00:00:00+00:00",
       "version": "1.0.0"
@@ -249,32 +300,30 @@
       "version": "1.0.0"
     },
     {
-      "book": "core",
-      "class_name": "CAutoH24RegressionStrategy",
+      "book": "tactical",
+      "class_name": "EliteFlowStrategy",
       "created_at": "2026-05-03T00:00:00+00:00",
-      "default_parameter_set_id": "core_c_auto_h24_regression_v1.default",
-      "description": "C-Auto H24 rolling regression strategy: point-in-time ML prediction, cross-sectional ranking, signal-only output.",
+      "default_parameter_set_id": "tactical_elite_flow_v1.default",
+      "description": "Order-flow, crowding, and regime-gated tactical strategy.",
       "live_allocation_pct": 0.0,
       "live_enabled": false,
-      "module": "strategies.c_auto_h24_regression",
-      "name": "Core C-Auto H24 Regression",
-      "notes": "Migrates the c_auto method, not work-computer code. Must pass research/backtest/paper gates before live allocation.",
+      "module": "competition.strategies.elite_flow",
+      "name": "Tactical Elite Flow",
+      "notes": "Needs migration from standalone loop to Signal-only strategy.",
       "owner": "personal",
       "risk_budget": {
-        "max_daily_loss_pct": 0.02,
-        "max_drawdown_pct": 0.08,
-        "max_leverage": 1.5,
-        "max_nav_pct": 0.3,
-        "notes": "Core ML sleeve; allocation starts at zero until paper evidence exists."
+        "max_daily_loss_pct": 0.03,
+        "max_drawdown_pct": 0.1,
+        "max_leverage": 3.0,
+        "max_nav_pct": 0.15,
+        "notes": "Tactical book, strict freshness and spread gates."
       },
       "status": "research",
-      "strategy_id": "core_c_auto_h24_regression_v1",
+      "strategy_id": "tactical_elite_flow_v1",
       "tags": [
-        "core",
-        "c_auto",
-        "ml",
-        "h24",
-        "cross_sectional"
+        "tactical",
+        "microstructure",
+        "crowding"
       ],
       "updated_at": "2026-05-03T00:00:00+00:00",
       "version": "1.0.0"

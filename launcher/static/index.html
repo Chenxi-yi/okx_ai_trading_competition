@@ -16,6 +16,15 @@
       <div class="status-pill" id="launcherStatus">checking</div>
     </section>
 
+    <nav class="main-nav" aria-label="主页面">
+      <button class="active" type="button" data-page="overview">首页</button>
+      <button type="button" data-page="cauto">C-Auto</button>
+      <button type="button" data-page="monster">妖币扫描</button>
+      <button type="button" data-page="paper">Paper Trade</button>
+      <button type="button" data-page="micro">Micro Live</button>
+    </nav>
+
+    <section class="app-page active" id="page-overview">
     <section class="control-grid">
       <div class="panel control-panel">
         <div class="panel-head">
@@ -82,6 +91,23 @@
       </div>
     </section>
 
+    <section class="panel pipeline-panel">
+      <div class="panel-head">
+        <h2>8层流水线</h2>
+        <span id="pipelineUpdated">--</span>
+      </div>
+      <div class="pipeline-summary">
+        <div><span>资金基准</span><strong id="pipelineCapital">--</strong></div>
+        <div><span>月目标</span><strong id="pipelineTarget">--</strong></div>
+        <div><span>通过</span><strong id="pipelinePassed">--</strong></div>
+        <div><span>阻塞</span><strong id="pipelineBlocked">--</strong></div>
+        <div><span>缺失</span><strong id="pipelineMissing">--</strong></div>
+      </div>
+      <div id="pipelineLayers" class="pipeline-layers"></div>
+    </section>
+    </section>
+
+    <section class="app-page" id="page-cauto">
     <section class="panel cauto-panel">
       <div class="panel-head">
         <h2>C-Auto 策略监控</h2>
@@ -94,12 +120,15 @@
         <div><span>候选数</span><strong id="cautoCandidateCount">--</strong></div>
         <div><span>持仓数</span><strong id="cautoPositionCount">--</strong></div>
         <div><span>Live Gate</span><strong id="cautoLiveGate">--</strong></div>
+        <div><span>NAV</span><strong id="cautoNav">--</strong></div>
+        <div><span>当前 PnL</span><strong id="cautoPnl">--</strong></div>
       </div>
       <div class="cauto-dataset">
         <div><span>Feature Store</span><strong id="cautoDataset">--</strong></div>
         <div><span>Policy</span><strong id="cautoPolicy">--</strong></div>
         <div><span>Data Refresh</span><strong id="cautoDataRefresh">--</strong></div>
       </div>
+      <canvas id="cautoChart" class="equity-chart" width="1200" height="280"></canvas>
       <div class="cauto-positions-block">
         <h3>当前持仓</h3>
         <div id="cautoPositions" class="cauto-position-list"></div>
@@ -115,7 +144,9 @@
         </div>
       </div>
     </section>
+    </section>
 
+    <section class="app-page" id="page-monster">
     <section class="panel monster-panel">
       <div class="panel-head">
         <h2>妖币扫描</h2>
@@ -133,6 +164,19 @@
         <div><span>Fresh Top</span><strong id="monsterFresh">--</strong></div>
         <div><span>Liquidity</span><strong id="monsterLiquidity">--</strong></div>
         <div><span>候选</span><strong id="monsterCandidates">--</strong></div>
+        <div><span>Paper NAV</span><strong id="monsterPaperNav">--</strong></div>
+        <div><span>当前 PnL</span><strong id="monsterPaperPnl">--</strong></div>
+      </div>
+      <canvas id="monsterChart" class="equity-chart" width="1200" height="260"></canvas>
+      <div class="paper-grid">
+        <div>
+          <h3>当前持仓</h3>
+          <div id="monsterPaperPositions" class="paper-list"></div>
+        </div>
+        <div>
+          <h3>交易事件</h3>
+          <div id="monsterPaperLedger" class="paper-list"></div>
+        </div>
       </div>
       <div class="orderbook-status" id="monsterOrderbookStatus">盘口采集：--</div>
       <div class="orderbook-status" id="monsterDerivativesStatus">结构采集：--</div>
@@ -140,7 +184,9 @@
       <div class="orderbook-status" id="monsterAutoRefreshStatus">自动刷新：--</div>
       <div class="monster-list" id="monsterList"></div>
     </section>
+    </section>
 
+    <section class="app-page" id="page-paper">
     <section class="panel paper-panel">
       <div class="panel-head">
         <h2>纸面交易</h2>
@@ -156,7 +202,7 @@
         <div><span>Max DD</span><strong id="paperDrawdown">--</strong></div>
         <div><span>Gate</span><strong id="paperGate">--</strong></div>
       </div>
-      <canvas id="paperChart" width="1200" height="260"></canvas>
+      <canvas id="paperChart" class="equity-chart" width="1200" height="260"></canvas>
       <div class="paper-grid">
         <div>
           <h3>持仓</h3>
@@ -168,6 +214,37 @@
         </div>
       </div>
     </section>
+    </section>
+
+    <section class="app-page" id="page-micro">
+    <section class="panel paper-panel">
+      <div class="panel-head">
+        <h2>Micro Live</h2>
+        <span id="microLiveUpdated">--</span>
+      </div>
+      <div class="metrics paper-metrics">
+        <div><span>运行</span><strong id="microLiveRunning">--</strong></div>
+        <div><span>预算</span><strong id="microLiveBudget">--</strong></div>
+        <div><span>NAV</span><strong id="microLiveNav">--</strong></div>
+        <div><span>浮动 PnL</span><strong id="microLiveUnrealized">--</strong></div>
+        <div><span>已实现</span><strong id="microLiveRealized">--</strong></div>
+        <div><span>持仓</span><strong id="microLivePositionsCount">--</strong></div>
+        <div><span>当日风控</span><strong id="microLiveRisk">--</strong></div>
+        <div><span>Gate</span><strong id="microLiveGate">--</strong></div>
+      </div>
+      <canvas id="microLiveChart" class="equity-chart" width="1200" height="260"></canvas>
+      <div class="paper-grid">
+        <div>
+          <h3>真实小仓</h3>
+          <div id="microLivePositions" class="paper-list"></div>
+        </div>
+        <div>
+          <h3>真实事件</h3>
+          <div id="microLiveLedger" class="paper-list"></div>
+        </div>
+      </div>
+    </section>
+    </section>
 
     <aside class="download-widget" id="downloadWidget">
       <div class="download-head">
@@ -175,31 +252,36 @@
           <h2>数据下载</h2>
           <span id="downloadRunId">--</span>
         </div>
-        <strong id="downloadState">--</strong>
+        <div class="download-head-actions">
+          <strong id="downloadState">--</strong>
+          <button id="toggleDownloadBtn" type="button" aria-expanded="true">收起</button>
+        </div>
       </div>
-      <div class="progress-track">
-        <div id="downloadBar"></div>
+      <div class="download-body" id="downloadBody">
+        <div class="progress-track">
+          <div id="downloadBar"></div>
+        </div>
+        <div class="download-stats">
+          <div><span>预计</span><strong id="downloadTotal">--</strong></div>
+          <div><span>已完成</span><strong id="downloadDone">--</strong></div>
+          <div><span>失败</span><strong id="downloadFailed">--</strong></div>
+        </div>
+        <div class="download-current">
+          <span>当前</span>
+          <strong id="downloadCurrent">--</strong>
+        </div>
+        <div class="download-current">
+          <span>下一项</span>
+          <strong id="downloadNext">--</strong>
+        </div>
+        <div class="download-actions">
+          <button id="pauseDownloadBtn">暂停</button>
+          <button id="resumeDownloadBtn">继续</button>
+        </div>
+        <pre id="downloadTail"></pre>
       </div>
-      <div class="download-stats">
-        <div><span>预计</span><strong id="downloadTotal">--</strong></div>
-        <div><span>已完成</span><strong id="downloadDone">--</strong></div>
-        <div><span>失败</span><strong id="downloadFailed">--</strong></div>
-      </div>
-      <div class="download-current">
-        <span>当前</span>
-        <strong id="downloadCurrent">--</strong>
-      </div>
-      <div class="download-current">
-        <span>下一项</span>
-        <strong id="downloadNext">--</strong>
-      </div>
-      <div class="download-actions">
-        <button id="pauseDownloadBtn">暂停</button>
-        <button id="resumeDownloadBtn">继续</button>
-      </div>
-      <pre id="downloadTail"></pre>
     </aside>
   </main>
-  <script src="/app.js?v=20260508_2312"></script>
+  <script src="/app.js?v=20260509_2225"></script>
 </body>
 </html>

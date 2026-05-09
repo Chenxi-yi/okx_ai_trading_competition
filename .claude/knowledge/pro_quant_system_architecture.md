@@ -65,6 +65,65 @@ in `.claude/knowledge/pro_quant_module_map.md`.
 6. High-risk or contest-style strategies are isolated from the core capital book.
 7. Stale data is a hard risk event, not a warning to ignore.
 
+## 8-Layer Structure
+
+The 8-layer structure is the production workflow view of this architecture. It
+is the canonical path from raw data to personal-account capital.
+
+```text
+1. Automated Data Update
+   Refresh OHLCV, derivatives, instrument metadata, quality reports, and feature
+   inputs. Stale or incomplete data blocks downstream promotion.
+
+2. Automated Strategy Research
+   Generate and test hypotheses, parameter sets, feature variants, and failure
+   explanations. Research may create candidates, but it cannot allocate capital.
+
+3. Automated Strategy Evaluation
+   Run backtests, walk-forward checks, stress tests, cost sensitivity, leakage
+   checks, and minimum-sample gates. Passing evaluation promotes a strategy to
+   paper eligibility.
+
+4. Paper Trading
+   Run the strategy with production-like accounting, stops, leverage policy,
+   and decision journals, but without exchange orders.
+
+5. Competition Account Production
+   The first real-money environment. Use the shared competition account as a
+   small-capital production canary after paper passes. Demo is not on the
+   critical path.
+
+6. Personal Account Production
+   The highest-value account. Strategies only reach this layer after successful
+   competition-account evidence and explicit owner approval.
+
+7. Investment Committee
+   Multiple strategies submit trade plans. The committee approves/rejects each
+   plan and assigns NAV budget, gross/net exposure, stop-loss budget, and
+   leverage. The leverage weapon library lives in
+   `engine/arbitration/leverage_policy.py` with policy documentation in
+   `engine/config/committee_leverage_policy.json`. It includes single-position
+   NAV loss caps, stop-to-margin caps, daily-loss veto, same-symbol duplicate
+   veto, same-side concentration scalar, Kit disagreement scalar, and an
+   explicit aggressive-leverage gate.
+
+8. Position Management And Strategy Review
+   Position management owns open-position lifecycle, stops, take-profit,
+   time-stops, reductions, and reconciliation. Daily strategy review feeds
+   failures and required changes back into automated research.
+```
+
+Environment promotion order is hard-coded as:
+
+```text
+paper -> competition -> personal
+```
+
+The current target capital basis is `3000 USDT`. Monthly return target is `20%`
+as an objective for research and allocation design, not as a guaranteed outcome.
+Risk controls must preserve survival first: a target return never overrides
+freshness gates, stop requirements, allocation caps, or kill switches.
+
 ## Target Module Map
 
 ```text

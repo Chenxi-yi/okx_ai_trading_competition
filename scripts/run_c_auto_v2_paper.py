@@ -41,6 +41,11 @@ from build_c_auto_feature_store import (  # noqa: E402
 )
 from data.fetcher import fetch_ohlcv  # noqa: E402
 from arbitration.signal_committee import build_committee_signals, arbitrate_signals  # noqa: E402
+from arbitration.leverage_policy import (  # noqa: E402
+    CommitteeLeverageInputs,
+    compute_committee_leverage_policy,
+    infer_kit_alignment,
+)
 
 try:  # noqa: E402
     from sklearn.linear_model import Ridge
@@ -81,6 +86,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-positions", type=int, default=4)
     p.add_argument("--rebalance-hours", type=int, default=6)
     p.add_argument("--base-risk", type=float, default=0.06)
+    p.add_argument("--default-leverage", type=float, default=1.0)
+    p.add_argument("--max-leverage", type=float, default=1.0)
+    p.add_argument("--max-gross-leverage", type=float, default=0.25)
+    p.add_argument("--max-position-nav-loss-pct", type=float, default=0.0015)
+    p.add_argument("--max-stop-margin-loss-pct", type=float, default=0.15)
     p.add_argument("--min-score-quantile", type=float, default=0.90)
     p.add_argument("--min-volume-usd", type=float, default=100_000.0)
     p.add_argument("--fee-bps-per-side", type=float, default=5.0)
@@ -301,12 +311,12 @@ def _build_latest_features(args: argparse.Namespace) -> pd.DataFrame:
 
 
 def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp) -> None:
-    start = (end - pd.Timedelta(days=3)).strftime("%Y-%m-%d")
+    start = (end - pd.Timedelta(days=3)).isoformat()
     try:
         fetch_ohlcv(
             symbol,
             start=start,
-            end=end.strftime("%Y-%m-%d"),
+            end=end.isoformat(),
             mode="futures",
             timeframe=timeframe,
             use_cache=True,
@@ -314,6 +324,7 @@ def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp) -> None
             fallback_to_stale=True,
             fallback_to_yfinance=False,
             include_funding=False,
+            cache_end_tolerance=pd.Timedelta("5min") if timeframe == "1h" else pd.Timedelta("10min"),
         )
     except Exception:
         return
@@ -586,9 +597,17 @@ def _close_due_live(
     for symbol in list(positions):
         pos = positions[symbol]
         exit_ts = pd.Timestamp(pos.get("exit_ts"))
-        if now_ts < exit_ts:
+        protective_exit = _protective_exit(symbol, pos, args)
+        if protective_exit is None and now_ts < exit_ts:
             continue
-        exit_price = _latest_price(latest_features, symbol)
+        if protective_exit is not None:
+            exit_price = protective_exit["price"]
+            reason = protective_exit["reason"]
+            event_ts = protective_exit["ts"]
+        else:
+            exit_price = _latest_price(latest_features, symbol)
+            reason = "horizon"
+            event_ts = now_ts
         entry_price = float(pos.get("entry_price") or 0.0)
         notional = float(pos.get("risk_budget") or 0.0)
         if not _valid_number(exit_price) or entry_price <= 0 or notional <= 0:
@@ -598,13 +617,14 @@ def _close_due_live(
         realized_nav += pnl
         ledger.append(
             {
-                "ts": now_ts.isoformat(),
+                "ts": event_ts.isoformat(),
                 "event": "exit",
                 "symbol": symbol,
                 "side": pos.get("side"),
-                "reason": "horizon",
+                "reason": reason,
                 "pnl": pnl,
                 "net_return": net_return,
+                "exit_price": exit_price,
             }
         )
         positions.pop(symbol)
@@ -653,7 +673,10 @@ def _open_live_positions(
         realized_nav=float(args.fixed_notional_capital),
         max_positions=int(args.max_positions),
         max_decisions=max(0, int(args.max_positions) - len(positions)),
-        max_total_budget_usdt=float(args.fixed_notional_capital) * float(args.base_risk) * float(args.max_positions),
+        max_total_budget_usdt=min(
+            float(args.fixed_notional_capital) * float(args.base_risk) * float(args.max_positions),
+            float(args.initial_capital) * float(args.max_gross_leverage),
+        ),
         min_ev=0.0,
     )
     opened: dict[str, dict[str, Any]] = {}
@@ -667,7 +690,26 @@ def _open_live_positions(
         if not _valid_number(entry) or entry <= 0:
             continue
         side = str(signal.side)
-        risk_budget = float(decision.size_usdt)
+        requested_notional = float(decision.size_usdt)
+        leverage_policy = _leverage_policy(signal, requested_notional, args, positions)
+        risk_budget = float(leverage_policy["notional_usdt"])
+        if risk_budget <= 0:
+            events.append(
+                {
+                    "ts": now_ts.isoformat(),
+                    "event": "committee_note",
+                    "symbol": symbol,
+                    "side": side,
+                    "reason": "leverage_policy_blocked_notional",
+                    "pnl": None,
+                    "net_return": None,
+                    "requested_notional_usdt": requested_notional,
+                    "leverage_policy": leverage_policy,
+                }
+            )
+            continue
+        leverage = float(leverage_policy["leverage"])
+        margin_required = float(leverage_policy["margin_required_usdt"])
         horizon = max(1, int(signal.horizon_sec / 3600))
         target_pct = abs(float(signal.metadata.get("target_pct") or 0.035))
         opened[symbol] = {
@@ -678,6 +720,13 @@ def _open_live_positions(
             "decision_id": decision.decision_id,
             "committee_reason": decision.reason,
             "risk_budget": risk_budget,
+            "notional_usdt": risk_budget,
+            "leverage": leverage,
+            "margin_required_usdt": margin_required,
+            "stop_account_loss_usdt": leverage_policy["stop_account_loss_usdt"],
+            "stop_account_loss_pct": leverage_policy["stop_account_loss_pct"],
+            "stop_margin_loss_pct": leverage_policy["stop_margin_loss_pct"],
+            "leverage_policy": leverage_policy,
             "entry_price": entry,
             "stop_price": float(signal.stop) if signal.stop is not None else None,
             "tp1_price": float(signal.target) if signal.target is not None else None,
@@ -702,6 +751,13 @@ def _open_live_positions(
                 "decision_id": decision.decision_id,
                 "expected_ev": signal.forward_ev,
                 "p_target": signal.p_target,
+                "notional_usdt": risk_budget,
+                "leverage": leverage,
+                "margin_required_usdt": margin_required,
+                "stop_account_loss_usdt": leverage_policy["stop_account_loss_usdt"],
+                "stop_account_loss_pct": leverage_policy["stop_account_loss_pct"],
+                "stop_margin_loss_pct": leverage_policy["stop_margin_loss_pct"],
+                "leverage_policy": leverage_policy,
             }
         )
     for note in result.notes[-8:]:
@@ -731,6 +787,44 @@ def _open_live_positions(
     return opened, events
 
 
+def _leverage_policy(
+    signal: Any,
+    requested_notional: float,
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    stop_pct = max(abs(float(getattr(signal, "loss_pct", 0.0) or 0.0)), 0.001)
+    metadata = dict(getattr(signal, "metadata", {}) or {})
+    kit_disagreement, kit_confirmation = infer_kit_alignment(metadata)
+    side = str(getattr(signal, "side", "") or "")
+    symbol = str(getattr(signal, "symbol", "") or "")
+    open_positions = dict(positions or {})
+    same_side_open_count = sum(1 for pos in open_positions.values() if str(pos.get("side") or "") == side)
+    policy = compute_committee_leverage_policy(
+        CommitteeLeverageInputs(
+            requested_notional_usdt=float(requested_notional),
+            nav_usdt=float(args.initial_capital),
+            stop_pct=stop_pct,
+            requested_leverage=max(1.0, float(args.default_leverage)),
+            configured_max_leverage=max(1.0, float(args.max_leverage)),
+            max_position_nav_loss_pct=max(0.0, float(args.max_position_nav_loss_pct)),
+            max_stop_margin_loss_pct=max(0.001, float(args.max_stop_margin_loss_pct)),
+            same_side_open_count=same_side_open_count,
+            same_symbol_open=symbol in open_positions,
+            kit_disagreement=kit_disagreement,
+            kit_confirmation=kit_confirmation,
+            metadata={
+                "strategy_id": getattr(signal, "strategy_id", None),
+                "symbol": symbol,
+                "side": side,
+                "same_side_open_count": same_side_open_count,
+            },
+        )
+    )
+    policy["legacy_policy_id"] = "c_auto_v2_committee_leverage_v1"
+    return policy
+
+
 def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> float:
     nav = float(realized_nav)
     for symbol, pos in positions.items():
@@ -741,6 +835,40 @@ def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], la
             continue
         nav += notional * _net_return(str(pos.get("side")), entry, mark, args)
     return nav
+
+
+def _protective_exit(symbol: str, pos: dict[str, Any], args: argparse.Namespace) -> dict[str, Any] | None:
+    entry_ts = pd.Timestamp(pos.get("entry_ts"))
+    if entry_ts.tzinfo is None:
+        entry_ts = entry_ts.tz_localize("UTC")
+    else:
+        entry_ts = entry_ts.tz_convert("UTC")
+    end = pd.Timestamp.now(tz="UTC").floor("5min")
+    if end <= entry_ts:
+        return None
+    bars = _load_ohlcv_cache(symbol, "5m", entry_ts, end)
+    if bars.empty:
+        return None
+    bars = bars.loc[bars.index > entry_ts]
+    if bars.empty:
+        return None
+    side = str(pos.get("side") or "")
+    stop = _json_float(pos.get("stop_price"))
+    target = _json_float(pos.get("tp1_price"))
+    for ts, row in bars.iterrows():
+        high = _json_float(row.get("high"))
+        low = _json_float(row.get("low"))
+        if side == "long":
+            if stop is not None and low is not None and low <= stop:
+                return {"reason": "stop", "price": stop, "ts": ts}
+            if target is not None and high is not None and high >= target:
+                return {"reason": "target", "price": target, "ts": ts}
+        elif side == "short":
+            if stop is not None and high is not None and high >= stop:
+                return {"reason": "stop", "price": stop, "ts": ts}
+            if target is not None and low is not None and low <= target:
+                return {"reason": "target", "price": target, "ts": ts}
+    return None
 
 
 def _enrich_live_positions(

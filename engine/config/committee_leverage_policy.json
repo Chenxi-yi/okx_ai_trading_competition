@@ -1,0 +1,70 @@
+{
+  "policy_id": "committee_leverage_weapon_library_v1",
+  "default_mode": "conservative",
+  "current_paper_default": {
+    "max_leverage": 1.0,
+    "max_gross_leverage": 0.25,
+    "max_position_nav_loss_pct": 0.0015,
+    "max_stop_margin_loss_pct": 0.15
+  },
+  "weapon_library": [
+    {
+      "id": "single_position_nav_loss_cap",
+      "type": "notional_cap",
+      "description": "Size each trade so a stop hit cannot exceed the per-position NAV loss budget."
+    },
+    {
+      "id": "stop_margin_loss_cap",
+      "type": "leverage_cap",
+      "description": "Cap leverage so stop-to-entry distance does not consume too much margin on stop."
+    },
+    {
+      "id": "daily_loss_veto",
+      "type": "veto",
+      "description": "Reject new risk after the account daily loss limit is reached."
+    },
+    {
+      "id": "same_symbol_duplicate_veto",
+      "type": "veto",
+      "description": "Do not add repeated exposure to a symbol already owned by position management."
+    },
+    {
+      "id": "same_side_concentration_scalar",
+      "type": "notional_scalar",
+      "description": "Reduce notional when the book is already concentrated on the same side."
+    },
+    {
+      "id": "kit_disagreement_scalar",
+      "type": "notional_scalar",
+      "description": "Reduce or veto when OKX Kit smartmoney/news/OI signals disagree with the model."
+    },
+    {
+      "id": "aggressive_leverage_gate",
+      "type": "leverage_cap",
+      "description": "Allow up to 5x only under explicit aggressive mode, external confirmation, and zero risk flags."
+    }
+  ],
+  "leverage_bands": [
+    {
+      "name": "paper_default",
+      "max_leverage": 1.0,
+      "requires": ["paper gate not yet complete"]
+    },
+    {
+      "name": "validated_conservative",
+      "max_leverage": 2.0,
+      "requires": ["paper gate complete", "stop execution rate 100%", "no stale data"]
+    },
+    {
+      "name": "aggressive_special_case",
+      "max_leverage": 5.0,
+      "requires": [
+        "explicit owner approval",
+        "kit confirmation",
+        "same-side concentration below limit",
+        "daily loss not breached",
+        "exchange-side protective stop"
+      ]
+    }
+  ]
+}

@@ -105,8 +105,8 @@ def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dic
     derivative_symbols = symbols[: max(0, min(int(args.derivatives_max_symbols), len(symbols)))]
     derivative_kinds = [item.strip() for item in str(args.derivatives_kinds).split(",") if item.strip()]
     target_end = pd.Timestamp.now(tz="UTC").floor("5min")
-    start = (target_end - pd.Timedelta(days=int(args.lookback_days))).strftime("%Y-%m-%d")
-    end = target_end.strftime("%Y-%m-%d")
+    start = (target_end - pd.Timedelta(days=int(args.lookback_days))).isoformat()
+    end = target_end.isoformat()
     derivatives_start = (target_end - pd.Timedelta(days=int(args.derivatives_lookback_days))).strftime("%Y-%m-%d")
     derivatives_end = target_end.strftime("%Y-%m-%d")
     ohlcv_jobs = len(symbols) * len(timeframes)
@@ -353,6 +353,7 @@ def _refresh_one(
             fallback_to_stale=allow_stale_fallback,
             fallback_to_yfinance=False,
             include_funding=False,
+            cache_end_tolerance=_ohlcv_cache_end_tolerance(timeframe),
         )
         after = _cache_max_ts(symbol, timeframe)
         freshness = _freshness_status(after, target_end, timeframe)
@@ -372,13 +373,19 @@ def _refresh_one(
             "elapsed_sec": round(time.time() - started, 3),
         }
     except Exception as exc:
+        after = _cache_max_ts(symbol, timeframe)
+        freshness = _freshness_status(after, target_end, timeframe)
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "status": "failed",
+            "status": "ok" if freshness["fresh"] else "failed",
             "kind": "ohlcv",
             "symbol": symbol,
             "timeframe": timeframe,
             "error": str(exc),
+            "cache_after": after.isoformat() if after is not None else None,
+            "fresh": freshness["fresh"],
+            "age_sec": freshness["age_sec"],
+            "freshness_error": freshness.get("error"),
             "target_end": target_end.isoformat(),
             "elapsed_sec": round(time.time() - started, 3),
         }
@@ -484,11 +491,29 @@ def _target_end_for_timeframe(timeframe: str) -> pd.Timestamp:
 def _freshness_status(cache_ts: pd.Timestamp | None, target_end: pd.Timestamp, timeframe: str) -> dict[str, Any]:
     if cache_ts is None:
         return {"fresh": False, "age_sec": None, "error": "missing_cache"}
-    tolerance = _timeframe_seconds(timeframe) * 2
+    tolerance = _ohlcv_freshness_tolerance_seconds(timeframe)
     age_sec = max(0.0, (target_end - cache_ts).total_seconds())
     if age_sec > tolerance:
         return {"fresh": False, "age_sec": age_sec, "error": f"cache_lag_sec>{tolerance:g}"}
     return {"fresh": True, "age_sec": age_sec}
+
+
+def _ohlcv_cache_end_tolerance(timeframe: str) -> pd.Timedelta:
+    if timeframe == "5m":
+        return pd.Timedelta(minutes=10)
+    if timeframe == "15m":
+        return pd.Timedelta(minutes=30)
+    if timeframe == "1h":
+        return pd.Timedelta(minutes=65)
+    if timeframe == "4h":
+        return pd.Timedelta(hours=4, minutes=15)
+    if timeframe == "1d":
+        return pd.Timedelta(days=1, hours=1)
+    return pd.Timedelta(seconds=_timeframe_seconds(timeframe))
+
+
+def _ohlcv_freshness_tolerance_seconds(timeframe: str) -> int:
+    return int(_ohlcv_cache_end_tolerance(timeframe).total_seconds())
 
 
 def _timeframe_seconds(timeframe: str) -> int:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 data/fetcher.py
 ===============
@@ -10,6 +12,7 @@ Data is cached locally as Parquet files to avoid redundant API calls.
 """
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -214,17 +217,23 @@ def _load_cache(symbol: str, mode: str, timeframe: str) -> Optional[pd.DataFrame
 def _save_cache(df: pd.DataFrame, symbol: str, mode: str, timeframe: str) -> None:
     parquet_path = _cache_path(symbol, mode, timeframe, "parquet")
     pickle_path = _cache_path(symbol, mode, timeframe, "pkl")
+    parquet_tmp = parquet_path.with_name(f"{parquet_path.name}.tmp")
+    pickle_tmp = pickle_path.with_name(f"{pickle_path.name}.tmp")
     try:
-        df.to_parquet(parquet_path)
+        df.to_parquet(parquet_tmp)
+        os.replace(parquet_tmp, parquet_path)
         logger.debug("Cached: %s", parquet_path)
         return
     except Exception as e:
+        parquet_tmp.unlink(missing_ok=True)
         logger.warning("Parquet cache write failed for %s: %s; falling back to pickle", symbol, e)
 
     try:
-        df.to_pickle(pickle_path)
+        df.to_pickle(pickle_tmp)
+        os.replace(pickle_tmp, pickle_path)
         logger.debug("Cached: %s", pickle_path)
     except Exception as e:
+        pickle_tmp.unlink(missing_ok=True)
         logger.warning("Pickle cache write failed for %s: %s", symbol, e)
 
 
@@ -243,6 +252,7 @@ def fetch_ohlcv(
     fallback_to_stale: bool = True,
     fallback_to_yfinance: bool = True,
     include_funding: bool = True,
+    cache_end_tolerance: pd.Timedelta | str | None = None,
 ) -> pd.DataFrame:
     """
     Fetch daily OHLCV for *symbol* between *start* and *end*.
@@ -258,7 +268,10 @@ def fetch_ohlcv(
         if cached is not None and not cached.empty:
             # Only trust the cache if it covers the requested end date.
             # Allow a small tolerance for missing trailing bars.
-            tolerance = pd.Timedelta(days=2) if timeframe == "1d" else pd.Timedelta(hours=8)
+            if cache_end_tolerance is None:
+                tolerance = pd.Timedelta(days=2) if timeframe == "1d" else pd.Timedelta(hours=8)
+            else:
+                tolerance = pd.Timedelta(cache_end_tolerance)
             requested_start = _parse_bound(start, timeframe=timeframe, is_end=False)
             requested_end = _parse_bound(end, timeframe=timeframe, is_end=True)
             if cached.index.min() <= requested_start + tolerance and cached.index.max() >= requested_end - tolerance:

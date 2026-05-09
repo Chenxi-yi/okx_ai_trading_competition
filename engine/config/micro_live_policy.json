@@ -1,0 +1,23 @@
+{
+  "policy_id": "c_auto_v2_micro_live_competition_v1",
+  "enabled": true,
+  "environment": "competition",
+  "okx_profile": "live",
+  "td_mode": "isolated",
+  "daily_budget_usdt": 50.0,
+  "per_symbol_margin_usdt": 10.0,
+  "first_48h_max_positions": 2,
+  "steady_state_max_positions": 5,
+  "daily_stop_new_entries_loss_usdt": 15.0,
+  "daily_flatten_loss_usdt": 25.0,
+  "default_leverage": 1.0,
+  "max_leverage": 1.0,
+  "require_exchange_stop": true,
+  "require_attached_stop_on_entry": true,
+  "require_exchange_take_profit": true,
+  "max_stop_margin_loss_pct": 0.15,
+  "max_position_nav_loss_pct": 0.0015,
+  "rebalance_hours": 6,
+  "min_volume_usd": 100000.0,
+  "min_score_quantile": 0.9
+}

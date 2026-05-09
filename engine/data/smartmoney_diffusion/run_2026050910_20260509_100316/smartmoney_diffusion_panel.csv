@@ -1,0 +1,7 @@
+ccy,dataVersion,longRatio,longTraders,netNotionalUsdt,shortRatio,shortTraders,totalNotionalUsdt,tradersQualified,tradersWithPosition,weightedLongRatio,weightedShortRatio,ts,d_traders_with_position,d_total_notional_usdt,d_net_notional_usdt,d_weighted_long_ratio,smartmoney_direction,long_diffusion_event,long_exit_event,short_diffusion_event,short_exit_event,close,fwd_ret_1h,fwd_ret_3h,fwd_ret_6h,fwd_ret_12h,fwd_ret_24h
+NOT,2026050905,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 05:00:00+00:00,,,,,short,False,False,False,False,0.0006625,0.007849056603773663,-0.0033207547169812335,,,
+NOT,2026050906,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 06:00:00+00:00,0.0,0.0,0.0,0.0,short,False,False,False,False,0.0006677,-0.012131196645200015,-0.03324846487943689,,,
+NOT,2026050907,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 07:00:00+00:00,0.0,0.0,0.0,0.0,short,False,False,False,False,0.0006596,0.0010612492419648234,,,,
+NOT,2026050908,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 08:00:00+00:00,0.0,0.0,0.0,0.0,short,False,False,False,False,0.0006603,-0.022414054217779644,,,,
+NOT,2026050909,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 09:00:00+00:00,0.0,0.0,0.0,0.0,short,False,False,False,False,0.0006455,,,,,
+NOT,2026050910,0,0,-5208.0539700021,1,1,5208.0539700021,20,1,0,1,2026-05-09 10:00:00+00:00,0.0,0.0,0.0,0.0,short,False,False,False,False,,,,,,

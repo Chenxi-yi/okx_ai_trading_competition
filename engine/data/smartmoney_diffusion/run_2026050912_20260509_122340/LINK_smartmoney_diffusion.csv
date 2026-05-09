@@ -1,0 +1,2 @@
+ccy,dataVersion,longRatio,longTraders,netNotionalUsdt,shortRatio,shortTraders,totalNotionalUsdt,tradersQualified,tradersWithPosition,weightedLongRatio,weightedShortRatio,ts,d_traders_with_position,d_total_notional_usdt,d_net_notional_usdt,d_weighted_long_ratio,smartmoney_direction,long_diffusion_event,long_exit_event,short_diffusion_event,short_exit_event,close,fwd_ret_1h,fwd_ret_3h,fwd_ret_6h,fwd_ret_12h,fwd_ret_24h
+LINK,2026050912,1,1,40569.774,0,0,40569.774,100,1,1,0,2026-05-09 12:00:00+00:00,,,,,long,False,False,False,False,,,,,,

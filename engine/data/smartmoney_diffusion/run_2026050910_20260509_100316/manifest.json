@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-05-09T10:07:23.026011+00:00",
+  "as_of": "2026050910",
+  "symbols_requested": [
+    "BTC",
+    "ETH",
+    "SOL",
+    "NOT",
+    "FIL"
+  ],
+  "symbols_with_data": [
+    "NOT"
+  ],
+  "rows": 6,
+  "panel_path": "engine/data/smartmoney_diffusion/run_2026050910_20260509_100316/smartmoney_diffusion_panel.csv",
+  "report_path": "engine/data/smartmoney_diffusion/run_2026050910_20260509_100316/smartmoney_diffusion_report.md",
+  "run_dir": "engine/data/smartmoney_diffusion/run_2026050910_20260509_100316"
+}
