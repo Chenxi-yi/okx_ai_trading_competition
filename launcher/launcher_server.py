@@ -485,6 +485,10 @@ def _command_arg(command: str, key: str) -> str | None:
     return None
 
 
+def okx_profile_for_environment(environment: str) -> str:
+    return "live" if environment == "competition" else environment
+
+
 def pro_paper_status(strategy_id: str = "core_c_auto_h24_regression_v1", environment: str = "personal") -> dict[str, Any]:
     status_path = PRO_PAPER_DIR / f"{strategy_id}_{environment}.json"
     scheduler_path = PRO_PAPER_DIR / f"{strategy_id}_{environment}_scheduler.json"
@@ -576,8 +580,22 @@ def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment
     return out
 
 
-def c_auto_v2_micro_live_status(state_id: str = "micro_live_competition", environment: str = "competition") -> dict[str, Any]:
+def c_auto_v2_micro_live_status(state_id: str | None = None, environment: str | None = None) -> dict[str, Any]:
     processes = find_c_auto_v2_micro_live_processes(state_id)
+    if state_id is None:
+        state_id = str((processes[0] or {}).get("state_id") or "micro_live_competition") if processes else "micro_live_competition"
+    if environment is None:
+        process_env = next((str(proc.get("environment") or "") for proc in processes if proc.get("environment")), "")
+        if process_env in ALLOWED_ENVS:
+            environment = process_env
+        else:
+            candidates = sorted(C_AUTO_V2_MICRO_LIVE_DIR.glob(f"{state_id}_*_scheduler.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            environment = "competition"
+            for path in candidates:
+                suffix = path.name.removeprefix(f"{state_id}_").removesuffix("_scheduler.json")
+                if suffix in ALLOWED_ENVS:
+                    environment = suffix
+                    break
     prefix = f"{state_id}_{environment}"
     state_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}.json"
     scheduler_path = C_AUTO_V2_MICRO_LIVE_DIR / f"{prefix}_scheduler.json"
@@ -683,7 +701,7 @@ def close_c_auto_v2_symbol(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _close_c_auto_live_symbol(symbol: str, environment: str) -> dict[str, Any]:
-    profile = "live" if environment == "competition" else environment
+    profile = okx_profile_for_environment(environment)
     inst_id = _symbol_to_swap_inst_id(symbol)
     cancel_result = _cancel_profile_symbol_open_orders(profile, inst_id)
     close_result = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "cross", "--posSide", "net"])
@@ -703,8 +721,9 @@ def close_c_auto_v2_micro_live_symbol(payload: dict[str, Any]) -> dict[str, Any]
     symbol = str(payload.get("symbol") or "").strip().upper()
     if not symbol:
         raise ValueError("symbol is required")
-    if environment != "competition":
-        raise ValueError("micro-live close is only enabled for competition environment")
+    if environment not in {"competition", "personal"}:
+        raise ValueError("micro-live close is only enabled for competition or personal environment")
+    profile = okx_profile_for_environment(environment)
     if not bool(payload.get("confirm_live_close")):
         raise ValueError("live close requires confirm_live_close=true")
 
@@ -718,9 +737,9 @@ def close_c_auto_v2_micro_live_symbol(payload: dict[str, Any]) -> dict[str, Any]
 
     pos = dict(positions.pop(matched_symbol) or {})
     inst_id = str(pos.get("inst_id") or _symbol_to_swap_inst_id(matched_symbol))
-    cancel_orders = _cancel_profile_symbol_open_orders("live", inst_id)
-    cancel_algos = _cancel_profile_symbol_algo_orders("live", inst_id)
-    close_result = _run_okx_json(["okx", "--profile", "live", "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
+    cancel_orders = _cancel_profile_symbol_open_orders(profile, inst_id)
+    cancel_algos = _cancel_profile_symbol_algo_orders(profile, inst_id)
+    close_result = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
     if close_result["returncode"] != 0:
         raise RuntimeError(close_result["message"] or "micro-live close failed")
 
@@ -966,11 +985,11 @@ def start_c_auto_v2_paper(environment: str, fresh_start: bool = False) -> dict[s
 
 
 def start_c_auto_v2_micro_live(environment: str, confirm: bool = False) -> dict[str, Any]:
-    if environment != "competition":
-        raise ValueError("micro-live 只允许比赛账户环境")
+    if environment not in {"competition", "personal"}:
+        raise ValueError("micro-live 只允许比赛或个人真实账户环境")
     if not confirm:
-        raise ValueError("micro-live requires confirm_real=true and confirm_competition=true")
-    state_id = "micro_live_competition"
+        raise ValueError("micro-live requires confirm_real=true")
+    state_id = f"micro_live_{environment}"
     existing = find_c_auto_v2_micro_live_processes(state_id)
     if existing:
         return {"ok": True, "already_running": True, "processes": existing, "status": c_auto_v2_micro_live_status(state_id, environment)}
@@ -989,6 +1008,8 @@ def start_c_auto_v2_micro_live(environment: str, confirm: bool = False) -> dict[
             C_AUTO_V2_STATE_ID,
             "--environment",
             environment,
+            "--okx-profile",
+            okx_profile_for_environment(environment),
             "--initial-capital",
             f"{C_AUTO_V2_CAPITAL_USDT:g}",
             "--fixed-notional-capital",
@@ -1030,7 +1051,16 @@ def start_c_auto_v2_micro_live(environment: str, confirm: bool = False) -> dict[
         ],
         f"c_auto_v2_micro_live_{environment}",
     )
-    result.update({"ok": True, "strategy": C_AUTO_V2_STRATEGY_ID, "environment": environment, "mode": "real", "source_mode": "micro_live"})
+    result.update(
+        {
+            "ok": True,
+            "strategy": C_AUTO_V2_STRATEGY_ID,
+            "environment": environment,
+            "mode": "real",
+            "source_mode": "micro_live",
+            "okx_profile": okx_profile_for_environment(environment),
+        }
+    )
     return result
 
 
@@ -1139,9 +1169,10 @@ def flatten_c_auto_v2_micro_live_state(state_id: str, environment: str, reason: 
         return {"ok": False, "reason": "missing_state"}
     positions = dict(state.get("positions") or {})
     events: list[dict[str, Any]] = []
+    profile = okx_profile_for_environment(environment)
     for symbol, pos in positions.items():
         inst_id = str(pos.get("inst_id") or _symbol_to_swap_inst_id(symbol))
-        close_result = _run_okx_json(["okx", "--profile", "live", "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
+        close_result = _run_okx_json(["okx", "--profile", profile, "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
         events.append(
             {
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -2467,8 +2498,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/c-auto-v2-micro-live-start":
                 payload = self.read_json_body()
-                confirm = bool(payload.get("confirm_real")) and bool(payload.get("confirm_competition"))
-                self.send_json(200, start_c_auto_v2_micro_live("competition", confirm=confirm))
+                environment = str(payload.get("environment") or payload.get("env") or "competition")
+                confirm = bool(payload.get("confirm_real")) and (environment != "competition" or bool(payload.get("confirm_competition")))
+                self.send_json(200, start_c_auto_v2_micro_live(environment, confirm=confirm))
                 return
             if path == "/api/smartmoney-diffusion-start":
                 self.send_json(200, start_smartmoney_diffusion())
@@ -2540,11 +2572,10 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 result["daily_review"] = daily_review
                 result["kill_switch"] = kill_switch
                 return result
-            if env != "competition":
-                raise ValueError("C-Auto micro-live 只允许比赛真实交易环境")
             daily_review = start_c_auto_daily_review(env)
             paper = start_c_auto_v2_paper(env, fresh_start=False)
-            micro_live = start_c_auto_v2_micro_live(env, confirm=confirm_real and confirm_competition)
+            micro_live_confirmed = confirm_real and (env != "competition" or confirm_competition)
+            micro_live = start_c_auto_v2_micro_live(env, confirm=micro_live_confirmed)
             return {
                 "ok": True,
                 "strategy": strategy,

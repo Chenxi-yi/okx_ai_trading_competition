@@ -51,6 +51,7 @@ LIVE_DIR = ENGINE_DIR / "logs" / "c_auto_v2_micro_live"
 PAPER_DIR = ENGINE_DIR / "logs" / "c_auto_v2_paper"
 CONTROL_DIR = ENGINE_DIR / "control"
 DEFAULT_MICRO_POLICY = ENGINE_DIR / "config" / "micro_live_policy.json"
+OKX_PROFILE = "live"
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,7 +59,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run C-Auto v2 micro-live validation")
     p.add_argument("--state-id", default="micro_live_competition")
     p.add_argument("--paper-state-id", default="fixed1000_conservative")
-    p.add_argument("--environment", default="competition", choices=["competition"])
+    p.add_argument("--environment", default="competition", choices=["competition", "personal"])
+    p.add_argument("--okx-profile", default="", help="OKX CLI profile; defaults to live for competition, otherwise environment")
     p.add_argument("--policy", default=str(DEFAULT_POLICY))
     p.add_argument("--micro-policy", default=str(DEFAULT_MICRO_POLICY))
     p.add_argument("--dataset-id", default="c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1")
@@ -100,9 +102,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    global OKX_PROFILE
     args = parse_args()
     if not args.confirm_micro_live and not args.dry_run:
         raise SystemExit("--confirm-micro-live is required for real-money micro-live")
+    OKX_PROFILE = str(args.okx_profile or ("live" if args.environment == "competition" else args.environment))
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stop_path = CONTROL_DIR / f"c_auto_v2_micro_live_{args.state_id}_{args.environment}.stop"
@@ -222,7 +226,7 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "environment": args.environment,
         "mode": "real",
         "source_mode": "micro_live",
-        "profile": "live",
+        "profile": _okx_profile(),
         "micro_policy_id": micro_policy.get("policy_id", "c_auto_v2_micro_live_competition_v1"),
         "dataset_id": args.dataset_id,
         "policy_id": strategy_policy.get("policy_id"),
@@ -445,7 +449,7 @@ def _place_entry_with_brackets(
                 "target_price": target_price,
             },
         }
-    profile = "live"
+    profile = _okx_profile()
     order_side = "buy" if side == "long" else "sell"
     lev = _run_okx(["okx", "--profile", profile, "--json", "swap", "leverage", "--instId", inst_id, "--lever", _fmt(leverage), "--mgnMode", "isolated"])
     if not lev["ok"]:
@@ -519,7 +523,7 @@ def _post_place_truth(inst_id: str, order: dict[str, Any], side: str) -> dict[st
 
 
 def _fetch_fills(inst_id: str) -> list[dict[str, Any]]:
-    result = _run_okx_read(["okx", "--profile", "live", "--json", "swap", "fills", "--instId", inst_id])
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "swap", "fills", "--instId", inst_id])
     if not result["ok"]:
         return []
     rows = result.get("data")
@@ -529,11 +533,11 @@ def _fetch_fills(inst_id: str) -> list[dict[str, Any]]:
 
 
 def _fetch_algo_orders(inst_id: str) -> list[dict[str, Any]]:
-    result = _run_okx_read(["okx", "--profile", "live", "--json", "swap", "algo", "orders", "--instId", inst_id])
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "swap", "algo", "orders", "--instId", inst_id])
     if not result["ok"]:
-        result = _run_okx_read(["okx", "--profile", "live", "--json", "swap", "algo orders", "--instId", inst_id])
+        result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "swap", "algo orders", "--instId", inst_id])
     if not result["ok"]:
-        result = _run_okx_read(["okx", "--profile", "live", "--json", "swap", "algo", "orders"])
+        result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "swap", "algo", "orders"])
     if not result["ok"]:
         return []
     rows = result.get("data")
@@ -698,7 +702,7 @@ def _reconcile_exchange_positions(
 
 
 def _fetch_exchange_positions() -> dict[str, dict[str, Any]] | None:
-    result = _run_okx_read(["okx", "--profile", "live", "--json", "account", "positions", "--instType", "SWAP"])
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "account", "positions", "--instType", "SWAP"])
     if not result["ok"]:
         return None
     rows = result.get("data")
@@ -772,7 +776,7 @@ def _okx_micro_truth_summary(positions: dict[str, dict[str, Any]], events: list[
     if not inst_ids:
         return {"ok": True, "closed_realized_pnl": 0.0, "closed_positions": 0, "inst_ids": []}
     since = min(event_ts) if event_ts else None
-    result = _run_okx_read(["okx", "--profile", "live", "--json", "account", "positions-history", "--instType", "SWAP", "--limit", "100"])
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "account", "positions-history", "--instType", "SWAP", "--limit", "100"])
     if not result["ok"]:
         return {"ok": False, "error": result.get("error"), "inst_ids": sorted(inst_ids)}
     rows = result.get("data")
@@ -816,8 +820,8 @@ def _close_position(inst_id: str) -> dict[str, Any]:
     # states can still call it from verification paths, so keep it inert.
     if os.environ.get("C_AUTO_MICRO_LIVE_DRY_RUN", "").lower() == "true":
         return {"ok": True, "dry_run": True, "inst_id": inst_id}
-    cancel = _run_okx(["okx", "--profile", "live", "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
-    close = _run_okx(["okx", "--profile", "live", "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
+    cancel = _run_okx(["okx", "--profile", _okx_profile(), "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
+    close = _run_okx(["okx", "--profile", _okx_profile(), "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
     return {"ok": close["ok"], "cancel_probe": cancel, "close": close}
 
 
@@ -891,7 +895,7 @@ def _instrument_spec(inst_id: str) -> dict[str, float]:
     cache = _read_instrument_spec_cache()
     last_error = ""
     for attempt in range(3):
-        result = _run_okx(["okx", "--profile", "live", "--json", "market", "instruments", "--instType", "SWAP", "--instId", inst_id])
+        result = _run_okx(["okx", "--profile", _okx_profile(), "--json", "market", "instruments", "--instType", "SWAP", "--instId", inst_id])
         if result["ok"]:
             data = result.get("data")
             row = data[0] if isinstance(data, list) and data else data if isinstance(data, dict) else {}
@@ -982,6 +986,10 @@ def _run_okx_read(cmd: list[str], attempts: int = 3) -> dict[str, Any]:
             return last
         time.sleep(0.5 * (attempt + 1))
     return last or {"ok": False, "error": "okx_read_failed", "data": None}
+
+
+def _okx_profile() -> str:
+    return OKX_PROFILE
 
 
 def _load_state(args: argparse.Namespace) -> dict[str, Any]:
