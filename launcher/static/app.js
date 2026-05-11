@@ -158,6 +158,13 @@ function formatBeijingTime(value, withDate = false) {
   });
 }
 
+function displayTime(record, key, withDate = false) {
+  if (!record) return '--';
+  const direct = record[`${key}_bj`];
+  if (direct) return String(direct).replace(' 北京时间', '');
+  return record[key] ? formatBeijingTime(record[key], withDate) : '--';
+}
+
 function summaryNav(summary) {
   if (!summary) return null;
   if (typeof summary.nav === 'number') return summary.nav;
@@ -336,8 +343,8 @@ function renderCAutoPosition(symbol, pos, data) {
   const tp2Dist = priceDistance(mark, tp2, side);
   const decisionId = pos.decision_id ? String(pos.decision_id).slice(0, 12) : '--';
   const committeeReason = pos.committee_reason || '';
-  const entryTime = pos.entry_ts ? formatBeijingTime(pos.entry_ts, true) : '--';
-  const exitTime = pos.exit_ts ? formatBeijingTime(pos.exit_ts, true) : '--';
+  const entryTime = displayTime(pos, 'entry_ts', true);
+  const exitTime = displayTime(pos, 'exit_ts', true);
   const pnlClass = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
   const mode = data.mode || 'paper';
   return `
@@ -411,7 +418,7 @@ function renderCAutoCandidate(item) {
 function renderCAutoEvent(item) {
   const event = item.event || '?';
   const symbol = item.symbol || '--';
-  const ts = item.ts ? formatBeijingTime(item.ts) : '--';
+  const ts = displayTime(item, 'ts');
   const reason = item.reason ? ` / ${item.reason}` : '';
   const pnl = item.pnl === undefined || item.pnl === null ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
   const source = item.source_strategy_id ? ` / ${item.source_strategy_id}` : '';
@@ -446,7 +453,7 @@ function renderPipelineStatus(data) {
   }
   const capital = data.capital || {};
   const summary = data.summary || {};
-  $('pipelineUpdated').textContent = data.generated_at ? `北京时间 ${formatBeijingTime(data.generated_at)}` : '--';
+  $('pipelineUpdated').textContent = data.generated_at_bj || (data.generated_at ? `北京时间 ${formatBeijingTime(data.generated_at)}` : '--');
   $('pipelineCapital').textContent = `${formatMoney(capital.base_capital_usdt)}U`;
   $('pipelineTarget').textContent = Number.isFinite(Number(capital.monthly_return_target_pct))
     ? pct(capital.monthly_return_target_pct)
@@ -563,7 +570,7 @@ function renderMonster(data) {
   const running = (data.processes || []).length > 0;
   $('monsterUpdated').textContent = running
     ? `running #${data.processes[0].pid}`
-    : (data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--');
+    : (data.updated_at_bj || (data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--'));
   renderOrderbookStatus(data.orderbook || {});
   renderDerivativesStatus(data.derivatives || {});
   renderPaperStatus(data.paper || {});
@@ -675,7 +682,7 @@ function renderPaperPanel(data) {
     return;
   }
   const metrics = data.metrics || {};
-  $('paperUpdated').textContent = data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--';
+  $('paperUpdated').textContent = data.updated_at_bj || (data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--');
   $('paperNav').textContent = formatMoney(data.nav);
   $('paperCash').textContent = formatMoney(data.cash);
   $('paperUnrealized').textContent = formatSignedMoney(data.unrealized_pnl);
@@ -708,7 +715,7 @@ function renderMicroLivePanel(data) {
   const processes = data.processes || [];
   const positions = data.positions || {};
   const daily = data.daily_risk || {};
-  $('microLiveUpdated').textContent = data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--';
+  $('microLiveUpdated').textContent = data.updated_at_bj || (data.updated_at ? `北京时间 ${formatBeijingTime(data.updated_at)}` : '--');
   $('microLiveRunning').textContent = data.running ? `running #${processes[0]?.pid || '-'}` : ((data.scheduler || {}).scheduler_status || data.runner_status || 'idle');
   $('microLiveBudget').textContent = `${formatMoney(data.daily_budget_usdt)} / ${formatMoney(data.per_symbol_margin_usdt)} each`;
   $('microLiveNav').textContent = formatMoney(data.nav);
@@ -736,7 +743,7 @@ function renderMicroLivePosition(symbol, pos) {
   const stop = Number(pos.stop_price);
   const tp1 = Number(pos.tp1_price);
   const mark = Number(pos.mark_price);
-  const exitTime = pos.exit_ts ? formatBeijingTime(pos.exit_ts, true) : '--';
+  const exitTime = displayTime(pos, 'exit_ts', true);
   const cls = Number.isFinite(pnl) && pnl < 0 ? 'loss' : 'gain';
   return `
     <div class="paper-row">
@@ -800,7 +807,7 @@ function renderPaperEvent(item) {
   const symbol = item.symbol || '--';
   const pnl = item.pnl === undefined ? '' : ` / pnl ${formatSignedMoney(item.pnl)}`;
   const reason = item.reason ? ` / ${item.reason}` : '';
-  const ts = item.ts ? formatBeijingTime(item.ts) : '--';
+  const ts = displayTime(item, 'ts');
   return `
     <div class="paper-row ${event.includes('reject') ? 'stale' : ''}">
       <div class="paper-row-head">
@@ -1122,18 +1129,18 @@ async function stopSystem() {
   $('lastAction').textContent = '暂停中...';
   try {
     const result = await api('/api/stop', { method: 'POST', body: '{}' });
-    const status = await api('/api/status');
-    renderStatus(status);
     const cancel = result.order_cancel || {};
-    const paperRunning = (status.pids?.c_auto_v2_paper || []).length;
-    const microRunning = (status.pids?.c_auto_v2_micro_live || []).length;
-    const refreshRunning = (status.pids?.data_refresh || []).length;
-    const strategyRunning = (status.pids?.strategies || []).filter((item) => item.alive).length;
-    if (paperRunning || microRunning || refreshRunning || strategyRunning) {
-      $('lastAction').textContent = `暂停异常 · paper ${paperRunning} · micro ${microRunning} · refresh ${refreshRunning} · strategy ${strategyRunning}`;
-      throw new Error('暂停请求已发送，但后台仍有进程运行');
-    }
-    $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
+    $('launcherStatus').textContent = 'paused';
+    $('strategyState').textContent = 'stopped';
+    $('dataRefreshState').textContent = 'stopped';
+    $('lastAction').textContent = `已发送暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
+    setTimeout(() => {
+      refreshStatus().then(() => {
+        $('lastAction').textContent = `已暂停 · 撤单 ${cancel.orders_cancelled ?? 0} · 失败 ${cancel.orders_failed ?? 0}`;
+      }).catch((err) => {
+        $('lastAction').textContent = `暂停已发送 · 状态刷新失败：${err.message}`;
+      });
+    }, 1200);
   } finally {
     stopInFlight = false;
     $('stopBtn').disabled = false;

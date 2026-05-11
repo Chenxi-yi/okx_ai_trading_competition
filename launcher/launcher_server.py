@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -56,6 +57,31 @@ DEFAULT_MONSTER_WATCHLIST_ID = "monster_watchlist_5m_live_gated_20260426"
 C_AUTO_V2_STRATEGY_ID = "c_auto_v2_fixed1000_conservative"
 C_AUTO_V2_STATE_ID = "fixed1000_conservative"
 C_AUTO_V2_CAPITAL_USDT = 3000.0
+DISPLAY_TZ = ZoneInfo("Asia/Shanghai")
+TIME_FIELD_NAMES = {
+    "archived_at",
+    "checked_at",
+    "completed_at",
+    "created_at",
+    "cycle_started_at",
+    "entry_ts",
+    "exit_ts",
+    "finished_at",
+    "heartbeat_at",
+    "last_entry_scan_ts",
+    "last_entry_ts",
+    "last_rebalance_ts",
+    "latest_market_ts",
+    "modified",
+    "observed_at",
+    "sample_ts",
+    "since",
+    "started_at",
+    "target_end",
+    "timestamp",
+    "ts",
+    "updated_at",
+}
 
 
 def read_text(path: Path) -> str | None:
@@ -81,6 +107,59 @@ def json_safe(value: Any) -> Any:
         return [json_safe(item) for item in value]
     if isinstance(value, tuple):
         return [json_safe(item) for item in value]
+    return value
+
+
+def beijing_time(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            ts = float(value)
+            if ts > 1_000_000_000_000:
+                ts /= 1000.0
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        elif isinstance(value, str):
+            text = value.strip()
+            if text.isdigit():
+                ts = float(text)
+                if ts > 1_000_000_000_000:
+                    ts /= 1000.0
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            else:
+                normalized = text.replace("Z", "+00:00")
+                dt = datetime.fromisoformat(normalized)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+        elif isinstance(value, datetime):
+            dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        else:
+            return None
+    except Exception:
+        return None
+    return dt.astimezone(DISPLAY_TZ).strftime("%Y-%m-%d %H:%M:%S 北京时间")
+
+
+def with_display_times(value: Any, *, root: bool = True) -> Any:
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            text_key = str(key)
+            out[text_key] = with_display_times(item, root=False)
+            if text_key.endswith("_bj"):
+                continue
+            if text_key in TIME_FIELD_NAMES or text_key.endswith("_at") or text_key.endswith("_ts"):
+                converted = beijing_time(item)
+                if converted is not None:
+                    out[f"{text_key}_bj"] = converted
+        if root:
+            out.setdefault("display_timezone", "Asia/Shanghai")
+            out.setdefault("display_timezone_label", "北京时间")
+        return out
+    if isinstance(value, list):
+        return [with_display_times(item, root=False) for item in value]
+    if isinstance(value, tuple):
+        return [with_display_times(item, root=False) for item in value]
     return value
 
 
@@ -2260,7 +2339,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
     server_version = "OKXTradingLauncher/1.0"
 
     def send_json(self, status: int, payload: Any) -> None:
-        body = json.dumps(json_safe(payload), ensure_ascii=False, default=str, allow_nan=False).encode("utf-8")
+        body = json.dumps(with_display_times(json_safe(payload)), ensure_ascii=False, default=str, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
