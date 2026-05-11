@@ -1,0 +1,196 @@
+{
+  "candidates": [
+    {
+      "backtest_gate": {
+        "checks": [
+          {
+            "actual": 47,
+            "name": "min_trades",
+            "passed": true,
+            "required": 20
+          },
+          {
+            "actual": 0.010319982135927663,
+            "name": "min_total_return_pct",
+            "passed": true,
+            "required": 0.0
+          },
+          {
+            "actual": 0.5106382978723404,
+            "name": "min_win_rate",
+            "passed": true,
+            "required": 0.5
+          },
+          {
+            "actual": 0.0056301048204735835,
+            "name": "min_avg_net_return",
+            "passed": true,
+            "required": 0.0
+          },
+          {
+            "actual": 0.006533972930476084,
+            "name": "max_drawdown_pct",
+            "passed": true,
+            "required": 0.08
+          }
+        ],
+        "failed_checks": [],
+        "passed": true
+      },
+      "candidate_id": "smartmoney_weighted_consensus_h6_t075",
+      "command": [
+        "python3",
+        "scripts/backtest_smartmoney_consensus.py",
+        "--out-id",
+        "autopilot_20260511T120440Z_smartmoney_weighted_consensus_h6_t075",
+        "--hold-hours",
+        "6",
+        "--weighted-threshold",
+        "0.75"
+      ],
+      "manifest_path": "engine/data/research/smartmoney_consensus/autopilot_20260511T120440Z_smartmoney_weighted_consensus_h6_t075/manifest.json",
+      "metrics": {
+        "avg_net_return": 0.0056301048204735835,
+        "final_nav": 3030.9599464077833,
+        "max_drawdown_pct": 0.006533972930476084,
+        "total_pnl": 30.959946407784237,
+        "total_return_pct": 0.010319982135927663,
+        "trades": 47,
+        "win_rate": 0.5106382978723404
+      },
+      "run_id": "autopilot_20260511T120440Z_smartmoney_weighted_consensus_h6_t075",
+      "step": {
+        "command": [
+          "python3",
+          "scripts/backtest_smartmoney_consensus.py",
+          "--out-id",
+          "autopilot_20260511T120440Z_smartmoney_weighted_consensus_h6_t075",
+          "--hold-hours",
+          "6",
+          "--weighted-threshold",
+          "0.75"
+        ],
+        "completed_at": "2026-05-11T12:04:41.623782+00:00",
+        "name": "smartmoney_weighted_consensus_h6_t075",
+        "returncode": 0,
+        "started_at": "2026-05-11T12:04:41.231393+00:00",
+        "status": "pass",
+        "stderr_tail": "",
+        "stdout_tail": "{\n  \"artifacts\": {\n    \"equity_curve\": \"equity_curve.csv\",\n    \"summary\": \"summary.md\",\n    \"trades\": \"trades.csv\"\n  },\n  \"created_at\": \"2026-05-11T12:04:41.594638+00:00\",\n  \"inputs\": {\n    \"fee_bps_per_side\": 5.0,\n    \"fixed_notional\": 117.0,\n    \"hold_hours\": 6,\n    \"initial_capital\": 3000.0,\n    \"max_positions\": 4,\n    \"min_notional\": 50000.0,\n    \"min_traders\": 3,\n    \"panel\": \"engine/research/reports/smartmoney_diffusion/run_2026050905_20260509_091456/smartmoney_diffusion_panel.csv\",\n    \"slippage_bps_per_side\": 2.0,\n    \"weighted_threshold\": 0.75\n  },\n  \"metrics\": {\n    \"avg_net_return\": 0.0056301048204735835,\n    \"by_side\": {\n      \"long\": {\n        \"avg_net_return\": 0.007458964451613028,\n        \"pnl\": 29.671760588516634,\n        \"trades\": 34,\n        \"win_rate\": 0.5294117647058824\n      },\n      \"short\": {\n        \"avg_net_return\": 0.0008469334774935046,\n        \"pnl\": 1.2881858192676203,\n        \"trades\": 13,\n        \"win_rate\": 0.46153846153846156\n      }\n    },\n    \"final_nav\": 3030.9599464077833,\n    \"max_drawdown_pct\": -0.006533972930476084,\n    \"total_pnl\": 30.959946407784237,\n    \"total_return_pct\": 0.010319982135927663,\n    \"trades\": 47,\n    \"win_rate\": 0.5106382978723404\n  },\n  \"strategy_id\": \"smartmoney_weighted_consensus_v1\"\n}\n"
+      }
+    }
+  ],
+  "dry_run": false,
+  "generated_at": "2026-05-11T12:04:40.654253+00:00",
+  "live_promotion_requests": [
+    {
+      "autopilot_run_id": "autopilot_20260511T120440Z",
+      "candidate_id": "smartmoney_weighted_consensus_h6_t075",
+      "created_at": "2026-05-11T12:04:42.006986+00:00",
+      "metrics": {
+        "avg_net_return": 0.0056301048204735835,
+        "final_nav": 3030.9599464077833,
+        "max_drawdown_pct": 0.006533972930476084,
+        "total_pnl": 30.959946407784237,
+        "total_return_pct": 0.010319982135927663,
+        "trades": 47,
+        "win_rate": 0.5106382978723404
+      },
+      "reason": "backtest gate passed; live remains blocked until paper_to_live_request gate and owner approval pass",
+      "requested_environment": "paper_shadow_first",
+      "status": "requires_owner_approval"
+    }
+  ],
+  "paper_promotions": [
+    {
+      "autopilot_run_id": "autopilot_20260511T120440Z",
+      "candidate_id": "smartmoney_weighted_consensus_h6_t075",
+      "created_at": "2026-05-11T12:04:42.006450+00:00",
+      "metrics": {
+        "avg_net_return": 0.0056301048204735835,
+        "final_nav": 3030.9599464077833,
+        "max_drawdown_pct": 0.006533972930476084,
+        "total_pnl": 30.959946407784237,
+        "total_return_pct": 0.010319982135927663,
+        "trades": 47,
+        "win_rate": 0.5106382978723404
+      },
+      "next_action": "continue isolated paper observation; do not trade live yet",
+      "paper_command": [
+        "python3",
+        "scripts/run_smartmoney_consensus_paper.py",
+        "--state-id",
+        "smartmoney_weighted_consensus_h6_t075",
+        "--hold-hours",
+        "6",
+        "--weighted-threshold",
+        "0.75",
+        "--environment",
+        "competition",
+        "--max-cycles",
+        "1"
+      ],
+      "paper_step": {
+        "command": [
+          "python3",
+          "scripts/run_smartmoney_consensus_paper.py",
+          "--state-id",
+          "smartmoney_weighted_consensus_h6_t075",
+          "--hold-hours",
+          "6",
+          "--weighted-threshold",
+          "0.75",
+          "--environment",
+          "competition",
+          "--max-cycles",
+          "1"
+        ],
+        "completed_at": "2026-05-11T12:04:42.006430+00:00",
+        "name": "smartmoney_weighted_consensus_h6_t075_paper_shadow",
+        "returncode": 0,
+        "started_at": "2026-05-11T12:04:41.624115+00:00",
+        "status": "pass",
+        "stderr_tail": "",
+        "stdout_tail": ""
+      },
+      "source_backtest": "engine/data/research/smartmoney_consensus/autopilot_20260511T120440Z_smartmoney_weighted_consensus_h6_t075/manifest.json",
+      "status": "paper_ready"
+    }
+  ],
+  "policy_id": "strategy_autopilot_v1",
+  "ranking": [
+    {
+      "candidate_id": "smartmoney_weighted_consensus_h6_t075",
+      "max_drawdown_pct": 0.006533972930476084,
+      "passed": true,
+      "score": 2.0769059928898024,
+      "total_return_pct": 0.010319982135927663,
+      "trades": 47,
+      "win_rate": 0.5106382978723404
+    }
+  ],
+  "run_id": "autopilot_20260511T120440Z",
+  "steps": [
+    {
+      "command": [
+        "python3",
+        "scripts/run_c_auto_research_queue.py",
+        "--limit",
+        "4"
+      ],
+      "completed_at": "2026-05-11T12:04:41.231260+00:00",
+      "name": "research_queue",
+      "returncode": 0,
+      "started_at": "2026-05-11T12:04:40.654258+00:00",
+      "status": "pass",
+      "stderr_tail": "",
+      "stdout_tail": "No supported open C-Auto research tasks.\n"
+    }
+  ],
+  "summary": {
+    "blocked": [],
+    "candidates_run": 1,
+    "live_requests": 1,
+    "paper_ready": 1
+  }
+}

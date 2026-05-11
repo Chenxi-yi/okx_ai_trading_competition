@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import mimetypes
 import os
 import shutil
@@ -69,6 +70,18 @@ def read_json(path: Path) -> Any:
         return json.loads(path.read_text()) if path.exists() else None
     except Exception:
         return None
+
+
+def json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [json_safe(item) for item in value]
+    return value
 
 
 def process_alive(pid: str | int | None) -> bool:
@@ -467,13 +480,16 @@ def c_auto_v2_paper_status(state_id: str = "fixed1000_conservative", environment
     scheduler = read_json(scheduler_path) or {}
     if not state and not scheduler and not processes:
         return {"available": False, "state_id": state_id, "message": "no c-auto v2 paper state found"}
+    display_scheduler = dict(scheduler)
+    if not processes and display_scheduler.get("scheduler_status") == "running":
+        display_scheduler["scheduler_status"] = str(state.get("runner_status") or "stopped")
     out = dict(state)
     out.update(
         {
             "available": True,
             "running": bool(processes),
             "processes": processes,
-            "scheduler": scheduler,
+            "scheduler": display_scheduler,
             "state_path": str(state_path.relative_to(ROOT_DIR)) if state_path.exists() else None,
             "scheduler_status_path": str(scheduler_path.relative_to(ROOT_DIR)) if scheduler_path.exists() else None,
         }
@@ -490,13 +506,16 @@ def c_auto_v2_micro_live_status(state_id: str = "micro_live_competition", enviro
     scheduler = read_json(scheduler_path) or {}
     if not state and not scheduler and not processes:
         return {"available": False, "state_id": state_id, "message": "no c-auto v2 micro-live state found"}
+    display_scheduler = dict(scheduler)
+    if not processes and display_scheduler.get("scheduler_status") == "running":
+        display_scheduler["scheduler_status"] = str(state.get("runner_status") or "stopped")
     out = dict(state)
     out.update(
         {
             "available": True,
             "running": bool(processes),
             "processes": processes,
-            "scheduler": scheduler,
+            "scheduler": display_scheduler,
             "state_path": str(state_path.relative_to(ROOT_DIR)) if state_path.exists() else None,
             "scheduler_status_path": str(scheduler_path.relative_to(ROOT_DIR)) if scheduler_path.exists() else None,
         }
@@ -920,11 +939,13 @@ def start_c_auto_v2_micro_live(environment: str, confirm: bool = False) -> dict[
             "--steady-state-max-positions",
             "5",
             "--default-leverage",
-            "1",
+            "2",
             "--max-leverage",
-            "1",
+            "2",
             "--interval-sec",
             "300",
+            "--entry-scan-minutes",
+            "15",
             "--run-on-start-entry",
             "--confirm-micro-live",
         ],
@@ -2239,7 +2260,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
     server_version = "OKXTradingLauncher/1.0"
 
     def send_json(self, status: int, payload: Any) -> None:
-        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
+        body = json.dumps(json_safe(payload), ensure_ascii=False, default=str, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))

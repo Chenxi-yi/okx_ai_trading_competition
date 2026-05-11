@@ -796,17 +796,20 @@ input[type="number"] {
   bottom: 18px;
   z-index: 10;
   width: min(380px, calc(100vw - 28px));
+  max-height: min(460px, calc(100vh - 36px));
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 18px 42px rgba(23, 32, 42, 0.18);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  overflow: hidden;
+  transition: width 180ms ease, transform 180ms ease, box-shadow 180ms ease;
 }
 
 .download-widget.collapsed {
-  width: min(260px, calc(100vw - 28px));
-  padding: 10px 12px;
+  width: 156px;
+  max-height: 42px;
+  padding: 7px 9px;
   box-shadow: 0 10px 24px rgba(23, 32, 42, 0.13);
 }
 
@@ -855,11 +858,33 @@ input[type="number"] {
 }
 
 .download-widget.collapsed .download-head h2 {
-  margin-bottom: 0;
+  display: none;
 }
 
 .download-widget.collapsed .download-head span {
   display: none;
+}
+
+.download-widget.collapsed .download-head {
+  gap: 6px;
+}
+
+.download-widget.collapsed .download-head > div:first-child {
+  display: none;
+}
+
+.download-widget.collapsed .download-head-actions {
+  width: 100%;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.download-widget.collapsed .download-head strong {
+  max-width: 72px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-track {
@@ -927,7 +952,7 @@ input[type="number"] {
 }
 
 #downloadTail {
-  max-height: 118px;
+  max-height: 96px;
   overflow: auto;
   margin: 12px 0 0;
   padding: 10px;
@@ -982,12 +1007,13 @@ input[type="number"] {
   }
 
   .download-widget {
-    position: static;
-    width: 100%;
-    margin-top: 14px;
+    right: 10px;
+    bottom: 10px;
+    width: min(340px, calc(100vw - 20px));
+    max-height: min(420px, calc(100vh - 20px));
   }
 
   .download-widget.collapsed {
-    width: 100%;
+    width: 148px;
   }
 }

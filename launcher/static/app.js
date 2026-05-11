@@ -13,7 +13,9 @@ let latestMicroLiveStatus = null;
 let latestMonsterPaperStatus = null;
 let latestPipelineStatus = null;
 let stopInFlight = false;
-let downloadCollapsed = localStorage.getItem('launcher.downloadCollapsed') === 'true';
+const DOWNLOAD_COLLAPSED_KEY = 'launcher.downloadCollapsed.v2';
+const storedDownloadCollapsed = localStorage.getItem(DOWNLOAD_COLLAPSED_KEY);
+let downloadCollapsed = storedDownloadCollapsed === null ? true : storedDownloadCollapsed === 'true';
 
 const $ = (id) => document.getElementById(id);
 
@@ -44,7 +46,7 @@ function applyDownloadCollapsed() {
   $('downloadWidget').classList.toggle('collapsed', downloadCollapsed);
   $('toggleDownloadBtn').textContent = downloadCollapsed ? '展开' : '收起';
   $('toggleDownloadBtn').setAttribute('aria-expanded', downloadCollapsed ? 'false' : 'true');
-  localStorage.setItem('launcher.downloadCollapsed', String(downloadCollapsed));
+  localStorage.setItem(DOWNLOAD_COLLAPSED_KEY, String(downloadCollapsed));
 }
 
 function applySelection() {

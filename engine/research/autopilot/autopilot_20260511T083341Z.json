@@ -1,0 +1,140 @@
+{
+  "candidates": [
+    {
+      "backtest_gate": {
+        "checks": [
+          {
+            "actual": 23,
+            "name": "min_trades",
+            "passed": true,
+            "required": 20
+          },
+          {
+            "actual": 0.01850216157754958,
+            "name": "min_total_return_pct",
+            "passed": true,
+            "required": 0.0
+          },
+          {
+            "actual": 0.6521739130434783,
+            "name": "min_win_rate",
+            "passed": true,
+            "required": 0.5
+          },
+          {
+            "actual": 0.020626713018449726,
+            "name": "min_avg_net_return",
+            "passed": true,
+            "required": 0.0
+          },
+          {
+            "actual": 0.0044427444588200915,
+            "name": "max_drawdown_pct",
+            "passed": true,
+            "required": 0.08
+          }
+        ],
+        "failed_checks": [],
+        "passed": true
+      },
+      "candidate_id": "smartmoney_weighted_consensus_v1",
+      "command": [
+        "python3",
+        "scripts/backtest_smartmoney_consensus.py",
+        "--out-id",
+        "autopilot_20260511T083341Z_smartmoney_weighted_consensus_v1"
+      ],
+      "manifest_path": "engine/data/research/smartmoney_consensus/autopilot_20260511T083341Z_smartmoney_weighted_consensus_v1/manifest.json",
+      "metrics": {
+        "avg_net_return": 0.020626713018449726,
+        "final_nav": 3055.5064847326485,
+        "max_drawdown_pct": 0.0044427444588200915,
+        "total_pnl": 55.50648473264824,
+        "total_return_pct": 0.01850216157754958,
+        "trades": 23,
+        "win_rate": 0.6521739130434783
+      },
+      "run_id": "autopilot_20260511T083341Z_smartmoney_weighted_consensus_v1",
+      "step": {
+        "command": [
+          "python3",
+          "scripts/backtest_smartmoney_consensus.py",
+          "--out-id",
+          "autopilot_20260511T083341Z_smartmoney_weighted_consensus_v1"
+        ],
+        "completed_at": "2026-05-11T08:33:48.140675+00:00",
+        "name": "smartmoney_weighted_consensus_v1",
+        "returncode": 0,
+        "started_at": "2026-05-11T08:33:46.774274+00:00",
+        "status": "pass",
+        "stderr_tail": "",
+        "stdout_tail": "{\n  \"artifacts\": {\n    \"equity_curve\": \"equity_curve.csv\",\n    \"summary\": \"summary.md\",\n    \"trades\": \"trades.csv\"\n  },\n  \"created_at\": \"2026-05-11T08:33:48.072628+00:00\",\n  \"inputs\": {\n    \"fee_bps_per_side\": 5.0,\n    \"fixed_notional\": 117.0,\n    \"hold_hours\": 12,\n    \"initial_capital\": 3000.0,\n    \"max_positions\": 4,\n    \"min_notional\": 50000.0,\n    \"min_traders\": 3,\n    \"panel\": \"engine/research/reports/smartmoney_diffusion/run_2026050905_20260509_091456/smartmoney_diffusion_panel.csv\",\n    \"slippage_bps_per_side\": 2.0,\n    \"weighted_threshold\": 0.8\n  },\n  \"metrics\": {\n    \"avg_net_return\": 0.020626713018449726,\n    \"by_side\": {\n      \"long\": {\n        \"avg_net_return\": 0.029158112312457064,\n        \"pnl\": 54.58398624891964,\n        \"trades\": 16,\n        \"win_rate\": 0.6875\n      },\n      \"short\": {\n        \"avg_net_return\": 0.0011263717750043972,\n        \"pnl\": 0.9224984837286014,\n        \"trades\": 7,\n        \"win_rate\": 0.5714285714285714\n      }\n    },\n    \"final_nav\": 3055.5064847326485,\n    \"max_drawdown_pct\": -0.0044427444588200915,\n    \"total_pnl\": 55.50648473264824,\n    \"total_return_pct\": 0.01850216157754958,\n    \"trades\": 23,\n    \"win_rate\": 0.6521739130434783\n  },\n  \"strategy_id\": \"smartmoney_weighted_consensus_v1\"\n}\n"
+      }
+    }
+  ],
+  "dry_run": false,
+  "generated_at": "2026-05-11T08:33:41.481877+00:00",
+  "live_promotion_requests": [
+    {
+      "autopilot_run_id": "autopilot_20260511T083341Z",
+      "candidate_id": "smartmoney_weighted_consensus_v1",
+      "created_at": "2026-05-11T08:33:48.142171+00:00",
+      "metrics": {
+        "avg_net_return": 0.020626713018449726,
+        "final_nav": 3055.5064847326485,
+        "max_drawdown_pct": 0.0044427444588200915,
+        "total_pnl": 55.50648473264824,
+        "total_return_pct": 0.01850216157754958,
+        "trades": 23,
+        "win_rate": 0.6521739130434783
+      },
+      "reason": "backtest gate passed; live remains blocked until paper_to_live_request gate and owner approval pass",
+      "requested_environment": "paper_shadow_first",
+      "status": "requires_owner_approval"
+    }
+  ],
+  "paper_promotions": [
+    {
+      "autopilot_run_id": "autopilot_20260511T083341Z",
+      "candidate_id": "smartmoney_weighted_consensus_v1",
+      "created_at": "2026-05-11T08:33:48.141517+00:00",
+      "metrics": {
+        "avg_net_return": 0.020626713018449726,
+        "final_nav": 3055.5064847326485,
+        "max_drawdown_pct": 0.0044427444588200915,
+        "total_pnl": 55.50648473264824,
+        "total_return_pct": 0.01850216157754958,
+        "trades": 23,
+        "win_rate": 0.6521739130434783
+      },
+      "next_action": "implement/start an isolated paper runner for this candidate; do not trade live yet",
+      "source_backtest": "engine/data/research/smartmoney_consensus/autopilot_20260511T083341Z_smartmoney_weighted_consensus_v1/manifest.json",
+      "status": "paper_ready"
+    }
+  ],
+  "policy_id": "strategy_autopilot_v1",
+  "run_id": "autopilot_20260511T083341Z",
+  "steps": [
+    {
+      "command": [
+        "python3",
+        "scripts/run_c_auto_research_queue.py",
+        "--limit",
+        "4"
+      ],
+      "completed_at": "2026-05-11T08:33:46.773042+00:00",
+      "name": "research_queue",
+      "returncode": 0,
+      "started_at": "2026-05-11T08:33:41.481892+00:00",
+      "status": "pass",
+      "stderr_tail": "/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l1dcachesize'. Detail: [errno 1] Operation not permitted\n/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l2cachesize'. Detail: [errno 1] Operation not permitted\n/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.l3cachesize'. Detail: [errno 1] Operation not permitted\n/Users/runner/work/crossbow/crossbow/arrow/cpp/src/arrow/util/cpu_info.cc:239: IOError: sysctlbyname failed for 'hw.optional.neon'. Detail: [errno 1] Operation not permitted\n",
+      "stdout_tail": "c_auto_loss_attribution_STRK_USDT_stop: done -> engine/research/reports/c_auto/c_auto_loss_attribution_STRK_USDT_stop_20260511_083346.md\nc_auto_loss_attribution_ONDO_USDT_stop: done -> engine/research/reports/c_auto/c_auto_loss_attribution_ONDO_USDT_stop_20260511_083346.md\n"
+    }
+  ],
+  "summary": {
+    "blocked": [],
+    "candidates_run": 1,
+    "live_requests": 1,
+    "paper_ready": 1
+  }
+}

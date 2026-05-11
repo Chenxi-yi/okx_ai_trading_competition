@@ -1,0 +1,135 @@
+{
+  "policy_id": "strategy_autopilot_v1",
+  "mode": "research_to_paper",
+  "live_promotion_requires_owner_approval": true,
+  "gates": {
+    "backtest_to_paper": {
+      "min_trades": 20,
+      "min_total_return_pct": 0.0,
+      "min_win_rate": 0.50,
+      "min_avg_net_return": 0.0,
+      "max_drawdown_pct": 0.08
+    },
+    "paper_to_live_request": {
+      "min_calendar_days": 3,
+      "min_closed_trades": 12,
+      "min_total_return_pct": 0.0,
+      "max_drawdown_pct": 0.03,
+      "min_stop_execution_rate": 1.0,
+      "max_reconciliation_errors": 0,
+      "requires_owner_approval": true
+    }
+  },
+  "candidates": [
+    {
+      "candidate_id": "smartmoney_weighted_consensus_h6_t075",
+      "enabled": true,
+      "stage": "backtest",
+      "command": [
+        "python3",
+        "scripts/backtest_smartmoney_consensus.py",
+        "--out-id",
+        "{run_id}",
+        "--hold-hours",
+        "6",
+        "--weighted-threshold",
+        "0.75"
+      ],
+      "paper_command": [
+        "python3",
+        "scripts/run_smartmoney_consensus_paper.py",
+        "--state-id",
+        "{candidate_id}",
+        "--hold-hours",
+        "6",
+        "--weighted-threshold",
+        "0.75",
+        "--environment",
+        "competition",
+        "--max-cycles",
+        "1"
+      ],
+      "result_manifest": "engine/data/research/smartmoney_consensus/{run_id}/manifest.json"
+    },
+    {
+      "candidate_id": "smartmoney_weighted_consensus_h12_t080",
+      "enabled": true,
+      "stage": "backtest",
+      "command": [
+        "python3",
+        "scripts/backtest_smartmoney_consensus.py",
+        "--out-id",
+        "{run_id}",
+        "--hold-hours",
+        "12",
+        "--weighted-threshold",
+        "0.80"
+      ],
+      "paper_command": [
+        "python3",
+        "scripts/run_smartmoney_consensus_paper.py",
+        "--state-id",
+        "{candidate_id}",
+        "--hold-hours",
+        "12",
+        "--weighted-threshold",
+        "0.80",
+        "--environment",
+        "competition",
+        "--max-cycles",
+        "1"
+      ],
+      "result_manifest": "engine/data/research/smartmoney_consensus/{run_id}/manifest.json"
+    },
+    {
+      "candidate_id": "smartmoney_weighted_consensus_h24_t085",
+      "enabled": true,
+      "stage": "backtest",
+      "command": [
+        "python3",
+        "scripts/backtest_smartmoney_consensus.py",
+        "--out-id",
+        "{run_id}",
+        "--hold-hours",
+        "24",
+        "--weighted-threshold",
+        "0.85"
+      ],
+      "paper_command": [
+        "python3",
+        "scripts/run_smartmoney_consensus_paper.py",
+        "--state-id",
+        "{candidate_id}",
+        "--hold-hours",
+        "24",
+        "--weighted-threshold",
+        "0.85",
+        "--environment",
+        "competition",
+        "--max-cycles",
+        "1"
+      ],
+      "result_manifest": "engine/data/research/smartmoney_consensus/{run_id}/manifest.json"
+    },
+    {
+      "candidate_id": "monster_lottery_backtest_v1",
+      "enabled": false,
+      "stage": "backtest",
+      "command": [
+        "python3",
+        "scripts/backtest_monster_lottery.py",
+        "--dataset-id",
+        "{run_id}",
+        "--initial-capital",
+        "3000",
+        "--risk-budget",
+        "20",
+        "--max-open-risk",
+        "60",
+        "--max-positions",
+        "3"
+      ],
+      "result_manifest": "engine/data/monster/{run_id}/manifest.json"
+    }
+  ]
+}

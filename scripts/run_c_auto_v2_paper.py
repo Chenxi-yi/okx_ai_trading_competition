@@ -88,6 +88,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--base-risk", type=float, default=0.06)
     p.add_argument("--default-leverage", type=float, default=1.0)
     p.add_argument("--max-leverage", type=float, default=1.0)
+    p.add_argument("--allow-aggressive-leverage", action="store_true")
+    p.add_argument("--paper-force-kit-confirmation", action="store_true")
     p.add_argument("--max-gross-leverage", type=float, default=0.25)
     p.add_argument("--max-position-nav-loss-pct", type=float, default=0.0015)
     p.add_argument("--max-stop-margin-loss-pct", type=float, default=0.15)
@@ -796,6 +798,9 @@ def _leverage_policy(
     stop_pct = max(abs(float(getattr(signal, "loss_pct", 0.0) or 0.0)), 0.001)
     metadata = dict(getattr(signal, "metadata", {}) or {})
     kit_disagreement, kit_confirmation = infer_kit_alignment(metadata)
+    if bool(getattr(args, "paper_force_kit_confirmation", False)):
+        kit_disagreement = False
+        kit_confirmation = True
     side = str(getattr(signal, "side", "") or "")
     symbol = str(getattr(signal, "symbol", "") or "")
     open_positions = dict(positions or {})
@@ -813,6 +818,7 @@ def _leverage_policy(
             same_symbol_open=symbol in open_positions,
             kit_disagreement=kit_disagreement,
             kit_confirmation=kit_confirmation,
+            allow_aggressive_leverage=bool(args.allow_aggressive_leverage),
             metadata={
                 "strategy_id": getattr(signal, "strategy_id", None),
                 "symbol": symbol,
