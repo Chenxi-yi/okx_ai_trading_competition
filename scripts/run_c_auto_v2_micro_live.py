@@ -15,7 +15,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +58,7 @@ OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_SECRET_KEY",
     "OKX_PASSPHRASE",
 }
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,6 +90,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--steady-state-max-positions", type=int, default=int(defaults.get("steady_state_max_positions", 5)))
     p.add_argument("--daily-stop-new-entries-loss-usdt", type=float, default=float(defaults.get("daily_stop_new_entries_loss_usdt", 15.0)))
     p.add_argument("--daily-flatten-loss-usdt", type=float, default=float(defaults.get("daily_flatten_loss_usdt", 25.0)))
+    p.add_argument("--max-position-loss-pct", type=float, default=float(defaults.get("max_position_loss_pct", 0.02)))
+    p.add_argument("--daily-cooldown-loss-pct", type=float, default=float(defaults.get("daily_cooldown_loss_pct", 0.06)))
+    p.add_argument("--cooldown-hours", type=float, default=float(defaults.get("cooldown_hours", 24.0)))
     p.add_argument("--default-leverage", type=float, default=float(defaults.get("default_leverage", 1.0)))
     p.add_argument("--max-leverage", type=float, default=float(defaults.get("max_leverage", 1.0)))
     p.add_argument("--max-position-nav-loss-pct", type=float, default=float(defaults.get("max_position_nav_loss_pct", 0.0015)))
@@ -165,10 +169,15 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     positions, close_events = _close_due_positions(args, positions, latest_features, now_ts)
     ledger.extend(close_events)
     positions = _mark_positions(positions, latest_features, args)
+    account_truth = _account_truth_snapshot(positions)
+    account_nav_usdt = _account_nav_usdt(args, account_truth)
+    positions, loss_stop_events = _enforce_position_loss_limits(args, positions, account_nav_usdt, now_ts)
+    ledger.extend(loss_stop_events)
 
-    daily = _daily_risk(previous, ledger, args)
-    if daily["realized_pnl_usdt"] <= -abs(float(args.daily_flatten_loss_usdt)):
-        positions, flat_events = _flatten_positions(args, positions, "daily_flatten_loss")
+    daily = _daily_risk(previous, ledger, args, account_nav_usdt, sum(float(pos.get("unrealized_pnl") or 0.0) for pos in positions.values()))
+    if daily.get("cooldown_active") or daily["realized_pnl_usdt"] <= -abs(float(args.daily_flatten_loss_usdt)):
+        reason = "daily_cooldown_loss" if daily.get("cooldown_active") else "daily_flatten_loss"
+        positions, flat_events = _flatten_positions(args, positions, reason)
         ledger.extend(flat_events)
         daily["flattened"] = True
 
@@ -210,6 +219,8 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
 
     positions = _mark_positions(positions, latest_features, args)
     open_impact = sum(float(pos.get("unrealized_pnl") or 0.0) for pos in positions.values())
+    account_truth = _account_truth_snapshot(positions)
+    account_nav_usdt = _account_nav_usdt(args, account_truth)
     okx_truth = _okx_micro_truth_summary(positions, list(previous.get("ledger_tail", [])) + ledger)
     realized_pnl = daily["realized_pnl_usdt"]
     realized_source = "local_ledger"
@@ -240,6 +251,7 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "timestamp": now_ts.isoformat(),
         "daily_budget_usdt": float(args.daily_budget_usdt),
+        "account_nav_usdt": account_nav_usdt,
         "per_symbol_margin_usdt": float(args.per_symbol_margin_usdt),
         "max_positions": max_positions,
         "daily_risk": daily,
@@ -250,6 +262,7 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "realized_pnl": realized_pnl,
         "realized_pnl_source": realized_source,
         "okx_truth": okx_truth,
+        "account_truth": account_truth,
         "open_risk": sum(float(pos.get("margin_usdt", 0.0)) for pos in positions.values()),
         "positions": positions,
         "freshness": freshness,
@@ -727,6 +740,60 @@ def _fetch_exchange_positions() -> dict[str, dict[str, Any]] | None:
     return out
 
 
+def _fetch_account_balance() -> dict[str, Any] | None:
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "account", "balance"])
+    if not result["ok"]:
+        return None
+    rows = result.get("data")
+    if isinstance(rows, dict):
+        rows = [rows]
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def _account_nav_usdt(args: argparse.Namespace, account_truth: dict[str, Any] | None = None) -> float:
+    balance = (account_truth or {}).get("balance") if isinstance(account_truth, dict) else None
+    if not isinstance(balance, dict):
+        balance = _fetch_account_balance() or {}
+    total_eq = _json_float(balance.get("totalEq"))
+    if total_eq is not None and total_eq > 0:
+        return total_eq
+    return max(float(args.initial_capital), float(args.daily_budget_usdt))
+
+
+def _account_truth_snapshot(positions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    exchange_positions = _fetch_exchange_positions()
+    open_orders: dict[str, list[dict[str, Any]]] = {}
+    algo_orders: dict[str, list[dict[str, Any]]] = {}
+    inst_ids = sorted({str(pos.get("inst_id") or _symbol_to_inst_id(symbol)) for symbol, pos in positions.items()})
+    for inst_id in inst_ids:
+        open_orders[inst_id] = _fetch_open_orders(inst_id)
+        algo_orders[inst_id] = _fetch_algo_orders(inst_id)
+    return {
+        "source": "okx_private_endpoints",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "profile": _okx_profile(),
+        "balance": _fetch_account_balance(),
+        "positions": exchange_positions,
+        "positions_ok": exchange_positions is not None,
+        "open_orders": open_orders,
+        "algo_orders": algo_orders,
+    }
+
+
+def _fetch_open_orders(inst_id: str) -> list[dict[str, Any]]:
+    result = _run_okx_read(["okx", "--profile", _okx_profile(), "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
+    if not result["ok"]:
+        return []
+    rows = result.get("data")
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict) and str(row.get("instId") or inst_id) == inst_id]
+
+
 def _closed_fill_summary(inst_id: str, pos: dict[str, Any]) -> dict[str, Any]:
     rows = _fetch_fills(inst_id)
     entry_ts = _parse_ts(pos.get("entry_ts"))
@@ -817,8 +884,43 @@ def _flatten_positions(args: argparse.Namespace, positions: dict[str, dict[str, 
     events = []
     for symbol, pos in positions.items():
         close = _close_position(str(pos.get("inst_id") or _symbol_to_inst_id(symbol)))
-        events.append({**_event(now_ts, "forced_exit", symbol, pos.get("side"), reason), "close": close})
+        events.append({**_event(now_ts, "forced_exit", symbol, pos.get("side"), reason), "pnl": _json_float(pos.get("unrealized_pnl")), "close": close})
     return {}, events
+
+
+def _enforce_position_loss_limits(
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    account_nav_usdt: float,
+    now_ts: pd.Timestamp,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    if bool(getattr(args, "dry_run", False)) or not positions:
+        return positions, []
+    limit_usdt = max(0.0, float(account_nav_usdt) * abs(float(args.max_position_loss_pct)))
+    if limit_usdt <= 0:
+        return positions, []
+    remaining = dict(positions)
+    events: list[dict[str, Any]] = []
+    for symbol, pos in list(positions.items()):
+        pnl = _json_float(pos.get("unrealized_pnl"))
+        if pnl is None:
+            continue
+        if pnl > -limit_usdt:
+            continue
+        inst_id = str(pos.get("inst_id") or _symbol_to_inst_id(symbol))
+        close = _close_position(inst_id)
+        events.append(
+            {
+                **_event(now_ts, "forced_exit", symbol, pos.get("side"), "max_position_loss_2pct"),
+                "pnl": pnl,
+                "account_nav_usdt": account_nav_usdt,
+                "loss_limit_usdt": limit_usdt,
+                "loss_limit_pct": float(args.max_position_loss_pct),
+                "close": close,
+            }
+        )
+        remaining.pop(symbol, None)
+    return remaining, events
 
 
 def _close_position(inst_id: str) -> dict[str, Any]:
@@ -866,31 +968,75 @@ def _position_pnl(pos: dict[str, Any], mark: float, args: argparse.Namespace) ->
     return notional * (gross - _round_trip_cost_rate(args))
 
 
-def _daily_risk(previous: dict[str, Any], new_events: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
-    today = datetime.now(timezone.utc).date().isoformat()
+def _daily_risk(
+    previous: dict[str, Any],
+    new_events: list[dict[str, Any]],
+    args: argparse.Namespace,
+    account_nav_usdt: float,
+    open_unrealized_pnl: float,
+) -> dict[str, Any]:
+    today = datetime.now(BEIJING_TZ).date().isoformat()
     events = list(previous.get("ledger_tail", [])) + list(new_events)
     realized = 0.0
     for event in events:
-        if not str(event.get("ts") or "").startswith(today):
+        event_ts = _parse_ts(event.get("ts"))
+        if event_ts is None or event_ts.tz_convert(BEIJING_TZ).date().isoformat() != today:
             continue
         if event.get("event") in {"exit", "forced_exit"}:
             try:
                 realized += float(event.get("pnl") or 0.0)
             except Exception:
                 pass
+    marked_daily_pnl = realized + min(0.0, float(open_unrealized_pnl))
+    previous_daily = previous.get("daily_risk") if isinstance(previous.get("daily_risk"), dict) else {}
+    cooldown_until = str(previous_daily.get("cooldown_until") or "")
+    now = datetime.now(timezone.utc)
     block = ""
     allow = True
-    if realized <= -abs(float(args.daily_stop_new_entries_loss_usdt)):
+    cooldown_active = _is_future_ts(cooldown_until, now)
+    daily_cooldown_limit = max(0.0, float(account_nav_usdt) * abs(float(args.daily_cooldown_loss_pct)))
+    triggered_cooldown = False
+    if daily_cooldown_limit > 0 and marked_daily_pnl <= -daily_cooldown_limit:
+        cooldown_until = (now + timedelta(hours=float(args.cooldown_hours))).isoformat()
+        cooldown_active = True
+        triggered_cooldown = True
+    if cooldown_active:
+        allow = False
+        block = "daily_cooldown_loss_6pct"
+    elif realized <= -abs(float(args.daily_stop_new_entries_loss_usdt)):
         allow = False
         block = "daily_stop_new_entries_loss"
     return {
         "date": today,
         "realized_pnl_usdt": realized,
+        "open_unrealized_loss_usdt": min(0.0, float(open_unrealized_pnl)),
+        "marked_daily_pnl_usdt": marked_daily_pnl,
         "allow_new_entries": allow,
         "block_reason": block,
+        "account_nav_usdt": account_nav_usdt,
+        "max_position_loss_pct": float(args.max_position_loss_pct),
+        "max_position_loss_usdt": float(account_nav_usdt) * abs(float(args.max_position_loss_pct)),
+        "daily_cooldown_loss_pct": float(args.daily_cooldown_loss_pct),
+        "daily_cooldown_loss_usdt": daily_cooldown_limit,
+        "cooldown_hours": float(args.cooldown_hours),
+        "cooldown_until": cooldown_until,
+        "cooldown_active": cooldown_active,
+        "triggered_cooldown": triggered_cooldown,
         "stop_new_entries_loss_usdt": float(args.daily_stop_new_entries_loss_usdt),
         "flatten_loss_usdt": float(args.daily_flatten_loss_usdt),
     }
+
+
+def _is_future_ts(value: str, now: datetime) -> bool:
+    if not value:
+        return False
+    try:
+        ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts > now
 
 
 def _has_entry_event(events: list[dict[str, Any]]) -> bool:
