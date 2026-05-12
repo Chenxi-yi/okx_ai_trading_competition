@@ -88,12 +88,14 @@ def compute_committee_leverage_policy(inputs: CommitteeLeverageInputs) -> dict[s
         "cap leverage so stop loss does not exceed margin-loss budget",
     )
 
-    aggressive_cap = 5.0 if inputs.allow_aggressive_leverage and inputs.kit_confirmation and not risk_flags else 2.0
+    aggressive_cap = 2.0
+    if inputs.allow_aggressive_leverage:
+        aggressive_cap = 5.0 if inputs.kit_confirmation and not risk_flags else 3.0
     add_rule(
         "aggressive_leverage_gate",
         "leverage_cap",
         aggressive_cap,
-        "5x is only available with explicit aggressive mode, kit confirmation, and no risk flags",
+        "3x requires explicit aggressive mode; 5x also requires kit confirmation and no risk flags",
     )
 
     leverage = min(requested_leverage, configured_max, leverage_cap_by_margin_stop, aggressive_cap)
