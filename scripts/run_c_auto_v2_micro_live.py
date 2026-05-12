@@ -303,6 +303,7 @@ def _open_micro_positions(
         return {}, [_event(now_ts, "skip", None, None, "micro_live_no_slot")]
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
     group = group[~group["symbol"].isin(positions)]
+    events: list[dict[str, Any]] = []
     blocked_by_cooldown = set(cooldown_symbols or set())
     if blocked_by_cooldown:
         group = group[~group["symbol"].astype(str).isin(blocked_by_cooldown)]
@@ -339,7 +340,6 @@ def _open_micro_positions(
         min_ev=0.0,
     )
     opened: dict[str, dict[str, Any]] = {}
-    events: list[dict[str, Any]] = []
     row_by_symbol = {str(row["symbol"]): row for _, row in group.iterrows()}
     for decision in result.decisions[:slots]:
         signal = decision.signal
