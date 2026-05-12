@@ -15,6 +15,7 @@
   "cooldown_hours": 24.0,
   "default_leverage": 2.0,
   "max_leverage": 2.0,
+  "allow_aggressive_leverage": false,
   "require_exchange_stop": true,
   "require_attached_stop_on_entry": true,
   "require_exchange_take_profit": true,

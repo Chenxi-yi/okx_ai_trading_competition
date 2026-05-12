@@ -28,6 +28,11 @@ sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from arbitration.signal_committee import arbitrate_signals, build_committee_signals  # noqa: E402
+from arbitration.leverage_policy import (  # noqa: E402
+    CommitteeLeverageInputs,
+    compute_committee_leverage_policy,
+    infer_kit_alignment,
+)
 from run_c_auto_v2_paper import (  # noqa: E402
     DEFAULT_POLICY,
     _build_latest_features,
@@ -95,6 +100,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cooldown-hours", type=float, default=float(defaults.get("cooldown_hours", 24.0)))
     p.add_argument("--default-leverage", type=float, default=float(defaults.get("default_leverage", 1.0)))
     p.add_argument("--max-leverage", type=float, default=float(defaults.get("max_leverage", 1.0)))
+    p.add_argument("--allow-aggressive-leverage", action="store_true", default=bool(defaults.get("allow_aggressive_leverage", False)))
     p.add_argument("--max-position-nav-loss-pct", type=float, default=float(defaults.get("max_position_nav_loss_pct", 0.0015)))
     p.add_argument("--max-stop-margin-loss-pct", type=float, default=float(defaults.get("max_stop_margin_loss_pct", 0.15)))
     p.add_argument("--min-score-quantile", type=float, default=float(defaults.get("min_score_quantile", 0.90)))
@@ -209,7 +215,7 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         and (run_on_start_entry or scheduled_rebalance or entry_scan_due)
     )
     if should_scan_entries:
-        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions)
+        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions, account_nav_usdt)
         positions.update(opened)
         ledger.extend(open_events)
     elif not freshness.get("passed"):
@@ -287,6 +293,7 @@ def _open_micro_positions(
     now_ts: pd.Timestamp,
     args: argparse.Namespace,
     max_positions: int,
+    account_nav_usdt: float,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     slots = max(0, int(max_positions) - len(positions))
     if slots <= 0:
@@ -331,11 +338,23 @@ def _open_micro_positions(
         symbol = str(signal.symbol)
         entry = float(signal.entry)
         side = str(signal.side)
-        leverage = max(1.0, min(float(args.default_leverage), float(args.max_leverage)))
-        margin_usdt = min(float(args.per_symbol_margin_usdt), max(0.0, float(args.daily_budget_usdt) - _used_margin(positions) - _used_margin(opened)))
-        notional_usdt = margin_usdt * leverage
-        if margin_usdt <= 0 or notional_usdt <= 0:
+        requested_margin_usdt = min(float(args.per_symbol_margin_usdt), max(0.0, float(args.daily_budget_usdt) - _used_margin(positions) - _used_margin(opened)))
+        requested_notional_usdt = requested_margin_usdt * max(1.0, float(args.default_leverage))
+        leverage_policy = _pretrade_leverage_policy(signal, requested_notional_usdt, args, positions | opened, account_nav_usdt)
+        notional_usdt = float(leverage_policy["notional_usdt"])
+        leverage = float(leverage_policy["leverage"])
+        margin_usdt = float(leverage_policy["margin_required_usdt"])
+        if requested_margin_usdt <= 0 or margin_usdt <= 0 or notional_usdt <= 0:
             events.append(_event(now_ts, "skip", symbol, side, "micro_live_budget_exhausted"))
+            continue
+        if bool(leverage_policy.get("blocked")):
+            events.append(
+                {
+                    **_event(now_ts, "entry_rejected", symbol, side, "pretrade_risk_policy_blocked"),
+                    "requested_notional_usdt": requested_notional_usdt,
+                    "leverage_policy": leverage_policy,
+                }
+            )
             continue
         inst_id = _symbol_to_inst_id(symbol)
         try:
@@ -385,8 +404,13 @@ def _open_micro_positions(
             "committee_reason": decision.reason,
             "margin_usdt": margin_usdt,
             "notional_usdt": actual_notional,
-            "requested_notional_usdt": notional_usdt,
+            "requested_notional_usdt": requested_notional_usdt,
             "leverage": leverage,
+            "margin_required_usdt": margin_usdt,
+            "stop_account_loss_usdt": leverage_policy["stop_account_loss_usdt"],
+            "stop_account_loss_pct": leverage_policy["stop_account_loss_pct"],
+            "stop_margin_loss_pct": leverage_policy["stop_margin_loss_pct"],
+            "leverage_policy": leverage_policy,
             "contracts": truth_contracts,
             "requested_contracts": size_contracts,
             "ct_val": float(spec["ct_val"]),
@@ -421,7 +445,13 @@ def _open_micro_positions(
                 "decision_id": decision.decision_id,
                 "margin_usdt": margin_usdt,
                 "notional_usdt": actual_notional,
+                "requested_notional_usdt": requested_notional_usdt,
                 "leverage": leverage,
+                "margin_required_usdt": margin_usdt,
+                "stop_account_loss_usdt": leverage_policy["stop_account_loss_usdt"],
+                "stop_account_loss_pct": leverage_policy["stop_account_loss_pct"],
+                "stop_margin_loss_pct": leverage_policy["stop_margin_loss_pct"],
+                "leverage_policy": leverage_policy,
                 "contracts": truth_contracts,
                 "requested_contracts": size_contracts,
                 "stop_price": stop_price,
@@ -441,6 +471,73 @@ def _open_micro_positions(
     if not opened and not events:
         events.append(_event(now_ts, "skip", None, None, "committee_no_accepted_signals"))
     return opened, events
+
+
+def _pretrade_leverage_policy(
+    signal: Any,
+    requested_notional_usdt: float,
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    account_nav_usdt: float,
+) -> dict[str, Any]:
+    entry = float(getattr(signal, "entry", 0.0) or 0.0)
+    stop = getattr(signal, "stop", None)
+    stop_pct = max(abs(float(getattr(signal, "loss_pct", 0.0) or 0.0)), 0.001)
+    if stop is not None and _valid_number(stop) and entry > 0:
+        stop_pct = max(abs(float(stop) / entry - 1.0), 0.001)
+    metadata = dict(getattr(signal, "metadata", {}) or {})
+    kit_disagreement, kit_confirmation = infer_kit_alignment(metadata)
+    side = str(getattr(signal, "side", "") or "")
+    symbol = str(getattr(signal, "symbol", "") or "")
+    nav_loss_cap_pct = max(0.0, float(args.max_position_nav_loss_pct))
+    if float(args.max_position_loss_pct) > 0:
+        nav_loss_cap_pct = min(nav_loss_cap_pct or float(args.max_position_loss_pct), float(args.max_position_loss_pct))
+    same_side_open_count = sum(1 for pos in positions.values() if str(pos.get("side") or "") == side)
+    policy = compute_committee_leverage_policy(
+        CommitteeLeverageInputs(
+            requested_notional_usdt=float(requested_notional_usdt),
+            nav_usdt=max(float(account_nav_usdt), float(args.daily_budget_usdt)),
+            stop_pct=stop_pct,
+            requested_leverage=max(1.0, float(args.default_leverage)),
+            configured_max_leverage=max(1.0, float(args.max_leverage)),
+            max_position_nav_loss_pct=nav_loss_cap_pct,
+            max_stop_margin_loss_pct=max(0.001, float(args.max_stop_margin_loss_pct)),
+            same_side_open_count=same_side_open_count,
+            same_symbol_open=symbol in positions,
+            kit_disagreement=kit_disagreement,
+            kit_confirmation=kit_confirmation,
+            allow_aggressive_leverage=bool(getattr(args, "allow_aggressive_leverage", False)),
+            max_daily_loss_pct=max(0.0, float(args.daily_cooldown_loss_pct)),
+            metadata={
+                "strategy_id": getattr(signal, "strategy_id", None),
+                "symbol": symbol,
+                "side": side,
+                "same_side_open_count": same_side_open_count,
+                "source": "micro_live_pretrade",
+            },
+        )
+    )
+    max_margin = max(0.0, float(args.per_symbol_margin_usdt))
+    leverage = max(1.0, float(policy["leverage"]))
+    margin_required = float(policy["margin_required_usdt"])
+    if margin_required > max_margin:
+        notional = max_margin * leverage
+        policy = dict(policy)
+        policy["notional_usdt"] = float(min(float(policy["notional_usdt"]), notional))
+        policy["margin_required_usdt"] = float(policy["notional_usdt"] / leverage)
+        policy["stop_account_loss_usdt"] = float(policy["notional_usdt"] * stop_pct)
+        nav = max(float(account_nav_usdt), float(args.daily_budget_usdt))
+        policy["stop_account_loss_pct"] = float(policy["stop_account_loss_usdt"] / nav) if nav > 0 else 0.0
+        policy["blocked"] = bool(float(policy["notional_usdt"]) <= 0.0)
+        policy["rules"] = list(policy.get("rules") or []) + [
+            {
+                "rule_id": "per_symbol_margin_cap",
+                "action": "notional_cap",
+                "value": float(notional),
+                "reason": "cap notional so required isolated margin stays within per-symbol margin budget",
+            }
+        ]
+    return policy
 
 
 def _place_entry_with_brackets(
