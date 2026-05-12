@@ -1013,7 +1013,7 @@ async function refreshDownloadStatus() {
 
 async function refreshStatus() {
   try {
-    const data = await api('/api/status');
+    const data = await api(`/api/status?env=${encodeURIComponent(state.env)}`);
     renderStatus(data);
   } catch (err) {
     $('launcherStatus').textContent = 'error';
@@ -1128,7 +1128,7 @@ async function stopSystem() {
   $('stopBtn').disabled = true;
   $('lastAction').textContent = '暂停中...';
   try {
-    const result = await api('/api/stop', { method: 'POST', body: '{}' });
+    const result = await api('/api/stop', { method: 'POST', body: JSON.stringify({ env: state.env }) });
     const cancel = result.order_cancel || {};
     $('launcherStatus').textContent = 'paused';
     $('strategyState').textContent = 'stopped';

@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 
@@ -1123,13 +1123,15 @@ def archive_c_auto_v2_paper_session(state_id: str, environment: str, reason: str
     }
 
 
-def stop_pro_paper() -> dict[str, Any]:
+def stop_pro_paper(environment_filter: str | None = None) -> dict[str, Any]:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stopped: list[int] = []
     stop_files: list[str] = []
     for proc in find_pro_paper_processes():
         strategy_id = proc.get("strategy_id") or "unknown"
         environment = proc.get("environment") or "personal"
+        if environment_filter and environment != environment_filter:
+            continue
         stop_path = CONTROL_DIR / f"pro_paper_{strategy_id}_{environment}.stop"
         stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
@@ -1138,10 +1140,10 @@ def stop_pro_paper() -> dict[str, Any]:
             stopped.append(int(proc["pid"]))
         except OSError:
             continue
-    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files}
+    return {"ok": True, "environment": environment_filter, "stopped_pids": stopped, "stop_files": stop_files}
 
 
-def stop_c_auto_v2_paper() -> dict[str, Any]:
+def stop_c_auto_v2_paper(environment_filter: str | None = None) -> dict[str, Any]:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stopped: list[int] = []
     stop_files: list[str] = []
@@ -1149,6 +1151,8 @@ def stop_c_auto_v2_paper() -> dict[str, Any]:
     for proc in find_c_auto_v2_paper_processes():
         state_id = proc.get("state_id") or "fixed1000_conservative"
         environment = proc.get("environment") or "personal"
+        if environment_filter and environment != environment_filter:
+            continue
         stop_path = CONTROL_DIR / f"c_auto_v2_paper_{state_id}_{environment}.stop"
         stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
@@ -1160,10 +1164,14 @@ def stop_c_auto_v2_paper() -> dict[str, Any]:
             stopped.append(int(proc["pid"]))
         except OSError:
             continue
-    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files, "flattened_state_files": flattened}
+    if environment_filter and not flattened:
+        flattened_path = flatten_c_auto_v2_paper_state(C_AUTO_V2_STATE_ID, environment_filter, "launcher_stop")
+        if flattened_path:
+            flattened.append(flattened_path)
+    return {"ok": True, "environment": environment_filter, "stopped_pids": stopped, "stop_files": stop_files, "flattened_state_files": flattened}
 
 
-def stop_c_auto_v2_micro_live() -> dict[str, Any]:
+def stop_c_auto_v2_micro_live(environment_filter: str | None = None) -> dict[str, Any]:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     stopped: list[int] = []
     stop_files: list[str] = []
@@ -1171,6 +1179,8 @@ def stop_c_auto_v2_micro_live() -> dict[str, Any]:
     for proc in find_c_auto_v2_micro_live_processes():
         state_id = proc.get("state_id") or "micro_live_competition"
         environment = proc.get("environment") or "competition"
+        if environment_filter and environment != environment_filter:
+            continue
         stop_path = CONTROL_DIR / f"c_auto_v2_micro_live_{state_id}_{environment}.stop"
         stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         stop_files.append(str(stop_path.relative_to(ROOT_DIR)))
@@ -1180,7 +1190,9 @@ def stop_c_auto_v2_micro_live() -> dict[str, Any]:
             stopped.append(int(proc["pid"]))
         except OSError:
             continue
-    return {"ok": True, "stopped_pids": stopped, "stop_files": stop_files, "flattened": flattened}
+    if environment_filter in {"competition", "personal"} and not flattened:
+        flattened.append(flatten_c_auto_v2_micro_live_state(f"micro_live_{environment_filter}", environment_filter, "launcher_stop"))
+    return {"ok": True, "environment": environment_filter, "stopped_pids": stopped, "stop_files": stop_files, "flattened": flattened}
 
 
 def flatten_c_auto_v2_micro_live_state(state_id: str, environment: str, reason: str) -> dict[str, Any]:
@@ -1442,15 +1454,18 @@ def start_c_auto_daily_review(environment: str) -> dict[str, Any]:
     return result
 
 
-def stop_c_auto_daily_review() -> dict[str, Any]:
+def stop_c_auto_daily_review(environment_filter: str | None = None) -> dict[str, Any]:
     stopped: list[int] = []
     for proc in find_c_auto_daily_review_processes():
+        environment = proc.get("environment") or "personal"
+        if environment_filter and environment != environment_filter:
+            continue
         try:
             os.kill(int(proc["pid"]), 15)
             stopped.append(int(proc["pid"]))
         except OSError:
             continue
-    return {"ok": True, "stopped_pids": stopped}
+    return {"ok": True, "environment": environment_filter, "stopped_pids": stopped}
 
 
 def start_data_refresh() -> dict[str, Any]:
@@ -1574,11 +1589,12 @@ def kill_switch_status() -> dict[str, Any]:
     }
 
 
-def cancel_all_open_swap_orders() -> dict[str, Any]:
-    profiles = _okx_cancel_profiles()
+def cancel_all_open_swap_orders(environment: str | None = None) -> dict[str, Any]:
+    profiles = [okx_profile_for_environment(environment)] if environment else _okx_cancel_profiles()
     results = [_cancel_profile_open_swap_orders(profile) for profile in profiles]
     return {
         "ok": True,
+        "environment": environment,
         "profiles": results,
         "orders_found": sum(int(item.get("orders_found", 0) or 0) for item in results),
         "orders_cancelled": sum(int(item.get("orders_cancelled", 0) or 0) for item in results),
@@ -2424,7 +2440,9 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True, "service": "launcher", "pid": os.getpid()})
                 return
             if path == "/api/status":
-                self.send_json(200, self.status_payload())
+                params = parse_qs(parsed.query)
+                env = str((params.get("env") or [""])[0]).strip() or None
+                self.send_json(200, self.status_payload(env if env in ALLOWED_ENVS else None))
                 return
             if path == "/api/launch-options":
                 self.send_json(
@@ -2446,13 +2464,20 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/pro-paper":
-                self.send_json(200, {"ok": True, **pro_paper_status()})
+                params = parse_qs(parsed.query)
+                env = str((params.get("env") or ["personal"])[0]).strip()
+                self.send_json(200, {"ok": True, **pro_paper_status(environment=env if env in ALLOWED_ENVS else "personal")})
                 return
             if path == "/api/c-auto-v2-paper":
-                self.send_json(200, {"ok": True, **c_auto_v2_paper_status()})
+                params = parse_qs(parsed.query)
+                env = str((params.get("env") or [""])[0]).strip() or None
+                self.send_json(200, {"ok": True, **c_auto_v2_paper_status(environment=env if env in ALLOWED_ENVS else None)})
                 return
             if path == "/api/c-auto-v2-micro-live":
-                self.send_json(200, {"ok": True, **c_auto_v2_micro_live_status()})
+                params = parse_qs(parsed.query)
+                env = str((params.get("env") or [""])[0]).strip() or None
+                state_id = f"micro_live_{env}" if env in {"competition", "personal"} else None
+                self.send_json(200, {"ok": True, **c_auto_v2_micro_live_status(state_id=state_id, environment=env if env in ALLOWED_ENVS else None)})
                 return
             if path == "/api/8-layer-pipeline":
                 self.send_json(200, eight_layer_pipeline_status())
@@ -2496,11 +2521,12 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 self.send_json(200, self.handle_start())
                 return
             if path == "/api/stop":
-                self.send_json(200, self.handle_stop())
+                payload = self.read_json_body()
+                self.send_json(200, self.handle_stop(payload))
                 return
             if path == "/api/restart":
                 payload = self.read_json_body()
-                self.handle_stop()
+                self.handle_stop(payload)
                 self.reset_paper_state(payload)
                 time.sleep(1.0)
                 self.send_json(200, self.handle_start(payload))
@@ -2646,16 +2672,31 @@ class LauncherHandler(BaseHTTPRequestHandler):
         )
         return result
 
-    def handle_stop(self) -> dict[str, Any]:
-        kill_switch = activate_kill_switch("launcher pause all")
-        result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
-        pro = stop_pro_paper()
-        c_auto_v2 = stop_c_auto_v2_paper()
-        c_auto_v2_micro_live = stop_c_auto_v2_micro_live()
-        data_refresh = stop_data_refresh()
-        smartmoney_diffusion = stop_smartmoney_diffusion()
-        daily_review = stop_c_auto_daily_review()
-        order_cancel = cancel_all_open_swap_orders()
+    def handle_stop(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or {}
+        env = str(payload.get("env") or payload.get("environment") or "").strip()
+        environment = env if env in ALLOWED_ENVS else None
+
+        if environment:
+            result = {"ok": True, "mode": "environment_stop", "environment": environment}
+            kill_switch = {"active": False, "environment": environment, "reason": "not set for environment-scoped stop"}
+            pro = stop_pro_paper(environment)
+            c_auto_v2 = stop_c_auto_v2_paper(environment)
+            c_auto_v2_micro_live = stop_c_auto_v2_micro_live(environment)
+            data_refresh = {"ok": True, "skipped": True, "reason": "shared service not stopped by environment-scoped stop"}
+            smartmoney_diffusion = {"ok": True, "skipped": True, "reason": "shared service not stopped by environment-scoped stop"}
+            daily_review = stop_c_auto_daily_review(environment)
+            order_cancel = cancel_all_open_swap_orders(environment)
+        else:
+            kill_switch = activate_kill_switch("launcher pause all")
+            result = run_script([str(ROOT_DIR / "manage_local.sh"), "stop"], "stop")
+            pro = stop_pro_paper()
+            c_auto_v2 = stop_c_auto_v2_paper()
+            c_auto_v2_micro_live = stop_c_auto_v2_micro_live()
+            data_refresh = stop_data_refresh()
+            smartmoney_diffusion = stop_smartmoney_diffusion()
+            daily_review = stop_c_auto_daily_review()
+            order_cancel = cancel_all_open_swap_orders()
         result.update(
             {
                 "ok": True,
@@ -2679,8 +2720,11 @@ class LauncherHandler(BaseHTTPRequestHandler):
             return
         archive_c_auto_v2_paper_session(C_AUTO_V2_STATE_ID, env, "launcher_restart")
 
-    def status_payload(self) -> dict[str, Any]:
+    def status_payload(self, environment: str | None = None) -> dict[str, Any]:
         pids = pid_snapshot()
+        paper_env = environment if environment in ALLOWED_ENVS else None
+        micro_live_env = environment if environment in {"competition", "personal"} else None
+        micro_live_state = f"micro_live_{micro_live_env}" if micro_live_env else None
         return {
             "ok": True,
             "root": str(ROOT_DIR),
@@ -2689,9 +2733,10 @@ class LauncherHandler(BaseHTTPRequestHandler):
             "default_yolo_url": f"http://127.0.0.1:{DEFAULT_DASHBOARD_PORT}/yolo",
             "summary": active_summary(),
             "pids": pids,
-            "pro_paper": pro_paper_status(),
-            "c_auto_v2_paper": c_auto_v2_paper_status(),
-            "c_auto_v2_micro_live": c_auto_v2_micro_live_status(),
+            "environment": environment,
+            "pro_paper": pro_paper_status(environment=paper_env or "personal"),
+            "c_auto_v2_paper": c_auto_v2_paper_status(environment=paper_env),
+            "c_auto_v2_micro_live": c_auto_v2_micro_live_status(state_id=micro_live_state, environment=micro_live_env),
             "data_refresh": data_refresh_status(),
             "smartmoney_diffusion": smartmoney_diffusion_status(),
             "daily_review": c_auto_daily_review_status(),
