@@ -42,6 +42,12 @@ MONSTER_PAPER_DIR = LOGS_DIR / "monster_paper"
 DATA_REFRESH_DIR = LOGS_DIR / "data_refresh"
 SMARTMONEY_DIFFUSION_DIR = LOGS_DIR / "smartmoney_diffusion"
 PYTHON_BIN = os.environ.get("OKX_TRADING_SYSTEM_PYTHON", sys.executable)
+OKX_ENV_CREDENTIAL_KEYS = {
+    "OKX_API_KEY",
+    "OKX_API_SECRET",
+    "OKX_SECRET_KEY",
+    "OKX_PASSPHRASE",
+}
 KILL_SWITCH_PATH = CONTROL_DIR / "kill.switch"
 
 from registry import StrategyRegistry
@@ -487,6 +493,21 @@ def _command_arg(command: str, key: str) -> str | None:
 
 def okx_profile_for_environment(environment: str) -> str:
     return "live" if environment == "competition" else environment
+
+
+def command_profile(command: list[str]) -> str | None:
+    for idx, part in enumerate(command):
+        if part == "--profile" and idx + 1 < len(command):
+            return command[idx + 1]
+    return None
+
+
+def okx_command_env(profile: str | None) -> dict[str, str]:
+    env = os.environ.copy()
+    if profile and profile != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def pro_paper_status(strategy_id: str = "core_c_auto_h24_regression_v1", environment: str = "personal") -> dict[str, Any]:
@@ -1683,7 +1704,14 @@ def _symbol_to_swap_inst_id(symbol: str) -> str:
 
 def _run_okx_json(cmd: list[str]) -> dict[str, Any]:
     try:
-        proc = subprocess.run(cmd, cwd=str(ROOT_DIR), capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(
+            cmd,
+            cwd=str(ROOT_DIR),
+            env=okx_command_env(command_profile(cmd)),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
     except Exception as exc:
         return {"returncode": 1, "data": None, "message": f"{cmd[:4]} failed: {exc}"}
     stdout = proc.stdout.strip()
@@ -2351,6 +2379,10 @@ def run_script(args: list[str], prefix: str) -> dict[str, Any]:
         pythonpath_parts.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(pythonpath_parts))
     env["OKX_TRADING_SYSTEM_PYTHON"] = PYTHON_BIN
+    profile = command_profile(cmd)
+    if profile and profile != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
     proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT_DIR),

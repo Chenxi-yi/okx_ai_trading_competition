@@ -52,6 +52,12 @@ PAPER_DIR = ENGINE_DIR / "logs" / "c_auto_v2_paper"
 CONTROL_DIR = ENGINE_DIR / "control"
 DEFAULT_MICRO_POLICY = ENGINE_DIR / "config" / "micro_live_policy.json"
 OKX_PROFILE = "live"
+OKX_ENV_CREDENTIAL_KEYS = {
+    "OKX_API_KEY",
+    "OKX_API_SECRET",
+    "OKX_SECRET_KEY",
+    "OKX_PASSPHRASE",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -958,7 +964,7 @@ def _contracts_for_notional(notional_usdt: float, price: float, spec: dict[str, 
 
 
 def _run_okx(cmd: list[str]) -> dict[str, Any]:
-    proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=45)
+    proc = subprocess.run(cmd, cwd=ROOT, env=_okx_command_env(), capture_output=True, text=True, timeout=45)
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
     data = None
@@ -990,6 +996,14 @@ def _run_okx_read(cmd: list[str], attempts: int = 3) -> dict[str, Any]:
 
 def _okx_profile() -> str:
     return OKX_PROFILE
+
+
+def _okx_command_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if _okx_profile() != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def _load_state(args: argparse.Namespace) -> dict[str, Any]:
