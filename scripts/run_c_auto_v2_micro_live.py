@@ -109,6 +109,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--rebalance-hours", type=int, default=int(defaults.get("rebalance_hours", 6)))
     p.add_argument("--entry-scan-minutes", type=int, default=int(defaults.get("entry_scan_minutes", 15)))
+    p.add_argument("--post-exit-cooldown-hours", type=float, default=float(defaults.get("post_exit_cooldown_hours", 4.0)))
     p.add_argument("--run-on-start-entry", action="store_true", help="Allow the first clean cycle to open entries immediately")
     p.add_argument("--interval-sec", type=float, default=300.0)
     p.add_argument("--max-cycles", type=int, default=0)
@@ -215,7 +216,8 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         and (run_on_start_entry or scheduled_rebalance or entry_scan_due)
     )
     if should_scan_entries:
-        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions, account_nav_usdt)
+        cooldown_symbols = _recent_exit_symbols(list(previous.get("ledger_tail", [])) + ledger, now_ts, float(args.post_exit_cooldown_hours))
+        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions, account_nav_usdt, cooldown_symbols)
         positions.update(opened)
         ledger.extend(open_events)
     elif not freshness.get("passed"):
@@ -294,12 +296,18 @@ def _open_micro_positions(
     args: argparse.Namespace,
     max_positions: int,
     account_nav_usdt: float,
+    cooldown_symbols: set[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     slots = max(0, int(max_positions) - len(positions))
     if slots <= 0:
         return {}, [_event(now_ts, "skip", None, None, "micro_live_no_slot")]
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
     group = group[~group["symbol"].isin(positions)]
+    blocked_by_cooldown = set(cooldown_symbols or set())
+    if blocked_by_cooldown:
+        group = group[~group["symbol"].astype(str).isin(blocked_by_cooldown)]
+        for symbol in sorted(blocked_by_cooldown):
+            events.append(_event(now_ts, "committee_note", symbol, None, f"rejected post_exit_cooldown_{float(args.post_exit_cooldown_hours):g}h"))
     group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
     group = group[group["volume_usd"] >= float(args.min_volume_usd)]
     c_auto_group = group[group["eligible"].astype(bool)].copy()
@@ -425,6 +433,7 @@ def _open_micro_positions(
             "order_ids": _extract_order_ids({"order": order, "truth": truth}),
             "exchange_truth": truth,
             "exchange_fill_px": avg_fill_px,
+            "exchange_entry_fill_time_ms": _latest_fill_time_ms(truth.get("fills") if isinstance(truth.get("fills"), list) else []),
             "exchange_fee_usdt": fee_usdt,
             "exchange_avg_px": exchange_avg_px,
             "exchange_contracts": exchange_contracts or truth_contracts,
@@ -461,6 +470,7 @@ def _open_micro_positions(
                 "exchange_stop_attached": bool(_truth_has_live_stop(truth)),
                 "exchange_tp_attached": bool(target_price is not None and _truth_has_live_tp(truth)),
                 "exchange_fill_px": avg_fill_px,
+                "exchange_entry_fill_time_ms": _latest_fill_time_ms(truth.get("fills") if isinstance(truth.get("fills"), list) else []),
                 "exchange_fee_usdt": fee_usdt,
                 "truth_source": "okx_private_endpoints" if not bool(getattr(args, "dry_run", False)) else "dry_run",
                 "order_ids": _extract_order_ids({"order": order, "truth": truth}),
@@ -669,6 +679,17 @@ def _match_fills_by_order_ids(fills: list[dict[str, Any]], ord_ids: list[str]) -
     if not id_set:
         return fills[-5:]
     return [row for row in fills if str(row.get("ordId") or "") in id_set]
+
+
+def _latest_fill_time_ms(fills: list[dict[str, Any]]) -> int | None:
+    times: list[int] = []
+    for row in fills:
+        value = row.get("fillTime") or row.get("ts")
+        try:
+            times.append(int(float(value)))
+        except Exception:
+            continue
+    return max(times) if times else None
 
 
 def _summarize_fills(fills: list[dict[str, Any]]) -> dict[str, Any]:
@@ -894,12 +915,16 @@ def _fetch_open_orders(inst_id: str) -> list[dict[str, Any]]:
 def _closed_fill_summary(inst_id: str, pos: dict[str, Any]) -> dict[str, Any]:
     rows = _fetch_fills(inst_id)
     entry_ts = _parse_ts(pos.get("entry_ts"))
+    entry_fill_time_ms = _json_float(pos.get("exchange_entry_fill_time_ms"))
     close_side = "sell" if str(pos.get("side")) == "long" else "buy"
     matched: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict) or str(row.get("instId") or "") != inst_id:
             continue
         fill_ts = _parse_ts(row.get("fillTime") or row.get("ts"))
+        fill_time_ms = _json_float(row.get("fillTime") or row.get("ts"))
+        if entry_fill_time_ms is not None and fill_time_ms is not None and fill_time_ms <= entry_fill_time_ms:
+            continue
         if entry_ts is not None and fill_ts is not None and fill_ts < entry_ts:
             continue
         if str(row.get("side") or "").lower() != close_side:
@@ -1138,6 +1163,28 @@ def _is_future_ts(value: str, now: datetime) -> bool:
 
 def _has_entry_event(events: list[dict[str, Any]]) -> bool:
     return any(str(event.get("event") or "") == "entry" for event in events)
+
+
+def _recent_exit_symbols(events: list[dict[str, Any]], now_ts: pd.Timestamp, cooldown_hours: float) -> set[str]:
+    if cooldown_hours <= 0:
+        return set()
+    now = pd.Timestamp(now_ts)
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    else:
+        now = now.tz_convert("UTC")
+    window = pd.Timedelta(hours=float(cooldown_hours))
+    symbols: set[str] = set()
+    for event in events:
+        if str(event.get("event") or "") not in {"exit", "forced_exit"}:
+            continue
+        symbol = str(event.get("symbol") or "")
+        if not symbol:
+            continue
+        ts = _parse_ts(event.get("ts"))
+        if ts is not None and now - ts <= window:
+            symbols.add(symbol)
+    return symbols
 
 
 def _instrument_spec(inst_id: str) -> dict[str, float]:
