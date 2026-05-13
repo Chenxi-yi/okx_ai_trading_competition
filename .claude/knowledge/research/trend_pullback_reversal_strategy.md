@@ -77,3 +77,12 @@ Do not promote short side until recent paper recovers. Candidate paper gate:
 - Max one concurrent position from this sleeve until 50 paper trades.
 - Require at least 50 paper trades, win >= 53%, mean net return > 0 after actual fee/slippage, and no rule breach before live consideration.
 - Keep existing global risk: per-trade loss <= 2% equity; daily loss >= 6% equity triggers 24h real-trade cooldown.
+
+## Paper Integration
+
+Implemented in paper path:
+
+- `scripts/run_c_auto_v2_paper.py` attaches `trend_pullback_eligible`, `trend_pullback_side`, and `trend_pullback_score`.
+- `engine/arbitration/signal_committee.py` emits `trend_pullback_reversal_long` as a separate committee signal instead of overwriting C-Auto candidates.
+- Paper runner keeps at most one open `trend_pullback_reversal_long` sleeve position.
+- Shared score layer blocks C-Auto short candidates unless the short momentum decay gate is confirmed.

@@ -31,6 +31,9 @@ def build_committee_signals(
         c_auto = _c_auto_signal(row, now_ts, base_capital, base_risk, fee_slip_rate)
         if c_auto:
             signals.append(c_auto)
+        trend_pullback = _trend_pullback_reversal_signal(row, now_ts, base_capital, base_risk, fee_slip_rate)
+        if trend_pullback:
+            signals.append(trend_pullback)
         signals.extend(_oi_compression_signals(row, now_ts, base_capital, base_risk, fee_slip_rate))
         signals.extend(_crowding_reversal_signals(row, now_ts, base_capital, base_risk, fee_slip_rate))
     return signals
@@ -106,6 +109,51 @@ def _c_auto_signal(
             "regime": row.get("btc_regime_6"),
             "score": score,
             "risk_scalar": risk_scalar,
+            "leverage": 1.0,
+            "size_semantics": "notional_usdt",
+        },
+    )
+
+
+def _trend_pullback_reversal_signal(
+    row: pd.Series,
+    now_ts: pd.Timestamp,
+    base_capital: float,
+    base_risk: float,
+    fee_slip_rate: float,
+) -> Signal | None:
+    if not bool(row.get("trend_pullback_eligible", False)):
+        return None
+    side = str(row.get("trend_pullback_side") or "")
+    if side != "long":
+        return None
+    entry = _float(row.get("close"))
+    score = _float(row.get("trend_pullback_score"), 0.0)
+    if entry <= 0 or score <= 0:
+        return None
+    p_target = _clip(0.53 + min(score, 0.03) * 2.0 - fee_slip_rate, 0.51, 0.62)
+    return _signal(
+        strategy_id="trend_pullback_reversal_long",
+        symbol=str(row.get("symbol")),
+        side="long",
+        now_ts=now_ts,
+        entry=entry,
+        target_pct=0.030,
+        stop_pct=0.015,
+        horizon_hours=6,
+        p_target=p_target,
+        confidence=_clip(0.52 + score * 12.0, 0.52, 0.78),
+        risk_budget_usdt=float(base_capital) * float(base_risk) * 0.35,
+        metadata={
+            "signal_family": "trend_pullback_reversal",
+            "regime": row.get("btc_regime_6"),
+            "score": score,
+            "h4_ret_6": _float(row.get("h4_ret_6")),
+            "h4_ret_1": _float(row.get("h4_ret_1")),
+            "ret_1": _float(row.get("ret_1")),
+            "ret_3": _float(row.get("ret_3")),
+            "close_to_high": _float(row.get("close_to_high")),
+            "risk_scalar": 0.35,
             "leverage": 1.0,
             "size_semantics": "notional_usdt",
         },

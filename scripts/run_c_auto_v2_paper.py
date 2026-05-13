@@ -95,6 +95,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-stop-margin-loss-pct", type=float, default=0.15)
     p.add_argument("--min-score-quantile", type=float, default=0.90)
     p.add_argument("--min-volume-usd", type=float, default=100_000.0)
+    p.add_argument("--disable-trend-pullback-paper", action="store_true")
     p.add_argument("--fee-bps-per-side", type=float, default=5.0)
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--loop", action="store_true")
@@ -185,7 +186,7 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     train_labels = _read_frame(dataset_dir / "labels.parquet", dataset_dir / "labels.pkl").sort_index()
     latest_features = _build_latest_features(args)
     predictions = _predict_policy(policy, train_features, train_labels, latest_features, args)
-    scored = _build_portfolio_scores(predictions)
+    scored = _build_portfolio_scores(predictions, enable_trend_pullback=not bool(args.disable_trend_pullback_paper))
     now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
     freshness = _freshness_report(latest_features, now_ts, args)
     previous = _load_live_state(args)
@@ -387,6 +388,14 @@ def _predict_policy(
         "funding_rate",
         "oi_z_24",
         "ls_z_24",
+        "ret_1",
+        "ret_1_abs",
+        "ret_3",
+        "range_pct",
+        "close_to_high",
+        "close_to_low",
+        "h4_ret_1",
+        "h4_ret_6",
         "train_eligible_90d",
         "btc_regime_6",
     ]
@@ -445,7 +454,7 @@ def _score_col(sleeve_id: str, regime: str, label_col: str) -> str:
     return f"{sleeve_id}__{regime}__{side}{horizon}"
 
 
-def _build_portfolio_scores(df: pd.DataFrame) -> pd.DataFrame:
+def _build_portfolio_scores(df: pd.DataFrame, *, enable_trend_pullback: bool = False) -> pd.DataFrame:
     out = df.copy()
     for col in (
         "cross_section_spread__strong_bull__long24",
@@ -502,14 +511,73 @@ def _build_portfolio_scores(df: pd.DataFrame) -> pd.DataFrame:
     out.loc[bull, "signal_family"] = "selective_bull_rank"
     out.loc[bull, "score"] = out.loc[bull, "cross_section_spread__bull__long24"].fillna(0.0)
     out["blocked_by_crowding"] = _blocked_by_crowding(out)
+    out["blocked_by_short_decay"] = _blocked_by_short_decay(out)
+    out.loc[out["blocked_by_short_decay"], "eligible"] = False
     out["eligible"] = (
         out["score"].notna()
         & (out["horizon_hours"] > 0)
         & (pd.to_numeric(out["train_eligible_90d"], errors="coerce").fillna(0.0) > 0)
         & (pd.to_numeric(out["volume_usd"], errors="coerce").fillna(0.0) >= 0.0)
         & ~out["blocked_by_crowding"]
+        & ~out["blocked_by_short_decay"]
     )
+    out["trend_pullback_eligible"] = False
+    out["trend_pullback_side"] = ""
+    out["trend_pullback_score"] = np.nan
+    if enable_trend_pullback:
+        _attach_trend_pullback_reversal(out)
     return out
+
+
+def _attach_trend_pullback_reversal(out: pd.DataFrame) -> None:
+    regime = out["btc_regime_6"].astype(str)
+    h4_ret_6 = _numeric_col(out, "h4_ret_6")
+    h4_ret_1 = _numeric_col(out, "h4_ret_1")
+    ret_1 = _numeric_col(out, "ret_1")
+    ret_3 = _numeric_col(out, "ret_3")
+    range_pct = _numeric_col(out, "range_pct").abs()
+    close_to_high = _numeric_col(out, "close_to_high", -1.0)
+    ret_1_abs = _numeric_col(out, "ret_1_abs").where(lambda s: s.notna(), ret_1.abs())
+    counter_limit = np.minimum(0.045, np.maximum(0.008, 4.0 * ret_1_abs.abs()))
+    constructive_regime = regime.isin({"bull", "chop_long", "strong_bull"})
+    controlled_pullback = (ret_3 < 0) & (ret_3.abs() <= counter_limit)
+    reversal = (ret_1 > 0) & (
+        (close_to_high >= -0.0015)
+        | ((ret_1 > range_pct * 0.25) & (close_to_high >= -0.003))
+    )
+    eligible = (
+        constructive_regime
+        & (h4_ret_6 > 0.012)
+        & (h4_ret_1 > -0.005)
+        & controlled_pullback
+        & reversal
+        & (pd.to_numeric(out.get("train_eligible_90d"), errors="coerce").fillna(0.0) > 0)
+    )
+    out.loc[eligible, "trend_pullback_eligible"] = True
+    out.loc[eligible, "trend_pullback_side"] = "long"
+    score = (
+        h4_ret_6.clip(lower=0.0, upper=0.08) * 0.45
+        + ret_1.clip(lower=0.0, upper=0.04) * 0.35
+        + (ret_3.abs() / counter_limit.replace(0, np.nan)).fillna(0.0).clip(0.0, 1.0) * 0.01
+    )
+    out.loc[eligible, "trend_pullback_score"] = score[eligible]
+
+
+def _blocked_by_short_decay(df: pd.DataFrame) -> pd.Series:
+    side = df["side"].astype(str)
+    ret_1 = _numeric_col(df, "ret_1")
+    ret_3 = _numeric_col(df, "ret_3")
+    close_to_low = _numeric_col(df, "close_to_low", 1.0)
+    bounce = ret_3.clip(lower=0.0)
+    fade = ret_1.abs()
+    decay_confirmed = (fade >= bounce * 0.25) & (close_to_low <= 0.006) & (bounce <= 0.03)
+    return (side == "short") & ~decay_confirmed
+
+
+def _numeric_col(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
+    if col not in df.columns:
+        return pd.Series(default, index=df.index, dtype=float)
+    return pd.to_numeric(df[col], errors="coerce").fillna(default)
 
 
 def _blocked_by_crowding(df: pd.DataFrame) -> pd.Series:
@@ -660,6 +728,7 @@ def _open_live_positions(
         threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
         c_auto_symbols = set(c_auto_group[c_auto_group["score"] >= threshold]["symbol"].astype(str))
         group.loc[~group["symbol"].astype(str).isin(c_auto_symbols), "eligible"] = False
+    _limit_trend_pullback_candidates(group, positions)
     signals = build_committee_signals(
         group,
         now_ts,
@@ -829,6 +898,25 @@ def _leverage_policy(
     )
     policy["legacy_policy_id"] = "c_auto_v2_committee_leverage_v1"
     return policy
+
+
+def _limit_trend_pullback_candidates(group: pd.DataFrame, positions: dict[str, dict[str, Any]]) -> None:
+    if "trend_pullback_eligible" not in group.columns:
+        return
+    has_open_sleeve = any(
+        str(pos.get("source_strategy_id") or "") == "trend_pullback_reversal_long"
+        for pos in positions.values()
+    )
+    eligible = group["trend_pullback_eligible"].astype(bool)
+    if has_open_sleeve:
+        group.loc[eligible, "trend_pullback_eligible"] = False
+        return
+    if int(eligible.sum()) <= 1:
+        return
+    score = pd.to_numeric(group.loc[eligible, "trend_pullback_score"], errors="coerce").fillna(-math.inf)
+    keep_idx = score.idxmax()
+    drop_idx = eligible[eligible].index.difference([keep_idx])
+    group.loc[drop_idx, "trend_pullback_eligible"] = False
 
 
 def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> float:
@@ -1124,6 +1212,9 @@ def _candidate_snapshot(scored: pd.DataFrame, now_ts: pd.Timestamp) -> list[dict
                 "score": _json_float(row.get("score")),
                 "eligible": bool(row.get("eligible", False)),
                 "blocked_by_crowding": bool(row.get("blocked_by_crowding", False)),
+                "blocked_by_short_decay": bool(row.get("blocked_by_short_decay", False)),
+                "trend_pullback_eligible": bool(row.get("trend_pullback_eligible", False)),
+                "trend_pullback_score": _json_float(row.get("trend_pullback_score")),
             }
         )
     return out
