@@ -83,7 +83,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-market-age-sec", type=float, default=2 * 3600.0)
     p.add_argument("--min-fresh-symbols", type=int, default=20)
     p.add_argument("--require-derivatives", action="store_true")
-    p.add_argument("--max-positions", type=int, default=4)
+    p.add_argument("--max-positions", type=int, default=15)
+    p.add_argument("--paper-max-positions-per-strategy", type=int, default=5)
     p.add_argument("--rebalance-hours", type=int, default=6)
     p.add_argument("--base-risk", type=float, default=0.06)
     p.add_argument("--default-leverage", type=float, default=1.0)
@@ -96,6 +97,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--min-score-quantile", type=float, default=0.90)
     p.add_argument("--min-volume-usd", type=float, default=100_000.0)
     p.add_argument("--disable-trend-pullback-paper", action="store_true")
+    p.add_argument("--disable-daily-fib-paper", action="store_true")
     p.add_argument("--fee-bps-per-side", type=float, default=5.0)
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--loop", action="store_true")
@@ -186,7 +188,11 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     train_labels = _read_frame(dataset_dir / "labels.parquet", dataset_dir / "labels.pkl").sort_index()
     latest_features = _build_latest_features(args)
     predictions = _predict_policy(policy, train_features, train_labels, latest_features, args)
-    scored = _build_portfolio_scores(predictions, enable_trend_pullback=not bool(args.disable_trend_pullback_paper))
+    scored = _build_portfolio_scores(
+        predictions,
+        enable_trend_pullback=not bool(args.disable_trend_pullback_paper),
+        enable_daily_fib=not bool(args.disable_daily_fib_paper),
+    )
     now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
     freshness = _freshness_report(latest_features, now_ts, args)
     previous = _load_live_state(args)
@@ -454,7 +460,12 @@ def _score_col(sleeve_id: str, regime: str, label_col: str) -> str:
     return f"{sleeve_id}__{regime}__{side}{horizon}"
 
 
-def _build_portfolio_scores(df: pd.DataFrame, *, enable_trend_pullback: bool = False) -> pd.DataFrame:
+def _build_portfolio_scores(
+    df: pd.DataFrame,
+    *,
+    enable_trend_pullback: bool = False,
+    enable_daily_fib: bool = False,
+) -> pd.DataFrame:
     out = df.copy()
     for col in (
         "cross_section_spread__strong_bull__long24",
@@ -526,6 +537,12 @@ def _build_portfolio_scores(df: pd.DataFrame, *, enable_trend_pullback: bool = F
     out["trend_pullback_score"] = np.nan
     if enable_trend_pullback:
         _attach_trend_pullback_reversal(out)
+    out["daily_fib_eligible"] = False
+    out["daily_fib_side"] = ""
+    out["daily_fib_score"] = np.nan
+    out["daily_fib_support"] = np.nan
+    if enable_daily_fib:
+        _attach_daily_fib_support_rebound(out)
     return out
 
 
@@ -561,6 +578,81 @@ def _attach_trend_pullback_reversal(out: pd.DataFrame) -> None:
         + (ret_3.abs() / counter_limit.replace(0, np.nan)).fillna(0.0).clip(0.0, 1.0) * 0.01
     )
     out.loc[eligible, "trend_pullback_score"] = score[eligible]
+
+
+def _attach_daily_fib_support_rebound(out: pd.DataFrame) -> None:
+    for idx, row in out.iterrows():
+        symbol = str(row.get("symbol") or "")
+        if not symbol:
+            continue
+        idx_ts = idx[0] if isinstance(idx, tuple) else idx
+        signal = _daily_fib_signal_for_symbol(symbol, pd.Timestamp(idx_ts), row)
+        if not signal:
+            continue
+        out.loc[idx, "daily_fib_eligible"] = True
+        out.loc[idx, "daily_fib_side"] = "long"
+        out.loc[idx, "daily_fib_score"] = signal["score"]
+        out.loc[idx, "daily_fib_support"] = signal["support"]
+
+
+def _daily_fib_signal_for_symbol(symbol: str, now_ts: pd.Timestamp, row: pd.Series) -> dict[str, float] | None:
+    safe = symbol.replace("/", "_").replace(":", "_")
+    daily = _load_ohlcv_cache_by_safe(safe, "1d")
+    h4 = _load_ohlcv_cache_by_safe(safe, "4h")
+    if len(daily) < 80 or len(h4) < 12:
+        return None
+    daily = daily.loc[daily.index <= now_ts]
+    h4 = h4.loc[h4.index <= now_ts]
+    if len(daily) < 80 or len(h4) < 6:
+        return None
+    close_d = daily["close"].astype(float)
+    high = daily["high"].rolling(60, min_periods=30).max().shift(1)
+    low = daily["low"].rolling(60, min_periods=30).min().shift(1)
+    sma = close_d.rolling(40, min_periods=20).mean()
+    impulse = high / low - 1.0
+    if not bool((close_d.iloc[-1] >= sma.iloc[-1]) and (impulse.iloc[-1] >= 0.12) and (high.iloc[-1] > low.iloc[-1])):
+        return None
+    support = float(high.iloc[-1] - 0.786 * (high.iloc[-1] - low.iloc[-1]))
+    recent = h4.tail(6)
+    last = recent.iloc[-1]
+    prev = recent.iloc[-2]
+    close = float(last["close"])
+    low_4h = float(last["low"])
+    open_4h = float(last["open"])
+    if support <= 0 or close <= 0 or low_4h <= 0:
+        return None
+    touched = low_4h <= support * 1.004
+    not_broken = low_4h >= support * (1.0 - 0.012)
+    reclaimed = close >= support * 1.001
+    distance_ok = close / support - 1.0 <= 0.012
+    confirmed = ((close > open_4h) and (close > float(prev["close"]))) or (close > float(prev["high"]))
+    if not (touched and not_broken and reclaimed and distance_ok and confirmed):
+        return None
+    row_close = float(row.get("close") or close)
+    if row_close > 0 and abs(row_close / close - 1.0) > 0.035:
+        return None
+    score = min(0.08, max(0.0, float(impulse.iloc[-1]))) * 0.35
+    score += min(0.04, max(0.0, close / support - 1.0)) * 0.35
+    score += min(0.04, max(0.0, close / float(prev["close"]) - 1.0)) * 0.30
+    return {"support": support, "score": max(score, 0.001)}
+
+
+def _load_ohlcv_cache_by_safe(safe_symbol: str, timeframe: str) -> pd.DataFrame:
+    path = DATA_DIR / f"{safe_symbol}_futures_{timeframe}.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        df = pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+    if df.empty:
+        return df
+    df = df.copy()
+    df.index = pd.to_datetime(df.index, utc=True)
+    df = df.sort_index()
+    for col in ("open", "high", "low", "close"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["open", "high", "low", "close"])
 
 
 def _blocked_by_short_decay(df: pd.DataFrame) -> pd.Series:
@@ -728,13 +820,34 @@ def _open_live_positions(
         threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
         c_auto_symbols = set(c_auto_group[c_auto_group["score"] >= threshold]["symbol"].astype(str))
         group.loc[~group["symbol"].astype(str).isin(c_auto_symbols), "eligible"] = False
-    _limit_trend_pullback_candidates(group, positions)
+    per_strategy_cap = max(1, int(getattr(args, "paper_max_positions_per_strategy", 5)))
+    _limit_strategy_candidates(
+        group,
+        positions,
+        strategy_id="trend_pullback_reversal_long",
+        eligible_col="trend_pullback_eligible",
+        score_col="trend_pullback_score",
+        max_open=per_strategy_cap,
+    )
+    _limit_strategy_candidates(
+        group,
+        positions,
+        strategy_id="daily_fib_support_rebound_long",
+        eligible_col="daily_fib_eligible",
+        score_col="daily_fib_score",
+        max_open=per_strategy_cap,
+    )
     signals = build_committee_signals(
         group,
         now_ts,
         base_capital=float(args.fixed_notional_capital),
         base_risk=float(args.base_risk),
         fee_slip_rate=_round_trip_cost_rate(args),
+    )
+    signals = _filter_signals_by_strategy_cap(
+        signals,
+        positions,
+        max_open=max(1, int(getattr(args, "paper_max_positions_per_strategy", 5))),
     )
     result = arbitrate_signals(
         signals,
@@ -900,23 +1013,58 @@ def _leverage_policy(
     return policy
 
 
-def _limit_trend_pullback_candidates(group: pd.DataFrame, positions: dict[str, dict[str, Any]]) -> None:
-    if "trend_pullback_eligible" not in group.columns:
+def _limit_strategy_candidates(
+    group: pd.DataFrame,
+    positions: dict[str, dict[str, Any]],
+    *,
+    strategy_id: str,
+    eligible_col: str,
+    score_col: str,
+    max_open: int,
+) -> None:
+    if eligible_col not in group.columns:
         return
-    has_open_sleeve = any(
-        str(pos.get("source_strategy_id") or "") == "trend_pullback_reversal_long"
+    open_count = sum(
+        1
         for pos in positions.values()
+        if str(pos.get("source_strategy_id") or "") == strategy_id
     )
-    eligible = group["trend_pullback_eligible"].astype(bool)
-    if has_open_sleeve:
-        group.loc[eligible, "trend_pullback_eligible"] = False
+    slots = max(0, int(max_open) - int(open_count))
+    eligible = group[eligible_col].astype(bool)
+    if slots <= 0:
+        group.loc[eligible, eligible_col] = False
         return
-    if int(eligible.sum()) <= 1:
+    if int(eligible.sum()) <= slots:
         return
-    score = pd.to_numeric(group.loc[eligible, "trend_pullback_score"], errors="coerce").fillna(-math.inf)
-    keep_idx = score.idxmax()
-    drop_idx = eligible[eligible].index.difference([keep_idx])
-    group.loc[drop_idx, "trend_pullback_eligible"] = False
+    score = pd.to_numeric(group.loc[eligible, score_col], errors="coerce").fillna(-math.inf)
+    keep_idx = set(score.nlargest(slots).index)
+    drop_idx = [
+        idx
+        for idx in eligible[eligible].index
+        if idx not in keep_idx
+    ]
+    group.loc[drop_idx, eligible_col] = False
+
+
+def _filter_signals_by_strategy_cap(
+    signals: list[Any],
+    positions: dict[str, dict[str, Any]],
+    max_open: int,
+) -> list[Any]:
+    open_count: dict[str, int] = {}
+    for pos in positions.values():
+        sid = str(pos.get("source_strategy_id") or "")
+        if sid:
+            open_count[sid] = open_count.get(sid, 0) + 1
+    accepted: list[Any] = []
+    new_count: dict[str, int] = {}
+    for signal in sorted(signals, key=lambda s: (float(getattr(s, "confidence", 0.0) or 0.0), float(getattr(s, "forward_ev", 0.0) or 0.0)), reverse=True):
+        sid = str(getattr(signal, "strategy_id", "") or "")
+        if open_count.get(sid, 0) + new_count.get(sid, 0) >= int(max_open):
+            continue
+        accepted.append(signal)
+        new_count[sid] = new_count.get(sid, 0) + 1
+    return accepted
 
 
 def _mark_live_nav(realized_nav: float, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> float:
@@ -1215,6 +1363,9 @@ def _candidate_snapshot(scored: pd.DataFrame, now_ts: pd.Timestamp) -> list[dict
                 "blocked_by_short_decay": bool(row.get("blocked_by_short_decay", False)),
                 "trend_pullback_eligible": bool(row.get("trend_pullback_eligible", False)),
                 "trend_pullback_score": _json_float(row.get("trend_pullback_score")),
+                "daily_fib_eligible": bool(row.get("daily_fib_eligible", False)),
+                "daily_fib_score": _json_float(row.get("daily_fib_score")),
+                "daily_fib_support": _json_float(row.get("daily_fib_support")),
             }
         )
     return out

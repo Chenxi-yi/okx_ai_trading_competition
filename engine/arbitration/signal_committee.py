@@ -34,6 +34,9 @@ def build_committee_signals(
         trend_pullback = _trend_pullback_reversal_signal(row, now_ts, base_capital, base_risk, fee_slip_rate)
         if trend_pullback:
             signals.append(trend_pullback)
+        daily_fib = _daily_fib_support_rebound_signal(row, now_ts, base_capital, base_risk, fee_slip_rate)
+        if daily_fib:
+            signals.append(daily_fib)
         signals.extend(_oi_compression_signals(row, now_ts, base_capital, base_risk, fee_slip_rate))
         signals.extend(_crowding_reversal_signals(row, now_ts, base_capital, base_risk, fee_slip_rate))
     return signals
@@ -154,6 +157,52 @@ def _trend_pullback_reversal_signal(
             "ret_3": _float(row.get("ret_3")),
             "close_to_high": _float(row.get("close_to_high")),
             "risk_scalar": 0.35,
+            "leverage": 1.0,
+            "size_semantics": "notional_usdt",
+        },
+    )
+
+
+def _daily_fib_support_rebound_signal(
+    row: pd.Series,
+    now_ts: pd.Timestamp,
+    base_capital: float,
+    base_risk: float,
+    fee_slip_rate: float,
+) -> Signal | None:
+    if not bool(row.get("daily_fib_eligible", False)):
+        return None
+    side = str(row.get("daily_fib_side") or "")
+    if side != "long":
+        return None
+    entry = _float(row.get("close"))
+    support = _float(row.get("daily_fib_support"))
+    score = _float(row.get("daily_fib_score"), 0.0)
+    if entry <= 0 or support <= 0 or score <= 0:
+        return None
+    stop_pct = max(0.012, min(0.028, entry / (support * (1.0 - 0.006)) - 1.0))
+    target_pct = max(0.018, min(0.045, stop_pct * 1.8))
+    p_target = _clip(0.54 + min(score, 0.03) * 2.5 - fee_slip_rate, 0.52, 0.64)
+    return _signal(
+        strategy_id="daily_fib_support_rebound_long",
+        symbol=str(row.get("symbol")),
+        side="long",
+        now_ts=now_ts,
+        entry=entry,
+        target_pct=target_pct,
+        stop_pct=stop_pct,
+        horizon_hours=48,
+        p_target=p_target,
+        confidence=_clip(0.53 + score * 10.0, 0.53, 0.80),
+        risk_budget_usdt=float(base_capital) * float(base_risk) * 0.30,
+        metadata={
+            "signal_family": "daily_fib_support_rebound",
+            "structure_timeframe": "1d",
+            "entry_timeframe": "4h",
+            "fib_ratio": 0.786,
+            "support": support,
+            "score": score,
+            "risk_scalar": 0.30,
             "leverage": 1.0,
             "size_semantics": "notional_usdt",
         },
