@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Research 20-day Donchian breakout entries.
+"""Research key-level breakout entries.
 
 Signal idea:
-- close above the prior N-day high -> long
-- close below the prior N-day low -> short
+- close above a prior resistance level -> long
+- close below a prior support level -> short
 
-The backtest uses daily bars, confirms on daily close, and enters at the next
-daily open to avoid look-ahead bias.
+The backtest uses daily bars. The default mode confirms on daily close and
+enters at the next daily open to avoid look-ahead bias. It can also wait for a
+post-breakout retest before entry.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ OUT_ROOT = DATA_DIR / "research" / "donchian_breakout"
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Research N-day Donchian breakout entries")
+    p = argparse.ArgumentParser(description="Research daily key-level breakout entries")
     p.add_argument("--dataset-id", default="c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1")
     p.add_argument("--symbol-source", choices=["feature", "cache"], default="cache")
     p.add_argument("--start", default="2025-01-01")
@@ -38,8 +39,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-symbols", type=int, default=100)
     p.add_argument("--min-volume-usd", type=float, default=200_000.0)
     p.add_argument("--min-listing-days", type=float, default=80.0)
+    p.add_argument("--level-kind", choices=["donchian", "swing"], default="donchian")
     p.add_argument("--lookback-days", type=int, default=20)
+    p.add_argument("--swing-left-days", type=int, default=3)
+    p.add_argument("--swing-right-days", type=int, default=3)
     p.add_argument("--breakout-buffer-pct", type=float, default=0.0)
+    p.add_argument("--entry-mode", choices=["close", "retest"], default="close")
+    p.add_argument("--retest-days", type=int, default=3)
+    p.add_argument("--retest-tolerance-pct", type=float, default=0.006)
+    p.add_argument("--side-filter", choices=["both", "long", "short"], default="both")
     p.add_argument("--trend-filter", choices=["none", "sma60", "sma120"], default="none")
     p.add_argument("--volume-filter", choices=["none", "above_sma20"], default="none")
     p.add_argument("--atr-window", type=int, default=14)
@@ -51,12 +59,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--out-id", default=None)
     p.add_argument("--sweep", action="store_true")
+    p.add_argument("--sweep-family", action="store_true")
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     symbols = _select_symbols(args)
+    if args.sweep_family:
+        out_dir = _run_family_sweep(symbols, args)
+        print(json.dumps({"out_dir": str(out_dir.relative_to(ROOT))}, ensure_ascii=False, indent=2))
+        return 0
     if args.sweep:
         out_dir = _run_sweep(symbols, args)
         print(json.dumps({"out_dir": str(out_dir.relative_to(ROOT))}, ensure_ascii=False, indent=2))
@@ -78,6 +91,8 @@ def _run_sweep(symbols: list[str], args: argparse.Namespace) -> Path:
                     for target_r in (1.2, 1.6, 2.0, 2.5):
                         for hold_days in (5, 10, 15, 20):
                             cfg = argparse.Namespace(**vars(args))
+                            cfg.level_kind = str(args.level_kind)
+                            cfg.entry_mode = str(args.entry_mode)
                             cfg.breakout_buffer_pct = buffer_pct
                             cfg.trend_filter = trend_filter
                             cfg.volume_filter = volume_filter
@@ -120,7 +135,103 @@ def _run_sweep(symbols: list[str], args: argparse.Namespace) -> Path:
         _, cfg, trades, summary = best
         payload["best_config"] = {
             key: getattr(cfg, key)
-            for key in ("lookback_days", "breakout_buffer_pct", "trend_filter", "volume_filter", "stop_atr", "target_r", "max_hold_days")
+            for key in (
+                "level_kind",
+                "lookback_days",
+                "breakout_buffer_pct",
+                "entry_mode",
+                "side_filter",
+                "trend_filter",
+                "volume_filter",
+                "stop_atr",
+                "target_r",
+                "max_hold_days",
+            )
+        }
+        payload["best_summary"] = summary
+        payload["best_recent"] = _period_summary(trades, str(cfg.recent_start))
+        if not trades.empty:
+            trades.to_csv(out_dir / "best_trades.csv", index=False)
+    (out_dir / "summary.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
+    (out_dir / "report.md").write_text(_sweep_markdown(payload))
+    return out_dir
+
+
+def _run_family_sweep(symbols: list[str], args: argparse.Namespace) -> Path:
+    rows: list[dict[str, Any]] = []
+    best: tuple[float, argparse.Namespace, pd.DataFrame, dict[str, Any]] | None = None
+    configs: list[dict[str, Any]] = []
+    for level_kind in ("donchian", "swing"):
+        for lookback_days in (10, 20, 30, 55, 90):
+            for entry_mode in ("close", "retest"):
+                for side_filter in ("both", "long", "short"):
+                    for trend_filter in ("none", "sma60", "sma120"):
+                        for volume_filter in ("none", "above_sma20"):
+                            configs.append(
+                                {
+                                    "level_kind": level_kind,
+                                    "lookback_days": lookback_days,
+                                    "entry_mode": entry_mode,
+                                    "side_filter": side_filter,
+                                    "trend_filter": trend_filter,
+                                    "volume_filter": volume_filter,
+                                }
+                            )
+    for item in configs:
+        cfg = argparse.Namespace(**vars(args))
+        for key, value in item.items():
+            setattr(cfg, key, value)
+        cfg.breakout_buffer_pct = 0.0025
+        cfg.stop_atr = 2.0
+        cfg.target_r = 1.8
+        cfg.max_hold_days = 10
+        trades = _research_symbols(symbols, cfg)
+        summary = _summarize(trades, cfg)
+        recent = _period_summary(trades, str(cfg.recent_start))
+        score = _sweep_score(summary, recent)
+        rows.append(
+            {
+                "score": score,
+                **item,
+                "breakout_buffer_pct": cfg.breakout_buffer_pct,
+                "stop_atr": cfg.stop_atr,
+                "target_r": cfg.target_r,
+                "max_hold_days": cfg.max_hold_days,
+                **{f"summary_{k}": v for k, v in summary.items() if isinstance(v, (int, float, str))},
+                **{f"recent_{k}": v for k, v in recent.items()},
+            }
+        )
+        if best is None or score > best[0]:
+            best = (score, cfg, trades, summary)
+    out_id = args.out_id or f"breakout_level_family_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    out_dir = OUT_ROOT / out_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = pd.DataFrame(rows).sort_values("score", ascending=False)
+    results.to_csv(out_dir / "sweep_results.csv", index=False)
+    results.head(40).to_csv(out_dir / "top40.csv", index=False)
+    payload: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "args": vars(args),
+        "symbols": len(symbols),
+        "configs_tested": len(rows),
+        "top": results.head(15).to_dict(orient="records"),
+    }
+    if best is not None:
+        _, cfg, trades, summary = best
+        payload["best_config"] = {
+            key: getattr(cfg, key)
+            for key in (
+                "level_kind",
+                "lookback_days",
+                "breakout_buffer_pct",
+                "entry_mode",
+                "side_filter",
+                "trend_filter",
+                "volume_filter",
+                "stop_atr",
+                "target_r",
+                "max_hold_days",
+            )
         }
         payload["best_summary"] = summary
         payload["best_recent"] = _period_summary(trades, str(cfg.recent_start))
@@ -184,8 +295,7 @@ def _load_daily(symbol: str, args: argparse.Namespace) -> pd.DataFrame:
 
 def _research_symbol(symbol: str, df: pd.DataFrame, args: argparse.Namespace) -> list[dict[str, Any]]:
     lookback = int(args.lookback_days)
-    channel_high = df["high"].rolling(lookback, min_periods=lookback).max().shift(1)
-    channel_low = df["low"].rolling(lookback, min_periods=lookback).min().shift(1)
+    channel_high, channel_low = _level_series(df, args)
     atr_abs = _atr_abs(df, int(args.atr_window))
     sma60 = df["close"].rolling(60, min_periods=40).mean()
     sma120 = df["close"].rolling(120, min_periods=80).mean()
@@ -208,13 +318,70 @@ def _research_symbol(symbol: str, df: pd.DataFrame, args: argparse.Namespace) ->
             side = "short"
         if not side:
             continue
+        if str(args.side_filter) != "both" and side != str(args.side_filter):
+            continue
         if not _filters_pass(df, i, side, sma60, sma120, volume_sma20, args):
             continue
-        trade = _simulate_trade(symbol, df, atr_abs, channel_high, channel_low, i, side, args)
+        entry_idx = _entry_index_after_signal(df, i, side, high_level if side == "long" else low_level, args)
+        if entry_idx is None:
+            continue
+        trade = _simulate_trade(symbol, df, atr_abs, channel_high, channel_low, i, entry_idx, side, args)
         if trade:
             trades.append(trade)
             last_exit_idx = int(trade["exit_idx"])
     return trades
+
+
+def _level_series(df: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.Series, pd.Series]:
+    lookback = int(args.lookback_days)
+    if str(args.level_kind) == "swing":
+        return _swing_level_series(df, args)
+    high = df["high"].rolling(lookback, min_periods=lookback).max().shift(1)
+    low = df["low"].rolling(lookback, min_periods=lookback).min().shift(1)
+    return high, low
+
+
+def _swing_level_series(df: pd.DataFrame, args: argparse.Namespace) -> tuple[pd.Series, pd.Series]:
+    left = int(args.swing_left_days)
+    right = int(args.swing_right_days)
+    window = left + right + 1
+    high = df["high"].astype(float)
+    low = df["low"].astype(float)
+    pivot_high_mask = high == high.rolling(window, center=True, min_periods=window).max()
+    pivot_low_mask = low == low.rolling(window, center=True, min_periods=window).min()
+    pivot_high = high.where(pivot_high_mask).shift(right + 1)
+    pivot_low = low.where(pivot_low_mask).shift(right + 1)
+    confirmed_high = pivot_high.ffill()
+    confirmed_low = pivot_low.ffill()
+    fallback_high = high.rolling(int(args.lookback_days), min_periods=int(args.lookback_days)).max().shift(1)
+    fallback_low = low.rolling(int(args.lookback_days), min_periods=int(args.lookback_days)).min().shift(1)
+    return confirmed_high.fillna(fallback_high), confirmed_low.fillna(fallback_low)
+
+
+def _entry_index_after_signal(
+    df: pd.DataFrame,
+    signal_idx: int,
+    side: str,
+    level: float,
+    args: argparse.Namespace,
+) -> int | None:
+    if str(args.entry_mode) == "close":
+        return signal_idx + 1 if signal_idx + 1 < len(df) else None
+    max_retest_idx = min(signal_idx + int(args.retest_days), len(df) - 2)
+    tolerance = float(args.retest_tolerance_pct)
+    for j in range(signal_idx + 1, max_retest_idx + 1):
+        close = float(df["close"].iloc[j])
+        high = float(df["high"].iloc[j])
+        low = float(df["low"].iloc[j])
+        if side == "long":
+            touched = low <= level * (1.0 + tolerance)
+            held = close >= level
+        else:
+            touched = high >= level * (1.0 - tolerance)
+            held = close <= level
+        if touched and held:
+            return j + 1 if j + 1 < len(df) else None
+    return None
 
 
 def _filters_pass(
@@ -249,10 +416,10 @@ def _simulate_trade(
     channel_high: pd.Series,
     channel_low: pd.Series,
     signal_idx: int,
+    entry_idx: int,
     side: str,
     args: argparse.Namespace,
 ) -> dict[str, Any] | None:
-    entry_idx = signal_idx + 1
     entry = float(df["open"].iloc[entry_idx])
     atr = float(atr_abs.iloc[signal_idx] or math.nan)
     if not math.isfinite(atr) or atr <= 0 or entry <= 0:
@@ -306,6 +473,8 @@ def _simulate_trade(
     return {
         "symbol": symbol.replace("_USDT", "/USDT"),
         "side": side,
+        "level_kind": str(args.level_kind),
+        "entry_mode": str(args.entry_mode),
         "signal_ts": df.index[signal_idx].isoformat(),
         "entry_ts": df.index[entry_idx].isoformat(),
         "exit_ts": df.index[exit_idx].isoformat(),
@@ -439,6 +608,9 @@ def _single_markdown(payload: dict[str, Any]) -> str:
             "",
             f"- generated_at: `{payload['generated_at']}`",
             f"- lookback_days: `{args['lookback_days']}`",
+            f"- level_kind: `{args['level_kind']}`",
+            f"- entry_mode: `{args['entry_mode']}`",
+            f"- side_filter: `{args['side_filter']}`",
             f"- breakout_buffer_pct: `{args['breakout_buffer_pct']}`",
             f"- trend_filter: `{args['trend_filter']}`",
             f"- volume_filter: `{args['volume_filter']}`",
@@ -477,7 +649,7 @@ def _sweep_markdown(payload: dict[str, Any]) -> str:
         "|---:|---:|---|---:|---:|---:|---:|---:|",
     ]
     for idx, row in enumerate(payload.get("top", []), 1):
-        cfg = f"buf={row.get('breakout_buffer_pct')}, trend={row.get('trend_filter')}, vol={row.get('volume_filter')}, stop={row.get('stop_atr')}, r={row.get('target_r')}, hold={row.get('max_hold_days')}"
+        cfg = f"kind={row.get('level_kind')}, lb={row.get('lookback_days')}, entry={row.get('entry_mode')}, side={row.get('side_filter')}, buf={row.get('breakout_buffer_pct')}, trend={row.get('trend_filter')}, vol={row.get('volume_filter')}, stop={row.get('stop_atr')}, r={row.get('target_r')}, hold={row.get('max_hold_days')}"
         lines.append(
             f"| {idx} | {float(row.get('score') or 0):.3f} | {cfg} | {int(row.get('summary_trades') or 0)} | {_fmt_pct(row.get('summary_win_rate'))} | {_fmt_pct(row.get('summary_mean_net_return'))} | {int(row.get('recent_trades') or 0)} | {_fmt_pct(row.get('recent_mean_net_return'))} |"
         )
