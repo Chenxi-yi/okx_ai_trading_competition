@@ -45,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--trigger-range-frac", type=float, default=0.25)
     p.add_argument("--side-mode", choices=["both", "long", "short"], default="both")
     p.add_argument("--regime-allowlist", default="", help="Comma-separated btc_regime_6 values to allow")
+    p.add_argument("--short-decay-gate", choices=["off", "loose", "strict"], default="off")
+    p.add_argument("--short-decay-min-frac", type=float, default=0.25)
+    p.add_argument("--short-max-bounce-pct", type=float, default=0.03)
     p.add_argument("--target-pct", type=float, default=0.03)
     p.add_argument("--stop-pct", type=float, default=0.015)
     p.add_argument("--max-hold-hours", type=int, default=12)
@@ -116,6 +119,7 @@ def _run_sweep(args: argparse.Namespace) -> Path:
                                     "trigger_range_frac": 0.25,
                                     "max_countertrend_multiple": multiple,
                                     "max_hold_hours": hold,
+                                    "short_decay_gate": "strict" if side_mode == "short" else str(getattr(args, "short_decay_gate", "off")),
                                 }
                             )
                             configs.append(argparse.Namespace(**cfg))
@@ -292,6 +296,14 @@ def _research_feature_proxy(args: argparse.Namespace, prepared: pd.DataFrame | N
         (df["close_to_low"] <= near)
         | ((df["ret_1"].abs() > df["range_pct"].abs() * trigger_frac) & (df["close_to_low"] <= loose))
     )
+    short_decay_gate = str(getattr(args, "short_decay_gate", "off") or "off")
+    if short_decay_gate != "off":
+        bounce = df["ret_3"].clip(lower=0.0)
+        current_fade = df["ret_1"].abs()
+        fade_confirmed = (current_fade >= bounce * float(args.short_decay_min_frac)) & (df["close_to_low"] <= loose)
+        if short_decay_gate == "strict":
+            fade_confirmed &= bounce <= float(args.short_max_bounce_pct)
+        short_trigger &= fade_confirmed
     signal = (long_pullback & long_trigger) | (short_pullback & short_trigger)
     events = df[signal & df["fwd_ret"].notna()].copy()
     cost = 2.0 * (float(args.fee_bps_per_side) + float(args.slippage_bps_per_side)) / 10000.0

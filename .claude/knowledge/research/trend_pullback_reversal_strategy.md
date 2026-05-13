@@ -48,6 +48,27 @@ Short had strong full-history stats, but recent behavior degraded:
 | `bear,chop_short,deep_bear` | 5,990 | 54.91% | +0.555% | 92 trades, 32.61% win, -0.564% mean |
 | `bear,deep_bear` | 4,714 | 53.75% | +0.488% | 75 trades, 33.33% win, -0.367% mean |
 
+## Short Momentum Decay Gate
+
+Tested after the 2026-04 short degradation. The gate requires the 1h reversal candle to retrace enough of the preceding 3h bounce before allowing a short. `strict` also caps the size of the bounce.
+
+| Run | Gate | Full trades | Full win | Full mean | Since 2026-04-01 |
+|---|---|---:|---:|---:|---:|
+| `trend_pullback_reversal_short_decay_loose_v1` | loose, fade >= 25% of 3h bounce | 9,026 | 57.82% | +0.663% | 509 trades, 47.94% win, +0.017% mean |
+| `trend_pullback_reversal_short_decay_strict_v1` | strict, fade >= 25%, bounce <= 3% | 8,998 | 57.86% | +0.663% | 508 trades, 48.03% win, +0.023% mean |
+| `trend_pullback_reversal_short_decay_frac075_v1` | strict, fade >= 75%, bounce <= 3% | 6,850 | 56.79% | +0.613% | 381 trades, 46.19% win, +0.012% mean |
+
+Interpretation: decay gate helps avoid the worst squeeze losses, but recent short edge is still weak. Use it as a blocker for live short entries, not as proof that short should be promoted. Best next gate is:
+
+```text
+short allowed only if:
+  4h trend is down enough
+  and 1h has already faded at least 25% of the preceding 3h bounce
+  and the 3h bounce is not larger than 3%
+```
+
+Avoid adding bearish regime allowlist for this sleeve for now; recent filtered results were worse than the pure decay gate.
+
 ## Deployment Gate
 
 Do not promote short side until recent paper recovers. Candidate paper gate:
