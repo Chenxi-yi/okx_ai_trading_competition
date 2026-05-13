@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Research 4h Fibonacci-support rebound entries.
+"""Research Fibonacci-support rebound entries.
 
-The idea: use 4h structure to estimate retracement supports, then enter long
-on the 1h chart only after the support is touched and reclaimed.
+The idea: use a higher timeframe to estimate retracement supports, then enter
+long on a lower timeframe only after the support is touched and reclaimed.
 """
 
 from __future__ import annotations
@@ -30,14 +30,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dataset-id", default="c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1")
     p.add_argument("--symbol-source", choices=["feature", "cache"], default="feature")
     p.add_argument("--entry-timeframe", choices=["1h", "4h"], default="1h")
+    p.add_argument("--structure-timeframe", choices=["4h", "1d"], default="4h")
     p.add_argument("--start", default="2025-01-01")
     p.add_argument("--end", default=None)
     p.add_argument("--max-symbols", type=int, default=80)
     p.add_argument("--min-volume-usd", type=float, default=200_000.0)
     p.add_argument("--min-listing-days", type=float, default=60.0)
     p.add_argument("--lookback-4h-bars", type=int, default=42)
+    p.add_argument("--lookback-structure-bars", type=int, default=None)
     p.add_argument("--min-impulse-pct", type=float, default=0.08)
     p.add_argument("--trend-sma-4h", type=int, default=30)
+    p.add_argument("--trend-sma-structure", type=int, default=None)
     p.add_argument("--ratios", default="0.382,0.5,0.618,0.786")
     p.add_argument("--support-tolerance-pct", type=float, default=0.006)
     p.add_argument("--max-pierce-pct", type=float, default=0.012)
@@ -151,6 +154,10 @@ def _run_sweep(args: argparse.Namespace) -> Path:
                 "max_hold_hours",
                 "target_r",
                 "confirm_mode",
+                "entry_timeframe",
+                "structure_timeframe",
+                "lookback_structure_bars",
+                "trend_sma_structure",
             )
         }
         payload["best_summary"] = summary
@@ -165,7 +172,9 @@ def _run_sweep(args: argparse.Namespace) -> Path:
 def _select_symbols(args: argparse.Namespace) -> list[str]:
     h1 = {p.name.replace("_futures_1h.parquet", "") for p in CACHE_DIR.glob("*_futures_1h.parquet")}
     h4 = {p.name.replace("_futures_4h.parquet", "") for p in CACHE_DIR.glob("*_futures_4h.parquet")}
+    structure = {p.name.replace(f"_futures_{args.structure_timeframe}.parquet", "") for p in CACHE_DIR.glob(f"*_futures_{args.structure_timeframe}.parquet")}
     available = h4 if str(getattr(args, "entry_timeframe", "1h")) == "4h" else h1 & h4
+    available &= structure
     if str(getattr(args, "symbol_source", "feature")) == "cache":
         return sorted(symbol for symbol in available if symbol != "BTC_USDT")[: int(args.max_symbols)]
     path = FEATURE_DIR / args.dataset_id / "features.parquet"
@@ -192,12 +201,14 @@ def _select_symbols(args: argparse.Namespace) -> list[str]:
 def _research_symbols(symbols: list[str], args: argparse.Namespace) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for symbol in symbols:
-        h1 = _load_ohlcv(symbol, str(getattr(args, "entry_timeframe", "1h")), args)
-        h4 = _load_ohlcv(symbol, "4h", args)
+        execution = _load_ohlcv(symbol, str(getattr(args, "entry_timeframe", "1h")), args)
+        structure = _load_ohlcv(symbol, str(getattr(args, "structure_timeframe", "4h")), args)
         min_exec_bars = 80 if str(getattr(args, "entry_timeframe", "1h")) == "4h" else 96
-        if len(h1) < min_exec_bars or len(h4) < max(80, int(args.lookback_4h_bars) + 20):
+        lookback = _structure_lookback(args)
+        min_structure_bars = max(80 if str(getattr(args, "structure_timeframe", "4h")) == "4h" else 120, lookback + 20)
+        if len(execution) < min_exec_bars or len(structure) < min_structure_bars:
             continue
-        rows.extend(_research_symbol(symbol, h1, h4, args))
+        rows.extend(_research_symbol(symbol, execution, structure, args))
     return pd.DataFrame(rows)
 
 
@@ -216,38 +227,39 @@ def _load_ohlcv(symbol: str, timeframe: str, args: argparse.Namespace) -> pd.Dat
     return df.dropna(subset=["open", "high", "low", "close"])
 
 
-def _research_symbol(symbol: str, h1: pd.DataFrame, h4: pd.DataFrame, args: argparse.Namespace) -> list[dict[str, Any]]:
-    h4_state = _h4_fib_state(h4, args)
-    h1 = h1.join(h4_state.reindex(h1.index, method="ffill"), how="left")
-    ret = h1["close"].pct_change()
-    atr = _atr_pct(h1, 14).fillna(ret.abs().rolling(24, min_periods=8).median() * 4.0)
+def _research_symbol(symbol: str, execution: pd.DataFrame, structure: pd.DataFrame, args: argparse.Namespace) -> list[dict[str, Any]]:
+    fib_state = _fib_state(structure, args)
+    execution = execution.join(fib_state.reindex(execution.index, method="ffill"), how="left")
+    ret = execution["close"].pct_change()
+    atr = _atr_pct(execution, 14).fillna(ret.abs().rolling(24, min_periods=8).median() * 4.0)
     trades: list[dict[str, Any]] = []
     last_exit_ts: pd.Timestamp | None = None
-    for i in range(6, len(h1) - 2):
-        now = h1.index[i]
+    for i in range(6, len(execution) - 2):
+        now = execution.index[i]
         if last_exit_ts is not None and now < last_exit_ts + pd.Timedelta(hours=int(args.cooldown_hours)):
             continue
-        row = h1.iloc[i]
+        row = execution.iloc[i]
         if not bool(row.get("fib_valid", False)):
             continue
-        signal = _support_reclaim_signal(h1.iloc[i - 5 : i + 1], args)
+        signal = _support_reclaim_signal(execution.iloc[i - 5 : i + 1], args)
         if not signal:
             continue
-        trade = _simulate_trade(symbol, h1, atr, i, signal, args)
+        trade = _simulate_trade(symbol, execution, atr, i, signal, args)
         if trade:
             trades.append(trade)
             last_exit_ts = pd.Timestamp(trade["exit_ts"])
     return trades
 
 
-def _h4_fib_state(h4: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
-    out = pd.DataFrame(index=h4.index)
-    close = h4["close"].astype(float)
-    lookback = int(args.lookback_4h_bars)
-    high = h4["high"].rolling(lookback, min_periods=max(12, lookback // 2)).max().shift(1)
-    low = h4["low"].rolling(lookback, min_periods=max(12, lookback // 2)).min().shift(1)
+def _fib_state(structure: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+    out = pd.DataFrame(index=structure.index)
+    close = structure["close"].astype(float)
+    lookback = _structure_lookback(args)
+    high = structure["high"].rolling(lookback, min_periods=max(12, lookback // 2)).max().shift(1)
+    low = structure["low"].rolling(lookback, min_periods=max(12, lookback // 2)).min().shift(1)
     impulse = high / low - 1.0
-    sma = close.rolling(int(args.trend_sma_4h), min_periods=max(8, int(args.trend_sma_4h) // 2)).mean()
+    trend_sma = _structure_sma(args)
+    sma = close.rolling(trend_sma, min_periods=max(8, trend_sma // 2)).mean()
     trend_ok = (close >= sma) & (impulse >= float(args.min_impulse_pct)) & (high > low)
     ratios = _parse_ratios(args.ratios)
     levels = []
@@ -261,6 +273,24 @@ def _h4_fib_state(h4: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
     out["fib_impulse"] = impulse
     out["fib_level_cols"] = ",".join(levels)
     return out
+
+
+def _structure_lookback(args: argparse.Namespace) -> int:
+    override = getattr(args, "lookback_structure_bars", None)
+    if override:
+        return int(override)
+    if str(getattr(args, "structure_timeframe", "4h")) == "1d":
+        return 60
+    return int(args.lookback_4h_bars)
+
+
+def _structure_sma(args: argparse.Namespace) -> int:
+    override = getattr(args, "trend_sma_structure", None)
+    if override:
+        return int(override)
+    if str(getattr(args, "structure_timeframe", "4h")) == "1d":
+        return 40
+    return int(args.trend_sma_4h)
 
 
 def _support_reclaim_signal(recent: pd.DataFrame, args: argparse.Namespace) -> dict[str, Any] | None:
@@ -367,7 +397,7 @@ def _simulate_trade(
         "r_multiple": net / risk_pct,
         "risk_pct": risk_pct,
         "target_pct": target / entry - 1.0,
-        "h4_impulse": float(h1["fib_impulse"].iloc[entry_idx]),
+        "structure_impulse": float(h1["fib_impulse"].iloc[entry_idx]),
     }
 
 
