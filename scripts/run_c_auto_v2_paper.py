@@ -91,6 +91,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-leverage", type=float, default=1.0)
     p.add_argument("--allow-aggressive-leverage", action="store_true")
     p.add_argument("--paper-force-kit-confirmation", action="store_true")
+    p.add_argument("--short-loss-cooldown-hours", type=float, default=12.0)
+    p.add_argument("--short-loss-lookback-hours", type=float, default=24.0)
+    p.add_argument("--short-loss-cooldown-min-losses", type=int, default=2)
     p.add_argument("--max-gross-leverage", type=float, default=0.25)
     p.add_argument("--max-position-nav-loss-pct", type=float, default=0.0015)
     p.add_argument("--max-stop-margin-loss-pct", type=float, default=0.15)
@@ -211,7 +214,8 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
         and last_rebalance_ts != now_ts.isoformat()
     )
     if should_rebalance:
-        new_positions, new_events = _open_live_positions(scored, positions, now_ts, args)
+        risk_events = list(previous.get("ledger_tail", [])) + ledger
+        new_positions, new_events = _open_live_positions(scored, positions, now_ts, args, risk_events)
         positions.update(new_positions)
         ledger.extend(new_events)
     elif not freshness_ok:
@@ -659,10 +663,21 @@ def _blocked_by_short_decay(df: pd.DataFrame) -> pd.Series:
     side = df["side"].astype(str)
     ret_1 = _numeric_col(df, "ret_1")
     ret_3 = _numeric_col(df, "ret_3")
+    h4_ret_1 = _numeric_col(df, "h4_ret_1")
+    h4_ret_6 = _numeric_col(df, "h4_ret_6")
     close_to_low = _numeric_col(df, "close_to_low", 1.0)
-    bounce = ret_3.clip(lower=0.0)
-    fade = ret_1.abs()
-    decay_confirmed = (fade >= bounce * 0.25) & (close_to_low <= 0.006) & (bounce <= 0.03)
+    latest_candle_faded = ret_1 <= -0.001
+    near_intrabar_low = close_to_low <= 0.004
+    no_4h_rebound = h4_ret_1 <= 0.0
+    no_24h_repair = h4_ret_6 <= 0.004
+    recent_bounce_contained = ret_3 <= 0.006
+    decay_confirmed = (
+        latest_candle_faded
+        & near_intrabar_low
+        & no_4h_rebound
+        & no_24h_repair
+        & recent_bounce_contained
+    )
     return (side == "short") & ~decay_confirmed
 
 
@@ -798,6 +813,7 @@ def _open_live_positions(
     positions: dict[str, dict[str, Any]],
     now_ts: pd.Timestamp,
     args: argparse.Namespace,
+    risk_events: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
     group = group[~group["symbol"].isin(positions)]
@@ -815,6 +831,34 @@ def _open_live_positions(
                 "net_return": None,
             }
         ]
+    events: list[dict[str, Any]] = []
+    short_cooldown = _short_loss_cooldown_status(
+        risk_events or [],
+        now_ts,
+        cooldown_hours=float(args.short_loss_cooldown_hours),
+        lookback_hours=float(args.short_loss_lookback_hours),
+        min_losses=int(args.short_loss_cooldown_min_losses),
+    )
+    if short_cooldown["active"]:
+        short_mask = group["side"].astype(str) == "short"
+        if bool(short_mask.any()):
+            group.loc[short_mask, "eligible"] = False
+            group.loc[short_mask, "short_entries_disabled"] = True
+            events.append(
+                {
+                    "ts": now_ts.isoformat(),
+                    "event": "committee_note",
+                    "symbol": None,
+                    "side": "short",
+                    "reason": (
+                        f"rejected portfolio_short_loss_cooldown_"
+                        f"{float(args.short_loss_cooldown_hours):g}h"
+                    ),
+                    "pnl": None,
+                    "net_return": None,
+                    "short_cooldown": short_cooldown,
+                }
+            )
     c_auto_group = group[group["eligible"].astype(bool)].copy()
     if not c_auto_group.empty:
         threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
@@ -864,7 +908,6 @@ def _open_live_positions(
         min_ev=0.0,
     )
     opened: dict[str, dict[str, Any]] = {}
-    events: list[dict[str, Any]] = []
     row_by_symbol = {str(row["symbol"]): row for _, row in group.iterrows()}
     for decision in result.decisions:
         signal = decision.signal
@@ -1011,6 +1054,73 @@ def _leverage_policy(
     )
     policy["legacy_policy_id"] = "c_auto_v2_committee_leverage_v1"
     return policy
+
+
+def _short_loss_cooldown_status(
+    events: list[dict[str, Any]],
+    now_ts: pd.Timestamp,
+    *,
+    cooldown_hours: float,
+    lookback_hours: float,
+    min_losses: int,
+) -> dict[str, Any]:
+    now = pd.Timestamp(now_ts)
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    else:
+        now = now.tz_convert("UTC")
+    if cooldown_hours <= 0 or lookback_hours <= 0 or min_losses <= 0:
+        return {"active": False, "losses": 0, "cooldown_until": ""}
+    lookback = pd.Timedelta(hours=float(lookback_hours))
+    short_losses: list[dict[str, Any]] = []
+    for event in events:
+        if str(event.get("event") or "") not in {"exit", "forced_exit"}:
+            continue
+        if str(event.get("side") or "") != "short":
+            continue
+        try:
+            pnl = float(event.get("pnl"))
+        except Exception:
+            continue
+        if pnl >= 0:
+            continue
+        ts = _parse_event_ts(event.get("ts"))
+        if ts is None or now - ts > lookback:
+            continue
+        short_losses.append({"ts": ts, "symbol": event.get("symbol"), "pnl": pnl, "reason": event.get("reason")})
+    if len(short_losses) < int(min_losses):
+        return {"active": False, "losses": len(short_losses), "cooldown_until": ""}
+    last_ts = max(item["ts"] for item in short_losses)
+    cooldown_until = last_ts + pd.Timedelta(hours=float(cooldown_hours))
+    return {
+        "active": now < cooldown_until,
+        "losses": len(short_losses),
+        "cooldown_until": cooldown_until.isoformat(),
+        "lookback_hours": float(lookback_hours),
+        "cooldown_hours": float(cooldown_hours),
+        "min_losses": int(min_losses),
+        "recent_losses": [
+            {
+                "ts": item["ts"].isoformat(),
+                "symbol": item["symbol"],
+                "pnl": item["pnl"],
+                "reason": item["reason"],
+            }
+            for item in short_losses[-5:]
+        ],
+    }
+
+
+def _parse_event_ts(value: Any) -> pd.Timestamp | None:
+    try:
+        ts = pd.Timestamp(value)
+    except Exception:
+        return None
+    if pd.isna(ts):
+        return None
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
 
 
 def _limit_strategy_candidates(

@@ -238,6 +238,8 @@ def _oi_compression_signals(
         side = "short" if funding_z > 1.2 or ls_z > 1.0 else "long"
     else:
         side = "long" if momentum > 0 else "short"
+    if side == "short" and bool(row.get("short_entries_disabled", False)):
+        return []
     strength = _clip(0.50 + abs(momentum) * 10.0 + min(max(oi_z, 0.0), 4.0) * 0.025, 0.52, 0.68)
     return [
         _signal(
@@ -287,6 +289,8 @@ def _crowding_reversal_signals(
     if not crowded_long and not crowded_short:
         return []
     side = "short" if crowded_long else "long"
+    if side == "short" and bool(row.get("short_entries_disabled", False)):
+        return []
     crowd_score = min(4.0, max(0.0, oi_z) + abs(funding_z) * 0.5 + abs(ls_z) * 0.5)
     p_target = _clip(0.53 + crowd_score * 0.025 + abs(ret_6) * 2.0 - fee_slip_rate, 0.52, 0.70)
     return [

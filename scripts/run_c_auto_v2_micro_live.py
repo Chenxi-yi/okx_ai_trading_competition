@@ -48,6 +48,7 @@ from run_c_auto_v2_paper import (  # noqa: E402
     _predict_policy,
     _read_frame,
     _round_trip_cost_rate,
+    _short_loss_cooldown_status,
     _valid_number,
 )
 
@@ -110,6 +111,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rebalance-hours", type=int, default=int(defaults.get("rebalance_hours", 6)))
     p.add_argument("--entry-scan-minutes", type=int, default=int(defaults.get("entry_scan_minutes", 15)))
     p.add_argument("--post-exit-cooldown-hours", type=float, default=float(defaults.get("post_exit_cooldown_hours", 4.0)))
+    p.add_argument("--short-loss-cooldown-hours", type=float, default=float(defaults.get("short_loss_cooldown_hours", 12.0)))
+    p.add_argument("--short-loss-lookback-hours", type=float, default=float(defaults.get("short_loss_lookback_hours", 24.0)))
+    p.add_argument("--short-loss-cooldown-min-losses", type=int, default=int(defaults.get("short_loss_cooldown_min_losses", 2)))
     p.add_argument("--run-on-start-entry", action="store_true", help="Allow the first clean cycle to open entries immediately")
     p.add_argument("--interval-sec", type=float, default=300.0)
     p.add_argument("--max-cycles", type=int, default=0)
@@ -217,7 +221,8 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     )
     if should_scan_entries:
         cooldown_symbols = _recent_exit_symbols(list(previous.get("ledger_tail", [])) + ledger, now_ts, float(args.post_exit_cooldown_hours))
-        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions, account_nav_usdt, cooldown_symbols)
+        risk_events = list(previous.get("ledger_tail", [])) + ledger
+        opened, open_events = _open_micro_positions(scored, positions, now_ts, args, max_positions, account_nav_usdt, cooldown_symbols, risk_events)
         positions.update(opened)
         ledger.extend(open_events)
     elif not freshness.get("passed"):
@@ -297,6 +302,7 @@ def _open_micro_positions(
     max_positions: int,
     account_nav_usdt: float,
     cooldown_symbols: set[str] | None = None,
+    risk_events: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     slots = max(0, int(max_positions) - len(positions))
     if slots <= 0:
@@ -311,6 +317,30 @@ def _open_micro_positions(
             events.append(_event(now_ts, "committee_note", symbol, None, f"rejected post_exit_cooldown_{float(args.post_exit_cooldown_hours):g}h"))
     group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
     group = group[group["volume_usd"] >= float(args.min_volume_usd)]
+    short_cooldown = _short_loss_cooldown_status(
+        risk_events or [],
+        now_ts,
+        cooldown_hours=float(args.short_loss_cooldown_hours),
+        lookback_hours=float(args.short_loss_lookback_hours),
+        min_losses=int(args.short_loss_cooldown_min_losses),
+    )
+    if short_cooldown["active"]:
+        short_mask = group["side"].astype(str) == "short"
+        if bool(short_mask.any()):
+            group.loc[short_mask, "eligible"] = False
+            group.loc[short_mask, "short_entries_disabled"] = True
+            events.append(
+                {
+                    **_event(
+                        now_ts,
+                        "committee_note",
+                        None,
+                        "short",
+                        f"rejected portfolio_short_loss_cooldown_{float(args.short_loss_cooldown_hours):g}h",
+                    ),
+                    "short_cooldown": short_cooldown,
+                }
+            )
     c_auto_group = group[group["eligible"].astype(bool)].copy()
     if not c_auto_group.empty:
         threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
