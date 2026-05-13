@@ -7,6 +7,7 @@
 | `elite_flow` | **Elite Flow** | tick/1min | mOFI + crowding + regime gate | 2x base, 5x cap | ✅ Active |
 | `monster_coin` | **Monster Coin Catcher** | 5m | volatility/range expansion + cross-sectional strength | research only | 🧪 Research |
 | `c_auto_v2` | **C-Auto v2** | 1h | BTC regime + alt cross-sectional ranking | research only | 🧪 Research |
+| `trend_pullback_reversal` | **Trend Pullback Reversal** | 4h/1h | 顺大周期趋势，逆小周期回调后反转入场 | research only | 🧪 Research |
 
 Capital: 300 USDT seed.
 

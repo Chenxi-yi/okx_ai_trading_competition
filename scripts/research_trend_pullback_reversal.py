@@ -38,6 +38,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pullback-bars", type=int, default=4)
     p.add_argument("--max-countertrend-multiple", type=float, default=4.0)
     p.add_argument("--max-countertrend-move-pct", type=float, default=0.045)
+    p.add_argument("--h4-trend-min", type=float, default=0.0)
+    p.add_argument("--h4-countertrend-allow", type=float, default=0.005)
+    p.add_argument("--near-extreme-pct", type=float, default=0.003)
+    p.add_argument("--loose-extreme-pct", type=float, default=0.006)
+    p.add_argument("--trigger-range-frac", type=float, default=0.25)
+    p.add_argument("--side-mode", choices=["both", "long", "short"], default="both")
+    p.add_argument("--regime-allowlist", default="", help="Comma-separated btc_regime_6 values to allow")
     p.add_argument("--target-pct", type=float, default=0.03)
     p.add_argument("--stop-pct", type=float, default=0.015)
     p.add_argument("--max-hold-hours", type=int, default=12)
@@ -45,11 +52,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--out-id", default=None)
     p.add_argument("--mode", choices=["feature_proxy", "ohlcv_path"], default="feature_proxy")
+    p.add_argument("--sweep", action="store_true", help="Run a conservative parameter sweep for feature_proxy mode")
+    p.add_argument("--sweep-depth", choices=["quick", "full"], default="quick")
+    p.add_argument("--recent-start", default="2026-04-01")
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.sweep:
+        out_dir = _run_sweep(args)
+        print(json.dumps({"out_dir": str(out_dir.relative_to(ROOT))}, ensure_ascii=False, indent=2))
+        return 0
     if args.mode == "feature_proxy":
         rows = _research_feature_proxy(args)
     else:
@@ -68,7 +82,137 @@ def main() -> int:
     return 0
 
 
-def _research_feature_proxy(args: argparse.Namespace) -> list[dict[str, Any]]:
+def _run_sweep(args: argparse.Namespace) -> Path:
+    base = _prepare_feature_proxy_frame(args)
+    configs = []
+    if args.sweep_depth == "full":
+        side_modes = ("both", "long", "short")
+        h4_trend_mins = (0.0, 0.006, 0.012)
+        h4_allows = (0.0025, 0.005, 0.01)
+        nears = (0.0015, 0.003, 0.006)
+        multiples = (3.0, 4.0, 6.0)
+        holds = (6, 8, 12)
+    else:
+        side_modes = ("long", "short")
+        h4_trend_mins = (0.0, 0.006, 0.012)
+        h4_allows = (0.005,)
+        nears = (0.0015, 0.003)
+        multiples = (4.0,)
+        holds = (6, 12)
+    for side_mode in side_modes:
+        for h4_trend_min in h4_trend_mins:
+            for h4_allow in h4_allows:
+                for near in nears:
+                    for multiple in multiples:
+                        for hold in holds:
+                            cfg = vars(args).copy()
+                            cfg.update(
+                                {
+                                    "side_mode": side_mode,
+                                    "h4_trend_min": h4_trend_min,
+                                    "h4_countertrend_allow": h4_allow,
+                                    "near_extreme_pct": near,
+                                    "loose_extreme_pct": near * 2.0,
+                                    "trigger_range_frac": 0.25,
+                                    "max_countertrend_multiple": multiple,
+                                    "max_hold_hours": hold,
+                                }
+                            )
+                            configs.append(argparse.Namespace(**cfg))
+    rows = []
+    best: tuple[float, argparse.Namespace, pd.DataFrame, dict[str, Any]] | None = None
+    for cfg in configs:
+        trades = pd.DataFrame(_research_feature_proxy(cfg, base))
+        summary = _summarize(trades, cfg)
+        score = _sweep_score(trades, summary, cfg)
+        row = {
+            "score": score,
+            "side_mode": cfg.side_mode,
+            "h4_trend_min": cfg.h4_trend_min,
+            "h4_countertrend_allow": cfg.h4_countertrend_allow,
+            "near_extreme_pct": cfg.near_extreme_pct,
+            "max_countertrend_multiple": cfg.max_countertrend_multiple,
+            "max_hold_hours": cfg.max_hold_hours,
+            **{f"summary_{k}": v for k, v in summary.items() if isinstance(v, (int, float, str))},
+        }
+        recent = _period_summary(trades, str(cfg.recent_start))
+        row.update({f"recent_{k}": v for k, v in recent.items()})
+        rows.append(row)
+        if best is None or score > best[0]:
+            best = (score, cfg, trades, summary)
+    out_id = args.out_id or f"trend_pullback_reversal_sweep_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    out_dir = OUT_ROOT / out_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = pd.DataFrame(rows).sort_values("score", ascending=False)
+    results.to_csv(out_dir / "sweep_results.csv", index=False)
+    results.head(25).to_csv(out_dir / "top25.csv", index=False)
+    payload: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "args": vars(args),
+        "configs_tested": len(configs),
+        "top": results.head(10).to_dict(orient="records"),
+    }
+    if best is not None:
+        _, cfg, trades, summary = best
+        if not trades.empty:
+            trades.to_csv(out_dir / "best_trades.csv", index=False)
+        payload["best_config"] = {k: getattr(cfg, k) for k in ("side_mode", "h4_trend_min", "h4_countertrend_allow", "near_extreme_pct", "loose_extreme_pct", "max_countertrend_multiple", "max_hold_hours", "target_pct", "stop_pct")}
+        payload["best_summary"] = summary
+        payload["best_recent"] = _period_summary(trades, str(cfg.recent_start))
+    (out_dir / "summary.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
+    (out_dir / "report.md").write_text(_sweep_markdown(payload))
+    return out_dir
+
+
+def _sweep_score(trades: pd.DataFrame, summary: dict[str, Any], args: argparse.Namespace) -> float:
+    if trades.empty or int(summary.get("trades") or 0) < 100:
+        return -1e9
+    recent = _period_summary(trades, str(args.recent_start))
+    monthly = _monthly_returns(trades)
+    recent_mean = float(recent.get("mean_net_return") or 0.0)
+    recent_win = float(recent.get("win_rate") or 0.0)
+    pos_month = float(summary.get("positive_month_rate") or 0.0)
+    mean = float(summary.get("mean_net_return") or 0.0)
+    win = float(summary.get("win_rate") or 0.0)
+    monthly_dd_penalty = abs(float(monthly.min() or 0.0)) if len(monthly) else 0.0
+    trade_penalty = 0.0 if int(summary.get("trades") or 0) <= 12000 else (int(summary.get("trades") or 0) - 12000) / 12000.0
+    return (
+        mean * 100.0
+        + recent_mean * 180.0
+        + (win - 0.5) * 2.0
+        + (recent_win - 0.5) * 3.0
+        + (pos_month - 0.5) * 1.5
+        - monthly_dd_penalty * 8.0
+        - trade_penalty
+    )
+
+
+def _period_summary(trades: pd.DataFrame, start: str) -> dict[str, Any]:
+    if trades.empty:
+        return {"trades": 0, "win_rate": math.nan, "mean_net_return": math.nan, "sum_net_return": 0.0}
+    start_ts = pd.Timestamp(start, tz="UTC")
+    ts = pd.to_datetime(trades["entry_ts"], utc=True)
+    sample = trades[ts >= start_ts]
+    if sample.empty:
+        return {"trades": 0, "win_rate": math.nan, "mean_net_return": math.nan, "sum_net_return": 0.0}
+    ret = pd.to_numeric(sample["net_return"], errors="coerce").dropna()
+    return {
+        "trades": int(len(ret)),
+        "win_rate": float((ret > 0).mean()) if len(ret) else math.nan,
+        "mean_net_return": float(ret.mean()) if len(ret) else math.nan,
+        "sum_net_return": float(ret.sum()) if len(ret) else 0.0,
+    }
+
+
+def _monthly_returns(trades: pd.DataFrame) -> pd.Series:
+    if trades.empty:
+        return pd.Series(dtype=float)
+    df = trades.copy()
+    df["month"] = pd.to_datetime(df["entry_ts"], utc=True).dt.strftime("%Y-%m")
+    return df.groupby("month")["net_return"].sum()
+
+
+def _prepare_feature_proxy_frame(args: argparse.Namespace) -> pd.DataFrame:
     path = FEATURE_DIR / args.dataset_id / "features.parquet"
     if not path.exists():
         raise FileNotFoundError(path)
@@ -106,22 +250,47 @@ def _research_feature_proxy(args: argparse.Namespace) -> list[dict[str, Any]]:
     latest_volume = df.groupby(level="symbol")["volume_usd"].last().sort_values(ascending=False)
     keep_symbols = set(latest_volume.head(int(args.max_symbols)).index.astype(str))
     df = df[df.index.get_level_values("symbol").astype(str).isin(keep_symbols)].copy()
+    df["median_abs_1h_24"] = df["ret_1"].abs().groupby(level="symbol").transform(lambda s: s.rolling(24, min_periods=8).median())
+    return df
+
+
+def _research_feature_proxy(args: argparse.Namespace, prepared: pd.DataFrame | None = None) -> list[dict[str, Any]]:
+    df = prepared.copy() if prepared is not None else _prepare_feature_proxy_frame(args)
     grouped_close = df["close"].groupby(level="symbol")
     horizon = max(1, int(args.max_hold_hours))
     future_close = grouped_close.shift(-horizon)
     df["fwd_ret"] = future_close / df["close"] - 1.0
-    df["side"] = np.where((df["h4_ret_6"] > 0) & (df["h4_ret_1"] > -0.005), "long", np.where((df["h4_ret_6"] < 0) & (df["h4_ret_1"] < 0.005), "short", ""))
-    median_abs_1h = df["ret_1"].abs().groupby(level="symbol").transform(lambda s: s.rolling(24, min_periods=8).median())
+    trend_min = abs(float(getattr(args, "h4_trend_min", 0.0) or 0.0))
+    h4_allow = abs(float(getattr(args, "h4_countertrend_allow", 0.005) or 0.005))
+    df["side"] = np.where(
+        (df["h4_ret_6"] > trend_min) & (df["h4_ret_1"] > -h4_allow),
+        "long",
+        np.where((df["h4_ret_6"] < -trend_min) & (df["h4_ret_1"] < h4_allow), "short", ""),
+    )
+    if str(getattr(args, "side_mode", "both")) == "long":
+        df.loc[df["side"] != "long", "side"] = ""
+    elif str(getattr(args, "side_mode", "both")) == "short":
+        df.loc[df["side"] != "short", "side"] = ""
+    regimes = {item.strip() for item in str(getattr(args, "regime_allowlist", "") or "").split(",") if item.strip()}
+    if regimes:
+        df.loc[~df["btc_regime_6"].astype(str).isin(regimes), "side"] = ""
+    if "median_abs_1h_24" in df.columns:
+        median_abs_1h = df["median_abs_1h_24"]
+    else:
+        median_abs_1h = df["ret_1"].abs().groupby(level="symbol").transform(lambda s: s.rolling(24, min_periods=8).median())
     counter_limit = np.minimum(float(args.max_countertrend_move_pct), np.maximum(0.008, float(args.max_countertrend_multiple) * median_abs_1h))
     long_pullback = (df["side"] == "long") & (df["ret_3"] < 0) & (df["ret_3"].abs() <= counter_limit)
     short_pullback = (df["side"] == "short") & (df["ret_3"] > 0) & (df["ret_3"].abs() <= counter_limit)
+    near = abs(float(getattr(args, "near_extreme_pct", 0.003) or 0.003))
+    loose = abs(float(getattr(args, "loose_extreme_pct", 0.006) or 0.006))
+    trigger_frac = abs(float(getattr(args, "trigger_range_frac", 0.25) or 0.25))
     long_trigger = (df["ret_1"] > 0) & (
-        (df["close_to_high"] >= -0.003)
-        | ((df["ret_1"] > df["range_pct"].abs() * 0.25) & (df["close_to_high"] >= -0.006))
+        (df["close_to_high"] >= -near)
+        | ((df["ret_1"] > df["range_pct"].abs() * trigger_frac) & (df["close_to_high"] >= -loose))
     )
     short_trigger = (df["ret_1"] < 0) & (
-        (df["close_to_low"] <= 0.003)
-        | ((df["ret_1"].abs() > df["range_pct"].abs() * 0.25) & (df["close_to_low"] <= 0.006))
+        (df["close_to_low"] <= near)
+        | ((df["ret_1"].abs() > df["range_pct"].abs() * trigger_frac) & (df["close_to_low"] <= loose))
     )
     signal = (long_pullback & long_trigger) | (short_pullback & short_trigger)
     events = df[signal & df["fwd_ret"].notna()].copy()
@@ -399,7 +568,7 @@ def _monthly_positive_rate(trades: pd.DataFrame) -> float:
     if trades.empty:
         return math.nan
     df = trades.copy()
-    df["month"] = pd.to_datetime(df["entry_ts"], utc=True).dt.to_period("M").astype(str)
+    df["month"] = pd.to_datetime(df["entry_ts"], utc=True).dt.strftime("%Y-%m")
     monthly = df.groupby("month")["net_return"].sum()
     return float((monthly > 0).mean()) if len(monthly) else math.nan
 
@@ -441,6 +610,28 @@ def _markdown_report(payload: dict[str, Any]) -> str:
     lines.append("## By Trigger")
     for trigger, row in (summary.get("by_trigger") or {}).items():
         lines.append(f"- {trigger}: {row}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _sweep_markdown(payload: dict[str, Any]) -> str:
+    lines = [
+        "# Trend Pullback Reversal Sweep",
+        "",
+        f"Generated: {payload['generated_at']}",
+        f"Configs tested: {payload.get('configs_tested')}",
+        "",
+        "## Best Config",
+        "",
+    ]
+    lines.append(json.dumps(payload.get("best_config", {}), indent=2, sort_keys=True))
+    lines.extend(["", "## Best Summary", ""])
+    lines.append(json.dumps(payload.get("best_summary", {}), indent=2, sort_keys=True))
+    lines.extend(["", "## Best Recent", ""])
+    lines.append(json.dumps(payload.get("best_recent", {}), indent=2, sort_keys=True))
+    lines.extend(["", "## Top 10", ""])
+    for idx, row in enumerate(payload.get("top", []), start=1):
+        lines.append(f"{idx}. score={row.get('score')}, side={row.get('side_mode')}, hold={row.get('max_hold_hours')}, mean={row.get('summary_mean_net_return')}, recent_mean={row.get('recent_mean_net_return')}, recent_win={row.get('recent_win_rate')}, trades={row.get('summary_trades')}")
     lines.append("")
     return "\n".join(lines)
 
