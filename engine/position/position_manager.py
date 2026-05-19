@@ -5,28 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
-from typing import Iterable, Literal, Mapping
+from typing import Iterable, Mapping
 
-from contracts import Decision, MarketState, PortfolioState, Position, Signal
-
-PositionAction = Literal["open", "add", "reduce", "close", "reverse", "hold", "reject"]
-
-
-@dataclass(frozen=True)
-class PositionIntent:
-    decision_id: str
-    strategy_id: str
-    symbol: str
-    inst_id: str
-    action: PositionAction
-    side: str
-    size_usdt: float
-    reduce_only: bool
-    reason: str
-    timestamp: datetime
-    current_size_contracts: float = 0.0
-    target_size_contracts: float | None = None
-    metadata: Mapping[str, object] | None = None
+from contracts import Decision, MarketState, PortfolioState, Position, PositionAction, PositionIntent, Signal
 
 
 @dataclass(frozen=True)
@@ -278,7 +259,7 @@ class PositionManager:
         timestamp: datetime,
         position: Position | None = None,
     ) -> PositionIntent:
-        return PositionIntent(
+            return PositionIntent(
             decision_id=decision.decision_id,
             strategy_id=decision.signal.strategy_id,
             symbol=decision.signal.symbol,
@@ -290,7 +271,12 @@ class PositionManager:
             reason=reason,
             timestamp=timestamp,
             current_size_contracts=position.size_contracts if position else 0.0,
-            metadata={"signal_confidence": decision.signal.confidence},
+            metadata={
+                "signal_confidence": decision.signal.confidence,
+                "exit_reason": decision.metadata.get("exit_reason"),
+                "close_contracts": decision.metadata.get("close_contracts"),
+                "partial_exit": decision.metadata.get("partial_exit"),
+            },
         )
 
     @staticmethod

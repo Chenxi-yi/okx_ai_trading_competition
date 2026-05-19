@@ -48,6 +48,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--short-decay-gate", choices=["off", "loose", "strict"], default="off")
     p.add_argument("--short-decay-min-frac", type=float, default=0.25)
     p.add_argument("--short-max-bounce-pct", type=float, default=0.03)
+    p.add_argument("--weekly-structure-filter", choices=["off", "align"], default="off")
+    p.add_argument("--weekly-lookback-bars", type=int, default=26)
+    p.add_argument("--weekly-2b-pierce-pct", type=float, default=0.003)
+    p.add_argument("--weekly-2b-reclaim-pct", type=float, default=0.001)
     p.add_argument("--target-pct", type=float, default=0.03)
     p.add_argument("--stop-pct", type=float, default=0.015)
     p.add_argument("--max-hold-hours", type=int, default=12)
@@ -305,6 +309,12 @@ def _research_feature_proxy(args: argparse.Namespace, prepared: pd.DataFrame | N
             fade_confirmed &= bounce <= float(args.short_max_bounce_pct)
         short_trigger &= fade_confirmed
     signal = (long_pullback & long_trigger) | (short_pullback & short_trigger)
+    if str(getattr(args, "weekly_structure_filter", "off")) == "align":
+        weekly_bias = _weekly_structure_bias_for_frame(df, args)
+        signal &= (
+            ((df["side"] == "long") & (weekly_bias == "long"))
+            | ((df["side"] == "short") & (weekly_bias == "short"))
+        )
     events = df[signal & df["fwd_ret"].notna()].copy()
     cost = 2.0 * (float(args.fee_bps_per_side) + float(args.slippage_bps_per_side)) / 10000.0
     rows: list[dict[str, Any]] = []
@@ -344,10 +354,68 @@ def _research_feature_proxy(args: argparse.Namespace, prepared: pd.DataFrame | N
                 "counter_limit": float(counter_limit.loc[(entry_ts, symbol)]),
                 "h4_trend_ret": float(row["h4_ret_6"]),
                 "btc_regime_6": str(row.get("btc_regime_6") or ""),
+                "weekly_structure_filter": str(getattr(args, "weekly_structure_filter", "off")),
             }
         )
         last_exit_by_symbol[symbol] = exit_ts
     return rows
+
+
+def _weekly_structure_bias_for_frame(df: pd.DataFrame, args: argparse.Namespace) -> pd.Series:
+    out = pd.Series("", index=df.index, dtype=object)
+    symbols = sorted(set(df.index.get_level_values("symbol").astype(str)))
+    for symbol in symbols:
+        safe = symbol.replace("/", "_").replace(":", "_")
+        daily = _load_cache_by_safe(safe, "1d")
+        if daily.empty:
+            continue
+        weekly_bias = _weekly_123_2b_bias(daily, args)
+        if weekly_bias.empty:
+            continue
+        idx = df.index[df.index.get_level_values("symbol").astype(str) == symbol]
+        if len(idx) == 0:
+            continue
+        ts = pd.DatetimeIndex(idx.get_level_values("timestamp"))
+        aligned = weekly_bias.reindex(ts, method="ffill").fillna("")
+        out.loc[idx] = aligned.to_numpy()
+    return out
+
+
+def _load_cache_by_safe(safe_symbol: str, timeframe: str) -> pd.DataFrame:
+    path = CACHE_DIR / f"{safe_symbol}_futures_{timeframe}.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    df = pd.read_parquet(path).copy()
+    df.index = pd.to_datetime(df.index, utc=True)
+    df = df.sort_index()
+    for col in ("open", "high", "low", "close", "volume"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df.dropna(subset=["open", "high", "low", "close"])
+
+
+def _weekly_123_2b_bias(daily: pd.DataFrame, args: argparse.Namespace) -> pd.Series:
+    weekly = daily.resample("W-SUN").agg({"open": "first", "high": "max", "low": "min", "close": "last"}).dropna()
+    if len(weekly) < max(12, int(args.weekly_lookback_bars) // 2):
+        return pd.Series(dtype=object)
+    lookback = max(8, int(args.weekly_lookback_bars))
+    close = weekly["close"].astype(float)
+    high = weekly["high"].astype(float)
+    low = weekly["low"].astype(float)
+    prior_high = high.rolling(lookback, min_periods=max(6, lookback // 2)).max().shift(1)
+    prior_low = low.rolling(lookback, min_periods=max(6, lookback // 2)).min().shift(1)
+    sma = close.rolling(max(8, lookback // 2), min_periods=max(4, lookback // 4)).mean()
+    prev_sma = sma.shift(1)
+
+    two_b_long = (low < prior_low * (1.0 - float(args.weekly_2b_pierce_pct))) & (close > prior_low * (1.0 + float(args.weekly_2b_reclaim_pct)))
+    two_b_short = (high > prior_high * (1.0 + float(args.weekly_2b_pierce_pct))) & (close < prior_high * (1.0 - float(args.weekly_2b_reclaim_pct)))
+    one_two_three_long = (close > prior_high) & (low > prior_low) & ((close > sma) | (sma > prev_sma))
+    one_two_three_short = (close < prior_low) & (high < prior_high) & ((close < sma) | (sma < prev_sma))
+
+    bias = pd.Series("", index=weekly.index, dtype=object)
+    bias.loc[two_b_long | one_two_three_long] = "long"
+    bias.loc[two_b_short | one_two_three_short] = "short"
+    return bias.shift(1).fillna("")
 
 
 def _select_symbols(args: argparse.Namespace) -> list[str]:

@@ -1,0 +1,47 @@
+{
+  "charter_id": "investment_committee_charter_v1",
+  "updated_at": "2026-05-14",
+  "position_grant": {
+    "principle": "The committee grants capital to a position only for explicit, monitorable reasons. The runner must keep monitoring those reasons after entry.",
+    "required_entry_fields": [
+      "strategy_id",
+      "symbol",
+      "side",
+      "signal_family",
+      "regime",
+      "entry_score",
+      "target",
+      "stop",
+      "horizon",
+      "thesis_contract"
+    ]
+  },
+  "thesis_monitoring": {
+    "enabled_by_default": true,
+    "score_decay_action": "reduce exposure; for micro positions where partial reduction is unreliable, exit full-size",
+    "hard_invalidation_action": "exit full-size",
+    "hard_invalidation_reasons": [
+      "source strategy no longer emits a signal for the symbol",
+      "source strategy flips side",
+      "entry regime is no longer present",
+      "entry signal family changes"
+    ],
+    "default_score_retain": 0.6,
+    "default_min_hold_hours": 1.0
+  },
+  "trend_pullback_candidate_rules": {
+    "effective_from": "2026-05-17",
+    "environment_preference": "competition if available budget is sufficient; otherwise personal",
+    "strategy_budget_usdt": 50,
+    "order_margin_usdt": 10,
+    "max_concurrent_positions_per_strategy": 3,
+    "same_symbol_policy": "winner_takes_symbol_across_all_three_strategies",
+    "simultaneous_request_priority": [
+      "trend_pullback_reversal_cluster_elite_quality60_v1",
+      "trend_pullback_reversal_quality_top20_v1",
+      "trend_pullback_reversal_rank_top1_v1"
+    ],
+    "live_gate": "candidate strategies may be submitted to the committee only with explicit stop, target, horizon, and source_strategy_id metadata"
+  },
+  "production_requirement": "Every strategy promoted to production must attach a thesis_contract and expose a thesis monitor compatible with investment_committee_thesis_exit_v1."
+}

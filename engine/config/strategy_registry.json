@@ -2,6 +2,52 @@
   "created_at": "2026-05-03T00:00:00+00:00",
   "parameter_sets": [
     {
+      "created_at": "2026-05-15T01:35:00+00:00",
+      "notes": "100U competition budget for BTC daily 80d breakout under weekly bull regime. Daily scanner may open only when the fully closed daily candle confirms.",
+      "parameter_set_id": "btc_daily_breakout_swing.competition_100u_v1",
+      "params": {
+        "atr_stop_mult": 3.0,
+        "atr_window": 14,
+        "capital_usdt": 100,
+        "entry_mode": "daily_80d_breakout_weekly_regime",
+        "exit_sma": 100,
+        "leverage": 2.0,
+        "lookback_days": 80,
+        "max_effective_notional_usdt": 200,
+        "max_hold_days": 60,
+        "scan_interval_sec": 86400,
+        "symbol": "BTC-USDT-SWAP",
+        "target_r": 2.0,
+        "thesis_exit": true,
+        "trail_stop_pct": 0.18,
+        "weekly_slope_floor": -0.005,
+        "weekly_sma": 20,
+        "weight": 0.5
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "btc_daily_breakout_swing",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-14T16:22:43.137770+00:00",
+      "notes": "100U competition paper budget, 3x BTC weekly swing.",
+      "parameter_set_id": "btc_weekly_swing_3x.competition_100u_v1",
+      "params": {
+        "capital_usdt": 100,
+        "effective_leverage": 3.0,
+        "entry_mode": "weekly_13w_breakout",
+        "lookback_weeks": 13,
+        "max_allowed_leverage": 3.0,
+        "symbol": "BTC-USDT-SWAP",
+        "thesis_exit": true,
+        "trail_stop_pct": 0.24,
+        "weekly_exit_sma": 20
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "btc_weekly_swing_3x",
+      "version": "1"
+    },
+    {
       "created_at": "2026-05-09T04:54:31.175481+00:00",
       "notes": "3000U production-like paper profile for the 8-layer pipeline.",
       "parameter_set_id": "c_auto_v2_fixed1000_conservative.3000u_v1",
@@ -120,19 +166,417 @@
       "parent_parameter_set_id": null,
       "strategy_id": "tactical_elite_flow_v1",
       "version": "1"
+    },
+    {
+      "created_at": "2026-05-17T01:27:52.817064+00:00",
+      "notes": "Selected path-simulated TP/SL: 5% target, 0.8% stop; committee runtime budget 50U, order margin 10U, max 3 concurrent positions, priority first.",
+      "parameter_set_id": "trend_pullback_reversal_cluster_elite_quality60_v1.path_tp5_sl08_v1",
+      "params": {
+        "candidate_shape": "4h_trend_1h_pullback_reversal",
+        "cluster_k": 6,
+        "cluster_min_count": 80,
+        "cluster_min_mean_return": 0.01,
+        "cluster_min_win_rate": 0.6,
+        "cluster_refit_hours": 24,
+        "cluster_train_days": 180,
+        "committee_priority": 300,
+        "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+        "entry_filter": "rolling_cluster_elite_quality60",
+        "execution_timeframe": "1h",
+        "feature_timeframes": [
+          "1h",
+          "4h"
+        ],
+        "fee_bps_per_side": 5,
+        "max_concurrent_positions": 3,
+        "max_hold_hours": 12,
+        "order_margin_usdt": 10,
+        "quality_min_score": 0.6,
+        "runtime_budget_usdt": 50,
+        "same_bar_policy": "stop_first",
+        "same_symbol_policy": "winner_takes_symbol",
+        "slippage_bps_per_side": 2,
+        "stop_pct": 0.008,
+        "target_pct": 0.05
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "trend_pullback_reversal_cluster_elite_quality60_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-17T01:28:01.381289+00:00",
+      "notes": "Selected balanced path-simulated TP/SL: 5% target, 1.5% stop; committee runtime budget 50U, order margin 10U, max 3 concurrent positions, priority second.",
+      "parameter_set_id": "trend_pullback_reversal_quality_top20_v1.path_tp5_sl15_v1",
+      "params": {
+        "candidate_shape": "4h_trend_1h_pullback_reversal",
+        "committee_priority": 200,
+        "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+        "entry_filter": "quality_top20",
+        "execution_timeframe": "1h",
+        "feature_timeframes": [
+          "1h",
+          "4h"
+        ],
+        "fee_bps_per_side": 5,
+        "max_concurrent_positions": 3,
+        "max_hold_hours": 12,
+        "order_margin_usdt": 10,
+        "quality_top_frac": 0.2,
+        "runtime_budget_usdt": 50,
+        "same_bar_policy": "stop_first",
+        "same_symbol_policy": "winner_takes_symbol",
+        "slippage_bps_per_side": 2,
+        "stop_pct": 0.015,
+        "target_pct": 0.05
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "trend_pullback_reversal_quality_top20_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-17T01:28:11.055816+00:00",
+      "notes": "Path-simulated TP/SL: 5% target, 2% stop; committee runtime budget 50U, order margin 10U, max 3 concurrent positions, priority third.",
+      "parameter_set_id": "trend_pullback_reversal_rank_top1_v1.path_tp5_sl20_v1",
+      "params": {
+        "candidate_shape": "4h_trend_1h_pullback_reversal",
+        "committee_priority": 100,
+        "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+        "entry_filter": "rank_top1",
+        "execution_timeframe": "1h",
+        "feature_timeframes": [
+          "1h",
+          "4h"
+        ],
+        "fee_bps_per_side": 5,
+        "max_concurrent_positions": 3,
+        "max_hold_hours": 12,
+        "order_margin_usdt": 10,
+        "rank_top_n": 1,
+        "runtime_budget_usdt": 50,
+        "same_bar_policy": "stop_first",
+        "same_symbol_policy": "winner_takes_symbol",
+        "slippage_bps_per_side": 2,
+        "stop_pct": 0.02,
+        "target_pct": 0.05
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "trend_pullback_reversal_rank_top1_v1",
+      "version": "1"
+    },
+    {
+      "created_at": "2026-05-15T02:05:00+00:00",
+      "notes": "Paused after 2026-05-15 module backtest; dislocation reversion was negative and is kept for monitoring only.",
+      "parameter_set_id": "us_equity_token_dislocation_reversion.competition_45u_v1",
+      "params": {
+        "capital_usdt": 45,
+        "entry_threshold_abs_dislocation": 0.01,
+        "leverage_max": 1.0,
+        "leverage_min": 1.0,
+        "stop_rules": {
+          "AMZN": 0.025,
+          "NVDA": 0.025,
+          "TSLA": 0.035
+        },
+        "symbols": [
+          "AMZN",
+          "TSLA",
+          "NVDA"
+        ],
+        "target_r_multiple": 1.4,
+        "target_rules": {
+          "AMZN": 0.035,
+          "NVDA": 0.035,
+          "TSLA": 0.05
+        },
+        "thesis_exit": true,
+        "threshold": 0.01
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "us_equity_token_dislocation_reversion",
+      "version": "2"
+    },
+    {
+      "created_at": "2026-05-15T02:05:00+00:00",
+      "notes": "20U competition budget for high-quality real-equity momentum sleeve. 2026-05-16 overlay test supports 36h same-symbol post-exit cooldown.",
+      "parameter_set_id": "us_equity_token_equity_momentum.competition_20u_v1",
+      "params": {
+        "capital_usdt": 20,
+        "entry_threshold_abs_ret": 0.02,
+        "leverage": 1.0,
+        "post_exit_symbol_cooldown_hours": 36,
+        "signal_source": "real_equity_prevday_return_high_quality_whitelist",
+        "stop_rules": {
+          "AMZN": 0.03,
+          "GOOGL": 0.03,
+          "NVDA": 0.03
+        },
+        "symbols": [
+          "AMZN",
+          "GOOGL",
+          "NVDA"
+        ],
+        "target_rules": {
+          "AMZN": 0.05,
+          "GOOGL": 0.05,
+          "NVDA": 0.05
+        },
+        "thesis_exit": true,
+        "threshold": 0.02
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "us_equity_token_equity_momentum",
+      "version": "2"
+    },
+    {
+      "created_at": "2026-05-15T02:05:00+00:00",
+      "notes": "25U competition budget for OKX stock-token internal momentum selected universe. 2026-05-16 overlay test supports real-equity same-direction confirmation.",
+      "parameter_set_id": "us_equity_token_okx_momentum.competition_25u_v1",
+      "params": {
+        "capital_usdt": 25,
+        "entry_threshold_abs_ret": 0.02,
+        "leverage": 1.0,
+        "overheat_filter_abs_okx_ret": 0.06,
+        "real_equity_confirm_abs_ret": 0.01,
+        "signal_source": "okx_token_prevday_return_capped_real_equity_confirmed_selected_universe",
+        "stop_rules": {
+          "AMZN": 0.03,
+          "COIN": 0.03,
+          "GOOGL": 0.03,
+          "HOOD": 0.03
+        },
+        "symbols": [
+          "COIN",
+          "HOOD",
+          "AMZN",
+          "GOOGL"
+        ],
+        "target_rules": {
+          "AMZN": 0.05,
+          "COIN": 0.05,
+          "GOOGL": 0.05,
+          "HOOD": 0.05
+        },
+        "thesis_exit": true,
+        "threshold": 0.02
+      },
+      "parent_parameter_set_id": null,
+      "strategy_id": "us_equity_token_okx_momentum",
+      "version": "2"
     }
   ],
-  "performance": [],
-  "promotions": [],
+  "performance": [
+    {
+      "costs": {
+        "fee_bps_per_side": 5,
+        "slippage_bps_per_side": 2
+      },
+      "created_at": "2026-05-16T17:07:15.399307+00:00",
+      "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+      "decision_journal_path": "engine/data/research/trend_pullback_reversal/trend_pullback_tp_sl_quality20_rank1_20260517",
+      "end": "2026-05-16",
+      "metrics": {
+        "horizon_rate": 0.02935932485439201,
+        "mean_net_return": 0.015580295174943302,
+        "median_net_return": 0.00073219616204674,
+        "path_simulated": true,
+        "positive_month_rate": 1.0,
+        "same_bar_policy": "stop_first",
+        "stop_rate": 0.4928087483656246,
+        "target_rate": 0.4778319267799834,
+        "total_net_return_units": 131.077023306798,
+        "trades": 8413,
+        "win_rate": 0.5007726138119577,
+        "worst_month_units": 1.3799183124505785
+      },
+      "mode": "backtest",
+      "notes": "Path-simulated 1h TP/SL sweep selected 5% TP / 1.5% SL.",
+      "parameter_set_id": "trend_pullback_reversal_quality_top20_v1.path_tp5_sl15_v1",
+      "record_id": "perf-e3e7c8ee-f2ea-4d21-b166-d3196bb1e0a2",
+      "start": "2025-01-01",
+      "strategy_id": "trend_pullback_reversal_quality_top20_v1"
+    },
+    {
+      "costs": {
+        "fee_bps_per_side": 5,
+        "slippage_bps_per_side": 2
+      },
+      "created_at": "2026-05-16T17:07:40.507654+00:00",
+      "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+      "decision_journal_path": "engine/data/research/trend_pullback_reversal/trend_pullback_tp_sl_quality20_rank1_20260517",
+      "end": "2026-05-16",
+      "metrics": {
+        "horizon_rate": 0.037817216785536574,
+        "mean_net_return": 0.012664307708839024,
+        "median_net_return": -0.004274595759971177,
+        "path_simulated": true,
+        "positive_month_rate": 1.0,
+        "same_bar_policy": "stop_first",
+        "stop_rate": 0.49411179300049757,
+        "target_rate": 0.4680709902139658,
+        "total_net_return_units": 76.35311117659047,
+        "trades": 6029,
+        "win_rate": 0.4956045778736109,
+        "worst_month_units": 0.872914222936297
+      },
+      "mode": "backtest",
+      "notes": "Path-simulated 1h TP/SL sweep selected 5% TP / 2% SL for concentrated rank variant.",
+      "parameter_set_id": "trend_pullback_reversal_rank_top1_v1.path_tp5_sl20_v1",
+      "record_id": "perf-a3f56230-3201-476e-a0bd-4430671d0232",
+      "start": "2025-01-01",
+      "strategy_id": "trend_pullback_reversal_rank_top1_v1"
+    },
+    {
+      "costs": {
+        "fee_bps_per_side": 5,
+        "slippage_bps_per_side": 2
+      },
+      "created_at": "2026-05-16T17:42:25.865926+00:00",
+      "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+      "decision_journal_path": "engine/data/research/trend_pullback_reversal/trend_pullback_tp_sl_three_candidates_20260517",
+      "end": "2026-05-16",
+      "metrics": {
+        "horizon_rate": 0.0043782837127845885,
+        "mean_net_return": 0.022731670447011937,
+        "median_net_return": 0.048599999999999935,
+        "path_simulated": true,
+        "positive_month_rate": 1.0,
+        "same_bar_policy": "stop_first",
+        "stop_rate": 0.44395796847635727,
+        "target_rate": 0.5516637478108581,
+        "total_net_return_units": 25.95956765048763,
+        "trades": 1142,
+        "win_rate": 0.5551663747810858,
+        "worst_month_units": 0.12860000000000024
+      },
+      "mode": "backtest",
+      "notes": "Path-simulated 1h TP/SL sweep selected 5% TP / 0.8% SL for cluster elite quality60.",
+      "parameter_set_id": "trend_pullback_reversal_cluster_elite_quality60_v1.path_tp5_sl08_v1",
+      "record_id": "perf-7e80fc21-4e90-472f-bac3-677a47cf6dae",
+      "start": "2025-01-01",
+      "strategy_id": "trend_pullback_reversal_cluster_elite_quality60_v1"
+    }
+  ],
+  "promotions": [
+    {
+      "approved_by": "personal",
+      "created_at": "2026-05-17T01:27:34.975110+00:00",
+      "evidence_record_ids": [],
+      "from_status": "backtest",
+      "promotion_id": "promo-accc64a9-cdb3-41bd-acd1-362922b1a85c",
+      "reason": "Owner approved competition-candidate committee submission with 50U strategy budget, 10U order margin, max 3 concurrent positions, and same-symbol priority first.",
+      "strategy_id": "trend_pullback_reversal_cluster_elite_quality60_v1",
+      "to_status": "paper"
+    },
+    {
+      "approved_by": "personal",
+      "created_at": "2026-05-17T01:27:39.971941+00:00",
+      "evidence_record_ids": [],
+      "from_status": "backtest",
+      "promotion_id": "promo-ffe9d9ec-de27-4027-8e73-9f5ace5c4d84",
+      "reason": "Owner approved competition-candidate committee submission with 50U strategy budget, 10U order margin, max 3 concurrent positions, and same-symbol priority second.",
+      "strategy_id": "trend_pullback_reversal_quality_top20_v1",
+      "to_status": "paper"
+    },
+    {
+      "approved_by": "personal",
+      "created_at": "2026-05-17T01:27:44.019509+00:00",
+      "evidence_record_ids": [],
+      "from_status": "backtest",
+      "promotion_id": "promo-ffa41acd-c792-4aaa-b99a-748baa339158",
+      "reason": "Owner approved competition-candidate committee submission with 50U strategy budget, 10U order margin, max 3 concurrent positions, and same-symbol priority third.",
+      "strategy_id": "trend_pullback_reversal_rank_top1_v1",
+      "to_status": "paper"
+    }
+  ],
   "strategies": [
+    {
+      "book": "competition",
+      "class_name": "ResearchSleevePaperRunner",
+      "created_at": "2026-05-15T01:35:00+00:00",
+      "default_parameter_set_id": "btc_daily_breakout_swing.competition_100u_v1",
+      "description": "BTC medium-term daily 80-day breakout sleeve gated by weekly 20-week trend. Uses 100U competition budget, 50% capital weight, 2x leverage, explicit 2R TP, ATR/trailing SL, and daily thesis exit.",
+      "live_allocation_pct": 0.1,
+      "live_enabled": true,
+      "module": "scripts.run_research_sleeve_paper",
+      "name": "BTC Daily Breakout Swing",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.04,
+        "max_drawdown_pct": 0.2,
+        "max_leverage": 2.0,
+        "max_nav_pct": 0.5,
+        "notes": "Competition scanner only. Open only after a fully closed daily candle confirms 80d breakout plus weekly bull regime."
+      },
+      "status": "paper",
+      "strategy_id": "btc_daily_breakout_swing",
+      "tags": [
+        "competition",
+        "btc",
+        "daily",
+        "breakout",
+        "swing",
+        "paper",
+        "thesis_exit"
+      ],
+      "updated_at": "2026-05-15T01:35:00+00:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "competition",
+      "class_name": "ResearchSleevePaperRunner",
+      "created_at": "2026-05-14T16:22:43.137770+00:00",
+      "default_parameter_set_id": "btc_weekly_swing_3x.competition_100u_v1",
+      "description": "BTC-only weekly 13-week breakout swing sleeve using 100U competition budget and 3x exposure. Thesis exit via 20-week SMA buffer and 24% trailing stop.",
+      "live_allocation_pct": 0.0,
+      "live_enabled": false,
+      "module": "scripts.run_research_sleeve_paper",
+      "name": "BTC Weekly Swing 3x",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.08,
+        "max_drawdown_pct": 0.35,
+        "max_leverage": 3.0,
+        "max_nav_pct": 1.0,
+        "notes": "Competition paper allocation 100U; user-requested 3x BTC exposure. Backtest drawdown was high, so monitor thesis exit strictly."
+      },
+      "status": "paper",
+      "strategy_id": "btc_weekly_swing_3x",
+      "tags": [
+        "competition",
+        "btc",
+        "weekly",
+        "breakout",
+        "swing",
+        "paper",
+        "thesis_exit"
+      ],
+      "updated_at": "2026-05-14T16:22:43.137770+00:00",
+      "version": "1.0.0"
+    },
     {
       "book": "core",
       "class_name": "CAutoV2PaperRunner",
       "created_at": "2026-05-09T04:54:21.358114+00:00",
+      "data_dependencies": [
+        {
+          "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+          "dependency_id": "c_auto_historical_feature_store",
+          "kind": "feature_store",
+          "path": "engine/data/features/c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1/features.parquet",
+          "required": true
+        },
+        {
+          "dependency_id": "live_market_data_refresh",
+          "kind": "scheduler_status",
+          "max_age_sec": 1800,
+          "path": "engine/logs/data_refresh/status.json",
+          "required": true
+        }
+      ],
       "default_parameter_set_id": "c_auto_v2_fixed1000_conservative.3000u_v1",
       "description": "C-Auto v2 conservative live-paper stream with stop-aware accounting and committee leverage policy.",
       "live_allocation_pct": 0.0,
-      "live_enabled": false,
+      "live_enabled": true,
       "module": "scripts.run_c_auto_v2_paper",
       "name": "C-Auto v2 Fixed Conservative",
       "notes": "Registered under the 8-layer structure. Current critical path: paper -> competition -> personal.",
@@ -144,7 +588,18 @@
         "max_nav_pct": 0.25,
         "notes": "3000U paper-first profile. Competition before personal. Gross cap 25% NAV; no live allocation by default."
       },
-      "status": "paper",
+      "runtime": {
+        "allowed_environments": [
+          "personal"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "lock_strategy_id": "c_auto_v2_cross_section",
+        "priority": 100,
+        "runner": "c_auto_v2_micro_live",
+        "state_id": "micro_live_personal"
+      },
+      "status": "live",
       "strategy_id": "c_auto_v2_fixed1000_conservative",
       "tags": [
         "core",
@@ -326,6 +781,380 @@
         "crowding"
       ],
       "updated_at": "2026-05-03T00:00:00+00:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "tactical",
+      "class_name": "TrendPullbackReversalClusterEliteQuality60",
+      "created_at": "2026-05-16T17:40:00.302447+00:00",
+      "data_dependencies": [
+        {
+          "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+          "dependency_id": "c_auto_historical_feature_store",
+          "kind": "feature_store",
+          "path": "engine/data/features/c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1/features.parquet",
+          "required": true
+        },
+        {
+          "dependency_id": "live_market_data_refresh",
+          "kind": "scheduler_status",
+          "max_age_sec": 1800,
+          "path": "engine/logs/data_refresh/status.json",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "trend_pullback_reversal_cluster_elite_quality60_v1.path_tp5_sl08_v1",
+      "description": "4h trend + 1h pullback reversal, rolling elite cluster gate plus quality >= 0.60.",
+      "live_allocation_pct": 0.1,
+      "live_enabled": true,
+      "module": "scripts.run_trend_pullback_reversal_variants",
+      "name": "Trend Pullback Reversal Cluster Elite Quality60",
+      "notes": "Runtime live in competition via research_sleeve_live; 50U runner budget; committee-gated; uses refreshed live feature cache.",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.012,
+        "max_drawdown_pct": 0.06,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.1,
+        "notes": "High-conviction backtest candidate. Competition runtime budget 50U; order margin 10U; same-symbol priority first."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "competition"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 300,
+        "runner": "research_sleeve_live",
+        "state_id": "trend_pullback_reversal_cluster_elite_quality60_v1"
+      },
+      "status": "live",
+      "strategy_id": "trend_pullback_reversal_cluster_elite_quality60_v1",
+      "tags": [
+        "competition",
+        "trend_pullback",
+        "4h_1h",
+        "cluster_elite",
+        "quality60",
+        "backtest",
+        "path_simulated"
+      ],
+      "updated_at": "2026-05-18T13:10:00+08:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "tactical",
+      "class_name": "TrendPullbackReversalQualityTop20",
+      "created_at": "2026-05-16T17:06:59.064903+00:00",
+      "data_dependencies": [
+        {
+          "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+          "dependency_id": "c_auto_historical_feature_store",
+          "kind": "feature_store",
+          "path": "engine/data/features/c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1/features.parquet",
+          "required": true
+        },
+        {
+          "dependency_id": "live_market_data_refresh",
+          "kind": "scheduler_status",
+          "max_age_sec": 1800,
+          "path": "engine/logs/data_refresh/status.json",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "trend_pullback_reversal_quality_top20_v1.path_tp5_sl15_v1",
+      "description": "4h trend + 1h pullback reversal, quality top 20 percent per scan.",
+      "live_allocation_pct": 0.1,
+      "live_enabled": true,
+      "module": "scripts.run_trend_pullback_reversal_variants",
+      "name": "Trend Pullback Reversal Quality Top20",
+      "notes": "Runtime live in competition via research_sleeve_live; 50U runner budget; committee-gated; uses refreshed live feature cache.",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.02,
+        "max_drawdown_pct": 0.08,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.2,
+        "notes": "Competition runtime budget 50U; order margin 10U; same-symbol priority second."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "competition"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 200,
+        "runner": "research_sleeve_live",
+        "state_id": "trend_pullback_reversal_quality_top20_v1"
+      },
+      "status": "live",
+      "strategy_id": "trend_pullback_reversal_quality_top20_v1",
+      "tags": [
+        "competition",
+        "trend_pullback",
+        "4h_1h",
+        "backtest",
+        "path_simulated"
+      ],
+      "updated_at": "2026-05-18T13:10:00+08:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "tactical",
+      "class_name": "TrendPullbackReversalRankTop1",
+      "created_at": "2026-05-16T17:07:24.171624+00:00",
+      "data_dependencies": [
+        {
+          "dataset_id": "c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1",
+          "dependency_id": "c_auto_historical_feature_store",
+          "kind": "feature_store",
+          "path": "engine/data/features/c_auto_feature_store_rebuild_161_ohlcv_snapshot_v1/features.parquet",
+          "required": true
+        },
+        {
+          "dependency_id": "live_market_data_refresh",
+          "kind": "scheduler_status",
+          "max_age_sec": 1800,
+          "path": "engine/logs/data_refresh/status.json",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "trend_pullback_reversal_rank_top1_v1.path_tp5_sl20_v1",
+      "description": "4h trend + 1h pullback reversal, top ranked market candidate per scan.",
+      "live_allocation_pct": 0.1,
+      "live_enabled": true,
+      "module": "scripts.run_trend_pullback_reversal_variants",
+      "name": "Trend Pullback Reversal Rank Top1",
+      "notes": "Runtime live in competition via research_sleeve_live; 50U runner budget; committee-gated; uses refreshed live feature cache.",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.015,
+        "max_drawdown_pct": 0.08,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.12,
+        "notes": "Competition runtime budget 50U; order margin 10U; same-symbol priority third."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "competition"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 100,
+        "runner": "research_sleeve_live",
+        "state_id": "trend_pullback_reversal_rank_top1_v1"
+      },
+      "status": "live",
+      "strategy_id": "trend_pullback_reversal_rank_top1_v1",
+      "tags": [
+        "competition",
+        "trend_pullback",
+        "4h_1h",
+        "rank_top1",
+        "backtest",
+        "path_simulated"
+      ],
+      "updated_at": "2026-05-18T13:10:00+08:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "competition",
+      "class_name": "ResearchSleevePaperRunner",
+      "created_at": "2026-05-14T16:22:43.137770+00:00",
+      "data_dependencies": [
+        {
+          "dependency_id": "us_equity_cache_AMZN",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/AMZN.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_TSLA",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/TSLA.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_NVDA",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/NVDA.csv",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "us_equity_token_dislocation_reversion.competition_45u_v1",
+      "description": "OKX \u7f8e\u80a1\u5408\u7ea6\u8131\u951a\u56de\u5f52\u3002\u5df2\u63a5\u5165 personal runtime\uff0c\u7528\u4e8e\u4e2a\u4eba\u73af\u5883\u5c0f\u989d\u5b9e\u76d8\u89c2\u5bdf\u3002",
+      "live_allocation_pct": 0.0,
+      "live_enabled": true,
+      "module": "scripts.run_research_sleeve_paper",
+      "name": "\u7f8e\u80a1\u7b56\u7565-\u8131\u951a\u56de\u5f52",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.06,
+        "max_drawdown_pct": 0.25,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.45,
+        "notes": "Competition US-equity-token sleeve; budget 45U; 1x until live evidence supports leverage increase."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "personal"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 80,
+        "runner": "research_sleeve_live",
+        "state_id": "us_equity_token_dislocation_reversion"
+      },
+      "status": "live",
+      "strategy_id": "us_equity_token_dislocation_reversion",
+      "tags": [
+        "competition",
+        "contract",
+        "dislocation",
+        "mean_reversion",
+        "okx_stock_token",
+        "paper",
+        "us_equity_strategy"
+      ],
+      "updated_at": "2026-05-17T19:30:00+08:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "competition",
+      "class_name": "ResearchSleevePaperRunner",
+      "created_at": "2026-05-14T16:22:43.137770+00:00",
+      "data_dependencies": [
+        {
+          "dependency_id": "us_equity_cache_AMZN",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/AMZN.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_GOOGL",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/GOOGL.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_NVDA",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/NVDA.csv",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "us_equity_token_equity_momentum.competition_20u_v1",
+      "description": "\u771f\u5b9e\u7f8e\u80a1\u524d\u4e00\u65e5\u52a8\u91cf\u7cbe\u9009 sleeve\u3002\u6838\u5fc3\u6807\u7684 AMZN/GOOGL/NVDA\uff0c20U \u6bd4\u8d5b\u73af\u5883\u9884\u7b97\uff0c1x\uff0c3%/5% TP/SL\uff0c\u9000\u51fa\u540e\u540c\u6807\u7684 36h \u51b7\u5374\uff0cthesis exit\u3002",
+      "live_allocation_pct": 0.0,
+      "live_enabled": true,
+      "module": "scripts.run_research_sleeve_paper",
+      "name": "\u7f8e\u80a1\u7b56\u7565-\u9ad8\u8d28\u91cf\u7f8e\u80a1\u52a8\u91cf",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.05,
+        "max_drawdown_pct": 0.2,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.2,
+        "notes": "Competition US-equity-token sleeve; budget 20U; 1x until live evidence supports leverage increase."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "personal"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 70,
+        "runner": "research_sleeve_live",
+        "state_id": "us_equity_token_equity_momentum"
+      },
+      "status": "live",
+      "strategy_id": "us_equity_token_equity_momentum",
+      "tags": [
+        "competition",
+        "contract",
+        "momentum",
+        "okx_stock_token",
+        "paper",
+        "us_equity_strategy"
+      ],
+      "updated_at": "2026-05-17T19:30:00+08:00",
+      "version": "1.0.0"
+    },
+    {
+      "book": "competition",
+      "class_name": "ResearchSleevePaperRunner",
+      "created_at": "2026-05-14T16:22:43.137770+00:00",
+      "data_dependencies": [
+        {
+          "dependency_id": "us_equity_cache_COIN",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/COIN.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_HOOD",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/HOOD.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_AMZN",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/AMZN.csv",
+          "required": true
+        },
+        {
+          "dependency_id": "us_equity_cache_GOOGL",
+          "kind": "equity_daily_cache",
+          "max_age_sec": 604800,
+          "path": "engine/data/cache/us_equities_yfinance_1d/GOOGL.csv",
+          "required": true
+        }
+      ],
+      "default_parameter_set_id": "us_equity_token_okx_momentum.competition_25u_v1",
+      "description": "OKX \u7f8e\u80a1\u5408\u7ea6\u81ea\u8eab\u52a8\u91cf\u7cbe\u9009\u7248\u3002\u6838\u5fc3\u6807\u7684 COIN/HOOD/AMZN/GOOGL\uff0c25U \u6bd4\u8d5b\u73af\u5883\u9884\u7b97\uff0c1x\uff0c2% \u52a8\u91cf\u9608\u503c\u30016% \u8fc7\u70ed\u8fc7\u6ee4\uff0c\u9700\u771f\u5b9e\u7f8e\u80a1\u540c\u5411\u81f3\u5c11 1%\uff0c3%/5% TP/SL\uff0cthesis exit\u3002",
+      "live_allocation_pct": 0.0,
+      "live_enabled": true,
+      "module": "scripts.run_research_sleeve_paper",
+      "name": "\u7f8e\u80a1\u7b56\u7565-OKX\u81ea\u8eab\u52a8\u91cf\u7cbe\u9009\u7248",
+      "owner": "competition",
+      "risk_budget": {
+        "max_daily_loss_pct": 0.05,
+        "max_drawdown_pct": 0.2,
+        "max_leverage": 1.0,
+        "max_nav_pct": 0.25,
+        "notes": "Competition US-equity-token sleeve; budget 25U; 1x until live evidence supports leverage increase."
+      },
+      "runtime": {
+        "allowed_environments": [
+          "personal"
+        ],
+        "enabled": true,
+        "interval_sec": 300,
+        "priority": 60,
+        "runner": "research_sleeve_live",
+        "state_id": "us_equity_token_okx_momentum"
+      },
+      "status": "live",
+      "strategy_id": "us_equity_token_okx_momentum",
+      "tags": [
+        "competition",
+        "contract",
+        "okx_momentum",
+        "okx_stock_token",
+        "paper",
+        "us_equity_strategy"
+      ],
+      "updated_at": "2026-05-17T19:30:00+08:00",
       "version": "1.0.0"
     }
   ],

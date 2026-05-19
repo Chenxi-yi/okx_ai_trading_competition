@@ -1,5 +1,6 @@
 """Position lifecycle management."""
 
+from .live_position_service import LiveExitPlan, LivePositionLifecycleService
 from .position_manager import (
     PositionAction,
     PositionIntent,
@@ -9,6 +10,8 @@ from .position_manager import (
 )
 
 __all__ = [
+    "LiveExitPlan",
+    "LivePositionLifecycleService",
     "PositionAction",
     "PositionIntent",
     "PositionManager",

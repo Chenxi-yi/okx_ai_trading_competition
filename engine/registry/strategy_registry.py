@@ -50,6 +50,27 @@ class StrategyRegistry:
             records = [record for record in records if record.book == book]
         return sorted(records, key=lambda r: r.strategy_id)
 
+    def runnable_strategies(self, environment: str, *, require_live_enabled: bool = True) -> list[StrategyRecord]:
+        """Return registry-approved strategies for an environment.
+
+        This is the Strategy Office gate used by environment runners. It does
+        not inspect processes or account state; those belong to runtime and
+        reconciliation.
+        """
+        records = []
+        for record in self.list_strategies():
+            runtime = record.runtime
+            if not runtime.enabled:
+                continue
+            if environment not in set(runtime.allowed_environments):
+                continue
+            if record.status not in {"paper", "live"}:
+                continue
+            if require_live_enabled and not record.live_enabled:
+                continue
+            records.append(record)
+        return sorted(records, key=lambda item: (-item.runtime.priority, item.strategy_id))
+
     def get_strategy(self, strategy_id: str) -> StrategyRecord:
         for record in self.list_strategies():
             if record.strategy_id == strategy_id:
@@ -59,6 +80,8 @@ class StrategyRegistry:
     def upsert_strategy(self, record: StrategyRecord) -> StrategyRecord:
         data = self._read()
         updated = replace(record, updated_at=utc_now())
+        if updated.status == "live" or updated.live_enabled:
+            self._validate_live_readiness(updated)
         rows = [item for item in data.get("strategies", []) if item.get("strategy_id") != record.strategy_id]
         rows.append(updated.to_dict())
         data["strategies"] = sorted(rows, key=lambda item: item["strategy_id"])
@@ -133,6 +156,9 @@ class StrategyRegistry:
         allowed = ALLOWED_TRANSITIONS.get(current.status, set())
         if to_status not in allowed:
             raise ValueError(f"Invalid status transition: {current.status} -> {to_status}")
+        if to_status == "live":
+            self._validate_live_readiness(current)
+            self._validate_live_evidence(strategy_id, evidence_record_ids)
         promotion = PromotionRecord(
             promotion_id=f"promo-{uuid4()}",
             strategy_id=strategy_id,
@@ -161,6 +187,8 @@ class StrategyRegistry:
         current = self.get_strategy(strategy_id)
         if enabled and current.status != "live":
             raise ValueError(f"Cannot enable live allocation for non-live strategy {strategy_id}: {current.status}")
+        if enabled:
+            self._validate_live_readiness(current)
         updated = replace(
             current,
             live_enabled=enabled,
@@ -168,6 +196,61 @@ class StrategyRegistry:
             updated_at=utc_now(),
         )
         return self.upsert_strategy(updated)
+
+    @staticmethod
+    def _validate_live_readiness(record: StrategyRecord) -> None:
+        runtime = record.runtime
+        if not runtime.enabled:
+            raise ValueError(f"Cannot live-enable {record.strategy_id}: runtime.enabled is false")
+        if not runtime.runner:
+            raise ValueError(f"Cannot live-enable {record.strategy_id}: runtime.runner is missing")
+        if not runtime.allowed_environments:
+            raise ValueError(f"Cannot live-enable {record.strategy_id}: runtime.allowed_environments is empty")
+        invalid_envs = sorted(set(runtime.allowed_environments) - {"personal", "competition"})
+        if invalid_envs:
+            raise ValueError(
+                f"Cannot live-enable {record.strategy_id}: unsupported runtime environments {invalid_envs}"
+            )
+        if not record.data_dependencies:
+            raise ValueError(f"Cannot live-enable {record.strategy_id}: data_dependencies are missing")
+        for dep in record.data_dependencies:
+            if not dep.dependency_id:
+                raise ValueError(f"Cannot live-enable {record.strategy_id}: data dependency id is missing")
+            if dep.required and not dep.path and not dep.dataset_id:
+                raise ValueError(
+                    f"Cannot live-enable {record.strategy_id}: dependency {dep.dependency_id} "
+                    "must declare path or dataset_id"
+                )
+
+    def _validate_live_evidence(self, strategy_id: str, evidence_record_ids: Iterable[str]) -> None:
+        evidence_ids = tuple(str(item) for item in evidence_record_ids if str(item))
+        if not evidence_ids:
+            raise ValueError(f"Cannot promote {strategy_id} to live: evidence record ids are required")
+        records = {
+            str(item.get("record_id")): PerformanceRecord.from_dict(item)
+            for item in self._read().get("performance", [])
+            if item.get("strategy_id") == strategy_id
+        }
+        missing = [record_id for record_id in evidence_ids if record_id not in records]
+        if missing:
+            raise ValueError(f"Cannot promote {strategy_id} to live: missing evidence records {missing}")
+        usable = [records[record_id] for record_id in evidence_ids]
+        allowed_modes = {"backtest", "paper", "live", "stress"}
+        if not any(record.mode in allowed_modes for record in usable):
+            raise ValueError(f"Cannot promote {strategy_id} to live: evidence must include {sorted(allowed_modes)}")
+        for record in usable:
+            metrics = dict(record.metrics)
+            if _metric_float(metrics, "total_return", "return", "roi", "pnl_pct") is None:
+                raise ValueError(f"Cannot promote {strategy_id} to live: {record.record_id} missing return metric")
+            if _metric_float(metrics, "max_drawdown", "max_drawdown_pct", "drawdown") is None:
+                raise ValueError(f"Cannot promote {strategy_id} to live: {record.record_id} missing drawdown metric")
+        positive = [
+            record
+            for record in usable
+            if (_metric_float(dict(record.metrics), "total_return", "return", "roi", "pnl_pct") or 0.0) > 0.0
+        ]
+        if not positive:
+            raise ValueError(f"Cannot promote {strategy_id} to live: at least one evidence record must be net positive")
 
     def _read(self) -> dict[str, Any]:
         try:
@@ -192,3 +275,14 @@ class StrategyRegistry:
             "performance": [],
             "promotions": [],
         }
+
+
+def _metric_float(metrics: dict[str, Any], *names: str) -> float | None:
+    for name in names:
+        if name not in metrics:
+            continue
+        try:
+            return float(metrics[name])
+        except Exception:
+            continue
+    return None

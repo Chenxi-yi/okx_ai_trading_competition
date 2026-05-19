@@ -122,7 +122,7 @@ class PaperExecutionRouter(BacktestExecutionRouter):
 class LiveExecutionRouter(ExecutionRouter):
     mode = "live"
 
-    def __init__(self, broker: BrokerLike, config: ExecutionConfig | None = None):
+    def __init__(self, broker: BrokerLike | None = None, config: ExecutionConfig | None = None):
         self.broker = broker
         self.config = config or ExecutionConfig(profile="demo")
 
@@ -147,8 +147,6 @@ class LiveExecutionRouter(ExecutionRouter):
                     status="error",
                     error="protective stop required before live entry",
                 )
-            if order.leverage:
-                self.broker.set_leverage(symbol, order.leverage)
             gateway = KitExecutionGateway(
                 KitClient(
                     KitClientConfig(
@@ -159,6 +157,23 @@ class LiveExecutionRouter(ExecutionRouter):
                 profile=order.profile or self.config.profile,
                 allow_live=os.environ.get("LIVE_TRADING", "false").lower() == "true",
             )
+            if order.leverage and self.broker is not None:
+                self.broker.set_leverage(symbol, order.leverage)
+            elif order.leverage:
+                leverage_result = gateway.set_leverage(order.inst_id, order.leverage, profile=order.profile or self.config.profile)
+                if not leverage_result.ok:
+                    return Fill(
+                        decision_id=order.decision_id,
+                        inst_id=order.inst_id,
+                        side=order.side,
+                        fill_price=0.0,
+                        fill_size=0.0,
+                        fee=0.0,
+                        timestamp=datetime.now(timezone.utc),
+                        status="error",
+                        raw={"leverage": {"argv": leverage_result.argv, "error": leverage_result.error}},
+                        error=leverage_result.error or "set leverage failed",
+                    )
             result = gateway.place_order(order)
             fill = gateway.fill_from_result(order, result, mark_price)
             if result.ok and not order.reduce_only and stop is not None:

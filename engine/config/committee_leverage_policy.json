@@ -42,6 +42,16 @@
       "id": "aggressive_leverage_gate",
       "type": "leverage_cap",
       "description": "Allow up to 5x only under explicit aggressive mode, external confirmation, and zero risk flags."
+    },
+    {
+      "id": "trend_pullback_candidate_budget_cap",
+      "type": "notional_cap",
+      "description": "For each trend-pullback candidate strategy, cap allocated margin budget at 50U, each order at 10U, and open positions at three."
+    },
+    {
+      "id": "trend_pullback_candidate_priority",
+      "type": "veto",
+      "description": "When the three trend-pullback candidate strategies request the same symbol simultaneously, accept at most one in priority order: cluster_elite_quality60, quality_top20, rank_top1."
     }
   ],
   "leverage_bands": [

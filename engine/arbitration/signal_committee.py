@@ -13,7 +13,30 @@ from typing import Any
 import pandas as pd
 
 from arbitration.portfolio_arbiter import PortfolioArbiter, ArbitrationResult
-from contracts import PortfolioState, Signal
+from arbitration.thesis_exit import thesis_contract
+from contracts import CandidateTrade, PortfolioState, Signal
+
+
+TREND_PULLBACK_CANDIDATE_RULES: dict[str, dict[str, float | int]] = {
+    "trend_pullback_reversal_cluster_elite_quality60_v1": {
+        "priority": 300,
+        "max_positions": 3,
+        "budget_usdt": 50.0,
+        "order_margin_usdt": 10.0,
+    },
+    "trend_pullback_reversal_quality_top20_v1": {
+        "priority": 200,
+        "max_positions": 3,
+        "budget_usdt": 50.0,
+        "order_margin_usdt": 10.0,
+    },
+    "trend_pullback_reversal_rank_top1_v1": {
+        "priority": 100,
+        "max_positions": 3,
+        "budget_usdt": 50.0,
+        "order_margin_usdt": 10.0,
+    },
+}
 
 
 def build_committee_signals(
@@ -42,6 +65,67 @@ def build_committee_signals(
     return signals
 
 
+def build_candidate_trades(
+    candidates: pd.DataFrame,
+    now_ts: pd.Timestamp,
+    *,
+    base_capital: float,
+    base_risk: float,
+    fee_slip_rate: float,
+) -> list[CandidateTrade]:
+    """Normalize strategy output into lifecycle candidate contracts."""
+
+    return [candidate_trade_from_signal(signal) for signal in build_committee_signals(
+        candidates,
+        now_ts,
+        base_capital=base_capital,
+        base_risk=base_risk,
+        fee_slip_rate=fee_slip_rate,
+    )]
+
+
+def candidate_trade_from_signal(signal: Signal) -> CandidateTrade:
+    metadata = dict(signal.metadata)
+    expected_edge = max(0.0, float(signal.p_target) - 0.5)
+    feature_refs = tuple(str(item) for item in metadata.get("feature_refs", ()) if item)
+    return CandidateTrade(
+        strategy_id=signal.strategy_id,
+        symbol=signal.symbol,
+        side=signal.side,
+        timestamp=signal.timestamp,
+        entry_reference=float(signal.entry),
+        horizon_sec=int(signal.horizon_sec),
+        confidence=float(signal.confidence),
+        expected_edge_pct=expected_edge,
+        adverse_pct_estimate=float(signal.adverse_pct_estimate),
+        target_reference=float(signal.target) if signal.target is not None else None,
+        stop_reference=float(signal.stop) if signal.stop is not None else None,
+        feature_refs=feature_refs,
+        candidate_id=str(metadata.get("candidate_id") or ""),
+        metadata=metadata,
+    )
+
+
+def candidate_trade_to_dict(candidate: CandidateTrade) -> dict[str, Any]:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "strategy_id": candidate.strategy_id,
+        "symbol": candidate.symbol,
+        "side": candidate.side,
+        "timestamp": candidate.timestamp.isoformat(),
+        "entry_reference": candidate.entry_reference,
+        "horizon_sec": candidate.horizon_sec,
+        "confidence": candidate.confidence,
+        "expected_edge_pct": candidate.expected_edge_pct,
+        "adverse_pct_estimate": candidate.adverse_pct_estimate,
+        "target_reference": candidate.target_reference,
+        "stop_reference": candidate.stop_reference,
+        "feature_refs": list(candidate.feature_refs),
+        "status": candidate.status,
+        "metadata": dict(candidate.metadata),
+    }
+
+
 def arbitrate_signals(
     signals: list[Signal],
     positions: dict[str, dict[str, Any]],
@@ -53,6 +137,7 @@ def arbitrate_signals(
     max_decisions: int,
     max_total_budget_usdt: float,
     min_ev: float = 0.0,
+    round_trip_cost_rate: float = 0.0,
 ) -> ArbitrationResult:
     """Run the shared committee for the current paper/live book."""
 
@@ -61,7 +146,11 @@ def arbitrate_signals(
         nav_usdt=float(realized_nav),
         free_usdt=max(0.0, float(initial_capital) - _used_budget(positions)),
         positions={},
-        metadata={"open_symbols": sorted(positions)},
+        per_strategy_used=_per_strategy_used(positions),
+        metadata={
+            "open_symbols": sorted(positions),
+            "per_strategy_open_count": _per_strategy_open_count(positions),
+        },
     )
     arbiter = PortfolioArbiter(
         max_fractional_kelly=0.08,
@@ -70,6 +159,11 @@ def arbitrate_signals(
         max_decisions=int(max_decisions),
         max_positions=int(max_positions),
         max_total_budget_usdt=float(max_total_budget_usdt),
+        strategy_priority={sid: int(rule["priority"]) for sid, rule in TREND_PULLBACK_CANDIDATE_RULES.items()},
+        strategy_max_positions={sid: int(rule["max_positions"]) for sid, rule in TREND_PULLBACK_CANDIDATE_RULES.items()},
+        strategy_budget_usdt={sid: float(rule["budget_usdt"]) for sid, rule in TREND_PULLBACK_CANDIDATE_RULES.items()},
+        strategy_order_usdt={sid: float(rule["order_margin_usdt"]) for sid, rule in TREND_PULLBACK_CANDIDATE_RULES.items()},
+        round_trip_cost_rate=float(round_trip_cost_rate),
     )
     return arbiter.arbitrate(signals, portfolio, now=_to_datetime(now_ts))
 
@@ -161,6 +255,29 @@ def _trend_pullback_reversal_signal(
             "size_semantics": "notional_usdt",
         },
     )
+
+
+def _per_strategy_open_count(positions: dict[str, dict[str, Any]]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for pos in positions.values():
+        sid = str(pos.get("source_strategy_id") or pos.get("strategy_id") or "")
+        if sid:
+            out[sid] = out.get(sid, 0) + 1
+    return out
+
+
+def _per_strategy_used(positions: dict[str, dict[str, Any]]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for pos in positions.values():
+        sid = str(pos.get("source_strategy_id") or pos.get("strategy_id") or "")
+        if not sid:
+            continue
+        try:
+            used = float(pos.get("margin_required_usdt") or pos.get("margin_usdt") or pos.get("risk_budget") or 0.0)
+        except Exception:
+            used = 0.0
+        out[sid] = out.get(sid, 0.0) + max(0.0, used)
+    return out
 
 
 def _daily_fib_support_rebound_signal(
@@ -340,9 +457,19 @@ def _signal(
         target = entry * (1.0 - target_pct)
         stop = entry * (1.0 + stop_pct)
     enriched = dict(metadata)
+    signal_family = str(enriched.get("signal_family") or strategy_id)
+    regime = str(enriched.get("regime") or "")
+    score = _float(enriched.get("score"), confidence)
     enriched["risk_budget_usdt"] = float(risk_budget_usdt)
     enriched["target_pct"] = float(target_pct)
     enriched["stop_pct"] = float(stop_pct)
+    enriched["thesis_contract"] = thesis_contract(
+        strategy_id=strategy_id,
+        side=side,
+        signal_family=signal_family,
+        regime=regime,
+        score=score,
+    )
     return Signal(
         strategy_id=strategy_id,
         symbol=symbol,
@@ -363,7 +490,9 @@ def _used_budget(positions: dict[str, dict[str, Any]]) -> float:
     return sum(max(0.0, _float(pos.get("risk_budget"))) for pos in positions.values())
 
 
-def _to_datetime(ts: pd.Timestamp) -> datetime:
+def _to_datetime(ts: pd.Timestamp | datetime) -> datetime:
+    if isinstance(ts, datetime):
+        return ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts.astimezone(timezone.utc)
     if ts.tzinfo is None:
         return ts.tz_localize(timezone.utc).to_pydatetime()
     return ts.to_pydatetime()

@@ -339,6 +339,19 @@ Fixed 1,000U conservative portfolio checks with snapshots:
 | `c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_2025plus_v1` | 2,916.93 | +191.69% | -4.44% | 1,504 | 61.84% | 0 violations |
 | `c_auto_v2_portfolio_rebuild_161_ohlcv_snapshot_fixed1000_2026_v1` | 1,539.76 | +53.98% | -7.62% | 264 | 68.94% | 0 violations |
 
+Live-like strict checks after thesis-exit and entry-filter work:
+
+| Run | Final NAV | Return | Annualized | Max DD | Trades | Win Rate | Leakage |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `c_auto_strict_live_like_20260516` | 26,590.49 | +786.35% | +103.62% | -2.88% | 2,191 | 67.46% | 0 violations |
+| `c_auto_strict_live_like_2026_20260516` | 5,000.98 | +66.70% | +406.59% | -15.88% | 168 | 72.62% | 0 violations |
+
+Strict check assumptions: fixed 3,000U account, max five positions, 6h
+rebalance, 1h entry delay, 5 bps fee plus 2 bps slippage per side, 0.90 score
+quantile, thesis exit, 3-signal persistence, anti-late filters, and slow-cycle
+confirmation. The 2026 slice remains profitable but has much larger drawdown,
+so current-regime risk controls matter more than the full-history headline.
+
 Interpretation:
 
 - Snapshot features do not materially change the portfolio result versus the
@@ -561,3 +574,31 @@ Do not paper trade until:
 - Strong bull is not dependent on one short calendar window.
 - Bear regime behavior is validated for both long-tail and short-tail use.
 - Liquidity and funding/OI filters reduce tail losses rather than overfit.
+
+## 2026-05-16 Live Review And Entry Filter A/B
+
+Live review for `micro_live_personal` showed the closed-trade loss was
+concentrated in short cross-section entries: 17 closed trades, 35.29% win rate,
+`-1.7865U` total; shorts were 15 trades, 33.33% win rate, `-2.1128U`, while
+long derivative-crowding reversals were 2 trades, 50.00% win rate, `+0.3263U`.
+Report path:
+`engine/data/research/c_auto_live_review/c_auto_live_personal_20260516/`.
+
+Focused A/B backtest from 2026-01-01:
+
+| Config | Trades | Win | Return | Max DD | Sharpe-like |
+|---|---:|---:|---:|---:|---:|
+| baseline | 575 | 73.91% | +375.50% | -6.59% | 6.05 |
+| anti_late_all | 560 | 74.82% | +305.69% | -8.21% | 5.74 |
+| anti_late_short | 563 | 74.25% | +341.72% | -8.23% | 5.62 |
+| persistence_all | 216 | 68.98% | +98.22% | -14.79% | 2.72 |
+| persistence_short | 265 | 70.57% | +195.63% | -13.47% | 3.84 |
+| slow_confirm_all | 575 | 76.00% | +396.93% | -4.98% | 6.88 |
+| slow_confirm_short | 573 | 75.22% | +395.13% | -5.08% | 6.80 |
+| all_three_all | 168 | 72.62% | +66.70% | -15.88% | 2.24 |
+| all_three_short | 243 | 70.78% | +180.02% | -14.15% | 3.52 |
+
+Decision: promote only `require_slow_confirm` to micro live production. Do not
+promote anti-late or persistence filters; both reduce return and worsen
+drawdown in this test. Research output:
+`engine/data/research/c_auto_entry_filter_ab/c_auto_entry_filter_ab_20260516/`.

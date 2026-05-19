@@ -21,6 +21,7 @@ class KitExecutionGateway:
     allow_live: bool = False
 
     def place_order(self, order: OrderIntent) -> KitResult:
+        td_mode = str(order.metadata.get("td_mode") or order.metadata.get("mgnMode") or "cross")
         args = [
             "--instId",
             order.inst_id,
@@ -33,10 +34,18 @@ class KitExecutionGateway:
             "--posSide",
             "net",
             "--tdMode",
-            "cross",
+            td_mode,
         ]
         if order.limit_price is not None:
             args.extend(["--px", str(order.limit_price)])
+        if bool(order.metadata.get("attach_brackets", False)):
+            target = order.metadata.get("target")
+            stop = order.metadata.get("stop")
+            trigger_type = str(order.metadata.get("trigger_px_type") or "mark")
+            if target is not None:
+                args.extend(["--tpTriggerPx", str(target), "--tpOrdPx=-1", "--tpTriggerPxType", trigger_type])
+            if stop is not None:
+                args.extend(["--slTriggerPx", str(stop), "--slOrdPx=-1", "--slTriggerPxType", trigger_type])
         if order.reduce_only:
             # CLI place help does not expose reduceOnly for normal orders in 1.2.7.
             # Use close/algo reduce-only paths for exchange-side reduce-only when needed.
@@ -113,8 +122,7 @@ class KitExecutionGateway:
                     "conditional",
                     "--slTriggerPx",
                     str(stop_trigger_px),
-                    "--slOrdPx",
-                    "-1",
+                    "--slOrdPx=-1",
                     "--posSide",
                     "net",
                     "--tdMode",

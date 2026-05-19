@@ -41,6 +41,7 @@ from build_c_auto_feature_store import (  # noqa: E402
 )
 from data.fetcher import fetch_ohlcv  # noqa: E402
 from arbitration.signal_committee import build_committee_signals, arbitrate_signals  # noqa: E402
+from arbitration.thesis_exit import evaluate_position_thesis  # noqa: E402
 from arbitration.leverage_policy import (  # noqa: E402
     CommitteeLeverageInputs,
     compute_committee_leverage_policy,
@@ -83,6 +84,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-market-age-sec", type=float, default=2 * 3600.0)
     p.add_argument("--min-fresh-symbols", type=int, default=20)
     p.add_argument("--require-derivatives", action="store_true")
+    p.add_argument("--data-readiness-wait-sec", type=float, default=600.0)
+    p.add_argument("--data-readiness-poll-sec", type=float, default=15.0)
     p.add_argument("--max-positions", type=int, default=15)
     p.add_argument("--paper-max-positions-per-strategy", type=int, default=5)
     p.add_argument("--rebalance-hours", type=int, default=6)
@@ -91,6 +94,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-leverage", type=float, default=1.0)
     p.add_argument("--allow-aggressive-leverage", action="store_true")
     p.add_argument("--paper-force-kit-confirmation", action="store_true")
+    p.add_argument("--post-exit-cooldown-hours", type=float, default=4.0)
+    p.add_argument("--thesis-exit-enabled", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--thesis-min-hold-hours", type=float, default=1.0)
+    p.add_argument("--thesis-score-retain", type=float, default=0.60)
+    p.add_argument("--thesis-min-score", type=float, default=0.0001)
     p.add_argument("--short-loss-cooldown-hours", type=float, default=12.0)
     p.add_argument("--short-loss-lookback-hours", type=float, default=24.0)
     p.add_argument("--short-loss-cooldown-min-losses", type=int, default=2)
@@ -189,7 +197,7 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     dataset_dir = ENGINE_DIR / "data" / "features" / args.dataset_id
     train_features = _read_frame(dataset_dir / "features.parquet", dataset_dir / "features.pkl").sort_index()
     train_labels = _read_frame(dataset_dir / "labels.parquet", dataset_dir / "labels.pkl").sort_index()
-    latest_features = _build_latest_features(args)
+    latest_features, readiness_wait = _build_ready_latest_features(args)
     predictions = _predict_policy(policy, train_features, train_labels, latest_features, args)
     scored = _build_portfolio_scores(
         predictions,
@@ -198,8 +206,13 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     )
     now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
     freshness = _freshness_report(latest_features, now_ts, args)
+    if readiness_wait:
+        freshness["readiness_wait"] = readiness_wait
     previous = _load_live_state(args)
     positions, ledger, realized_nav = _close_due_live(previous, latest_features, now_ts, args)
+    positions = _enrich_live_positions(positions, latest_features, args)
+    positions, thesis_events, realized_nav = _enforce_thesis_exits(args, positions, scored, latest_features, now_ts, realized_nav)
+    ledger.extend(thesis_events)
     stopped_flat_restart = str(previous.get("runner_status") or "") == "stopped_flat" and not positions
     bootstrap = (
         not positions
@@ -215,17 +228,20 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
     )
     if should_rebalance:
         risk_events = list(previous.get("ledger_tail", [])) + ledger
-        new_positions, new_events = _open_live_positions(scored, positions, now_ts, args, risk_events)
+        cooldown_symbols = _recent_exit_symbols(risk_events, now_ts, float(args.post_exit_cooldown_hours))
+        new_positions, new_events = _open_live_positions(scored, positions, now_ts, args, risk_events, cooldown_symbols)
         positions.update(new_positions)
         ledger.extend(new_events)
     elif not freshness_ok:
+        wait_status = str((freshness.get("readiness_wait") or {}).get("status") or "")
+        prefix = "data_readiness_timeout" if wait_status == "timeout" else "freshness_gate_failed"
         ledger.append(
             {
                 "ts": now_ts.isoformat(),
                 "event": "skip",
                 "symbol": None,
                 "side": None,
-                "reason": "freshness_gate_failed:" + ",".join(freshness.get("reasons") or []),
+                "reason": prefix + ":" + ",".join(freshness.get("reasons") or []),
                 "pnl": None,
                 "net_return": None,
             }
@@ -323,7 +339,52 @@ def _build_latest_features(args: argparse.Namespace) -> pd.DataFrame:
     return latest
 
 
-def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp) -> None:
+def _build_ready_latest_features(args: argparse.Namespace) -> tuple[pd.DataFrame, dict[str, Any]]:
+    deadline = time.monotonic() + max(0.0, float(getattr(args, "data_readiness_wait_sec", 0.0)))
+    poll = max(1.0, float(getattr(args, "data_readiness_poll_sec", 15.0)))
+    attempts = 0
+    last_features: pd.DataFrame | None = None
+    last_freshness: dict[str, Any] = {}
+    while True:
+        attempts += 1
+        latest = _build_latest_features(args)
+        latest_ts = pd.Timestamp(latest.index.get_level_values("timestamp").max())
+        freshness = _freshness_report(latest, latest_ts, args)
+        last_features = latest
+        last_freshness = freshness
+        if bool(freshness.get("passed")):
+            return latest, {
+                "waited": attempts > 1,
+                "attempts": attempts,
+                "status": "ready",
+                "freshness": freshness,
+            }
+        if attempts == 1 and str(",".join(freshness.get("reasons") or [])).find("market_age_sec") >= 0:
+            _refresh_latest_feature_universe(args, latest)
+        if time.monotonic() >= deadline:
+            return latest, {
+                "waited": attempts > 1,
+                "attempts": attempts,
+                "status": "timeout",
+                "freshness": last_freshness,
+            }
+        time.sleep(poll)
+
+
+def _refresh_latest_feature_universe(args: argparse.Namespace, latest: pd.DataFrame) -> None:
+    try:
+        symbols = sorted(str(sym) for sym in latest.index.get_level_values("symbol").unique())
+    except Exception:
+        symbols = []
+    if "BTC/USDT" not in symbols:
+        symbols.insert(0, "BTC/USDT")
+    end = pd.Timestamp.now(tz="UTC").floor("1h")
+    limit = int(getattr(args, "refresh_max_symbols", 0) or getattr(args, "max_symbols", 0) or len(symbols))
+    for symbol in symbols[: max(1, limit)]:
+        _refresh_ohlcv_cache(symbol, "1h", end, force=True)
+
+
+def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp, force: bool = False) -> None:
     start = (end - pd.Timedelta(days=3)).isoformat()
     try:
         fetch_ohlcv(
@@ -334,11 +395,27 @@ def _refresh_ohlcv_cache(symbol: str, timeframe: str, end: pd.Timestamp) -> None
             timeframe=timeframe,
             use_cache=True,
             sandbox=False,
-            fallback_to_stale=True,
+            fallback_to_stale=not force,
             fallback_to_yfinance=False,
             include_funding=False,
             cache_end_tolerance=pd.Timedelta("5min") if timeframe == "1h" else pd.Timedelta("10min"),
         )
+    except Exception as exc:
+        _record_refresh_failure(symbol, timeframe, end, exc)
+
+
+def _record_refresh_failure(symbol: str, timeframe: str, end: pd.Timestamp, exc: Exception) -> None:
+    try:
+        path = BASE_DIR / "logs" / "data_refresh" / "c_auto_inline_refresh_errors.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a") as fh:
+            fh.write(json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "target_end": end.isoformat(),
+                "error": str(exc),
+            }, ensure_ascii=False, sort_keys=True) + "\n")
     except Exception:
         return
 
@@ -802,10 +879,105 @@ def _close_due_live(
                 "pnl": pnl,
                 "net_return": net_return,
                 "exit_price": exit_price,
+                "source_strategy_id": pos.get("source_strategy_id"),
+                "signal_family": pos.get("signal_family"),
             }
         )
         positions.pop(symbol)
     return positions, ledger, realized_nav
+
+
+def _enforce_thesis_exits(
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    scored: pd.DataFrame,
+    latest_features: pd.DataFrame,
+    now_ts: pd.Timestamp,
+    realized_nav: float,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], float]:
+    if not bool(getattr(args, "thesis_exit_enabled", True)) or not positions:
+        return positions, [], realized_nav
+    current_signals = _current_position_signals(args, positions, scored, now_ts)
+    remaining = dict(positions)
+    events: list[dict[str, Any]] = []
+    nav = float(realized_nav)
+    for symbol, pos in list(positions.items()):
+        entry_ts = _parse_event_ts(pos.get("entry_ts"))
+        if entry_ts is not None:
+            held_hours = (now_ts - entry_ts).total_seconds() / 3600.0
+            if held_hours < float(args.thesis_min_hold_hours):
+                continue
+        decision = evaluate_position_thesis(
+            {"symbol": symbol, **pos},
+            current_signals,
+            score_retain=float(args.thesis_score_retain),
+            min_score=float(args.thesis_min_score),
+        )
+        if not decision.should_exit:
+            updated = dict(pos)
+            updated["thesis_last_check"] = {
+                "ts": now_ts.isoformat(),
+                "reason": decision.reason,
+                "current_score": decision.current_score,
+                "entry_score": decision.entry_score,
+            }
+            remaining[symbol] = updated
+            continue
+        exit_price = _latest_price(latest_features, symbol)
+        entry_price = float(pos.get("entry_price") or 0.0)
+        notional = float(pos.get("risk_budget") or 0.0)
+        if not _valid_number(exit_price) or entry_price <= 0 or notional <= 0:
+            continue
+        net_return = _net_return(str(pos.get("side")), entry_price, exit_price, args)
+        pnl = notional * net_return
+        nav += pnl
+        events.append(
+            {
+                "ts": now_ts.isoformat(),
+                "event": "exit",
+                "symbol": symbol,
+                "side": pos.get("side"),
+                "reason": decision.reason,
+                "pnl": pnl,
+                "net_return": net_return,
+                "exit_price": exit_price,
+                "source_strategy_id": pos.get("source_strategy_id"),
+                "signal_family": pos.get("signal_family"),
+                "thesis": {
+                    "severity": decision.severity,
+                    "current_score": decision.current_score,
+                    "entry_score": decision.entry_score,
+                    "details": decision.details or {},
+                    "contract": pos.get("thesis_contract"),
+                },
+            }
+        )
+        remaining.pop(symbol, None)
+    return remaining, events, nav
+
+
+def _current_position_signals(
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    scored: pd.DataFrame,
+    now_ts: pd.Timestamp,
+) -> list[Any]:
+    try:
+        group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
+    except Exception:
+        return []
+    group = group[group["symbol"].astype(str).isin(set(positions))].copy()
+    if group.empty:
+        return []
+    group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
+    group = group[group["volume_usd"] >= float(args.min_volume_usd)]
+    return build_committee_signals(
+        group,
+        now_ts,
+        base_capital=float(args.fixed_notional_capital),
+        base_risk=float(args.base_risk),
+        fee_slip_rate=_round_trip_cost_rate(args),
+    )
 
 
 def _open_live_positions(
@@ -814,13 +986,30 @@ def _open_live_positions(
     now_ts: pd.Timestamp,
     args: argparse.Namespace,
     risk_events: list[dict[str, Any]] | None = None,
+    cooldown_symbols: set[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
     group = group[~group["symbol"].isin(positions)]
+    events: list[dict[str, Any]] = []
+    blocked_by_cooldown = set(cooldown_symbols or set())
+    if blocked_by_cooldown:
+        group = group[~group["symbol"].astype(str).isin(blocked_by_cooldown)]
+        for symbol in sorted(blocked_by_cooldown):
+            events.append(
+                {
+                    "ts": now_ts.isoformat(),
+                    "event": "committee_note",
+                    "symbol": symbol,
+                    "side": None,
+                    "reason": f"rejected post_exit_cooldown_{float(args.post_exit_cooldown_hours):g}h",
+                    "pnl": None,
+                    "net_return": None,
+                }
+            )
     group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
     group = group[group["volume_usd"] >= float(args.min_volume_usd)]
     if group.empty:
-        return {}, [
+        return {}, events + [
             {
                 "ts": now_ts.isoformat(),
                 "event": "skip",
@@ -831,7 +1020,6 @@ def _open_live_positions(
                 "net_return": None,
             }
         ]
-    events: list[dict[str, Any]] = []
     short_cooldown = _short_loss_cooldown_status(
         risk_events or [],
         now_ts,
@@ -917,6 +1105,19 @@ def _open_live_positions(
         if not _valid_number(entry) or entry <= 0:
             continue
         side = str(signal.side)
+        if signal.stop is None or signal.target is None:
+            events.append(
+                {
+                    "ts": now_ts.isoformat(),
+                    "event": "entry_rejected",
+                    "symbol": symbol,
+                    "side": side,
+                    "reason": "missing_explicit_stop_or_target",
+                    "pnl": None,
+                    "net_return": None,
+                }
+            )
+            continue
         requested_notional = float(decision.size_usdt)
         leverage_policy = _leverage_policy(signal, requested_notional, args, positions)
         risk_budget = float(leverage_policy["notional_usdt"])
@@ -962,6 +1163,7 @@ def _open_live_positions(
             "signal_family": signal.metadata.get("signal_family") or signal.strategy_id,
             "source_strategy_id": signal.strategy_id,
             "committee_metadata": dict(signal.metadata),
+            "thesis_contract": signal.metadata.get("thesis_contract"),
             "entry_ts": now_ts.isoformat(),
             "exit_ts": (now_ts + pd.Timedelta(hours=horizon)).isoformat(),
             "horizon_hours": horizon,
@@ -980,6 +1182,12 @@ def _open_live_positions(
                 "p_target": signal.p_target,
                 "notional_usdt": risk_budget,
                 "leverage": leverage,
+                "stop_price": float(signal.stop),
+                "tp1_price": float(signal.target),
+                "tp2_price": opened[symbol]["tp2_price"],
+                "source_strategy_id": signal.strategy_id,
+                "signal_family": signal.metadata.get("signal_family") or signal.strategy_id,
+                "thesis_contract": signal.metadata.get("thesis_contract"),
                 "margin_required_usdt": margin_required,
                 "stop_account_loss_usdt": leverage_policy["stop_account_loss_usdt"],
                 "stop_account_loss_pct": leverage_policy["stop_account_loss_pct"],
@@ -1109,6 +1317,28 @@ def _short_loss_cooldown_status(
             for item in short_losses[-5:]
         ],
     }
+
+
+def _recent_exit_symbols(events: list[dict[str, Any]], now_ts: pd.Timestamp, cooldown_hours: float) -> set[str]:
+    if cooldown_hours <= 0:
+        return set()
+    now = pd.Timestamp(now_ts)
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    else:
+        now = now.tz_convert("UTC")
+    window = pd.Timedelta(hours=float(cooldown_hours))
+    symbols: set[str] = set()
+    for event in events:
+        if str(event.get("event") or "") not in {"exit", "forced_exit"}:
+            continue
+        symbol = str(event.get("symbol") or "")
+        if not symbol:
+            continue
+        ts = _parse_event_ts(event.get("ts"))
+        if ts is not None and now - ts <= window:
+            symbols.add(symbol)
+    return symbols
 
 
 def _parse_event_ts(value: Any) -> pd.Timestamp | None:

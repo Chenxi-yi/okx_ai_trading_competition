@@ -4,6 +4,12 @@ This document is the system-level contract for the OKX personal quant engine.
 Every new strategy, research idea, data source, backtest, and live execution path
 must fit this architecture unless there is an explicit written exception.
 
+Runtime startup, strategy promotion, investment committee approval, position
+management, execution, and environment isolation are governed by
+`.claude/knowledge/runtime_strategy_governance.md`. That document is the
+operational constraint layer for this architecture and overrides any older note
+that treats a strategy as a launcher or allows direct strategy-owned trading.
+
 The target capital range is a few hundred USDT to 100,000 USDT. The system is
 therefore optimized for durability, iteration speed, auditability, and realistic
 execution rather than institutional HFT complexity.
@@ -55,15 +61,17 @@ in `.claude/knowledge/pro_quant_module_map.md`.
 ## Core Principles
 
 1. Strategies emit signals; they do not place orders.
-2. Backtest, paper, and live share the same strategy, arbitration, risk, and
+2. Strategies are not launchers. Environment runners read Strategy Office and
+   decide which registered strategies to start.
+3. Backtest, paper, and live share the same strategy, arbitration, risk, and
    accounting path. Only the data adapter and execution router may change.
-3. All market data, features, labels, signals, decisions, orders, fills, and
+4. All market data, features, labels, signals, decisions, orders, fills, and
    outcomes must be point-in-time auditable.
-4. Account-level risk has final authority over every order.
-5. Every strategy starts in research, graduates through paper trading, and only
+5. Account-level risk has final authority over every order.
+6. Every strategy starts in research, graduates through paper trading, and only
    then receives live capital.
-6. High-risk or contest-style strategies are isolated from the core capital book.
-7. Stale data is a hard risk event, not a warning to ignore.
+7. High-risk or contest-style strategies are isolated from the core capital book.
+8. Stale data is a hard risk event, not a warning to ignore.
 
 ## 8-Layer Structure
 

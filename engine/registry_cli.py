@@ -8,7 +8,16 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from registry import ParameterSet, PerformanceRecord, RiskBudget, StrategyRecord, StrategyRegistry
+from registry import (
+    DataDependency,
+    ParameterSet,
+    PerformanceRecord,
+    RiskBudget,
+    RuntimeSpec,
+    StrategyRecord,
+    StrategyRegistry,
+)
+from runtime.environment_runner import DataReadinessProbe, EnvironmentRunner
 
 
 def main() -> int:
@@ -22,6 +31,10 @@ def main() -> int:
 
     p_show = sub.add_parser("show", help="Show one strategy")
     p_show.add_argument("strategy_id")
+
+    p_validate = sub.add_parser("validate-runtime", help="Validate runtime and data readiness")
+    p_validate.add_argument("--environment", choices=["personal", "competition"])
+    p_validate.add_argument("--json", action="store_true")
 
     p_register = sub.add_parser("register-strategy", help="Register or update a strategy")
     p_register.add_argument("strategy_id")
@@ -39,6 +52,10 @@ def main() -> int:
     p_register.add_argument("--notes", default="")
     p_register.add_argument("--live-enabled", action="store_true")
     p_register.add_argument("--live-allocation-pct", type=float, default=0.0)
+    p_register.add_argument("--runtime-json", default="{}", help="RuntimeSpec JSON")
+    p_register.add_argument("--runtime-file", help="RuntimeSpec JSON file")
+    p_register.add_argument("--data-dependencies-json", default="[]", help="DataDependency JSON list")
+    p_register.add_argument("--data-dependencies-file", help="DataDependency JSON list file")
 
     p_params = sub.add_parser("add-parameter-set", help="Add or update a parameter set")
     p_params.add_argument("strategy_id")
@@ -102,11 +119,33 @@ def main() -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
             return 0
 
+        if args.cmd == "validate-runtime":
+            payload = validate_runtime(reg, args.environment)
+            if args.json:
+                print(json.dumps(payload, indent=2, sort_keys=True))
+            else:
+                print(f"ok={payload['ok']} strategies={len(payload['strategies'])}")
+                for row in payload["strategies"]:
+                    status = "OK" if row["ok"] else "ERROR"
+                    running = "running" if row.get("running") else "missing"
+                    print(
+                        f"{status:5s} {row['environment']:11s} {running:7s} "
+                        f"{row['strategy_id']} runner={row['runner']}"
+                    )
+                    for error in row.get("errors", []):
+                        print(f"  - {error}")
+            return 0 if payload["ok"] else 1
+
         if args.cmd == "register-strategy":
             if args.live_enabled and args.status != "live":
                 raise ValueError("--live-enabled is only allowed when --status live")
             risk_budget = RiskBudget.from_dict(json.loads(args.risk_budget_json))
             tags = tuple(item.strip() for item in args.tags.split(",") if item.strip())
+            runtime = RuntimeSpec.from_dict(_load_json_object(args.runtime_json, args.runtime_file))
+            data_dependencies = tuple(
+                DataDependency.from_dict(item)
+                for item in _load_json_list(args.data_dependencies_json, args.data_dependencies_file)
+            )
             record = StrategyRecord(
                 strategy_id=args.strategy_id,
                 name=args.name,
@@ -117,6 +156,8 @@ def main() -> int:
                 class_name=args.class_name,
                 default_parameter_set_id=args.default_parameter_set_id,
                 risk_budget=risk_budget,
+                runtime=runtime,
+                data_dependencies=data_dependencies,
                 live_enabled=bool(args.live_enabled),
                 live_allocation_pct=max(0.0, float(args.live_allocation_pct)),
                 description=args.description,
@@ -212,6 +253,56 @@ def _load_params(params_json: str, params_file: str | None) -> dict:
         with Path(params_file).open() as f:
             return json.load(f)
     return json.loads(params_json)
+
+
+def _load_json_object(raw_json: str, file_path: str | None) -> dict:
+    if file_path:
+        with Path(file_path).open() as f:
+            data = json.load(f)
+    else:
+        data = json.loads(raw_json)
+    if not isinstance(data, dict):
+        raise ValueError("expected JSON object")
+    return data
+
+
+def _load_json_list(raw_json: str, file_path: str | None) -> list[dict]:
+    if file_path:
+        with Path(file_path).open() as f:
+            data = json.load(f)
+    else:
+        data = json.loads(raw_json)
+    if not isinstance(data, list):
+        raise ValueError("expected JSON list")
+    if not all(isinstance(item, dict) for item in data):
+        raise ValueError("expected JSON list of objects")
+    return data
+
+
+def validate_runtime(reg: StrategyRegistry, environment: str | None) -> dict:
+    probe = DataReadinessProbe()
+    envs = [environment] if environment else ["personal", "competition"]
+    rows: list[dict] = []
+    for env in envs:
+        runner = EnvironmentRunner(registry=reg, readiness=probe)
+        for plan in runner.plan(env):
+            processes = [dict(item) for item in runner.existing_processes(plan)]
+            row = {
+                "strategy_id": plan.strategy_id,
+                "environment": env,
+                "runner": plan.runner,
+                "okx_profile": plan.okx_profile,
+                "running": bool(processes),
+                "processes": processes,
+                "ok": plan.readiness.ok,
+                "errors": list(plan.readiness.errors),
+                "checked": list(plan.readiness.checked),
+            }
+            rows.append(row)
+    return {
+        "ok": all(row["ok"] for row in rows),
+        "strategies": rows,
+    }
 
 
 if __name__ == "__main__":

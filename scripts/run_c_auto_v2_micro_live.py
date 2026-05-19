@@ -9,6 +9,8 @@ writes independent live state for paper/live comparison.
 from __future__ import annotations
 
 import argparse
+import atexit
+import errno
 import json
 import math
 import os
@@ -27,15 +29,26 @@ ENGINE_DIR = ROOT / "engine"
 sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from arbitration.signal_committee import arbitrate_signals, build_committee_signals  # noqa: E402
+from accounting import LiveOwnershipJournal  # noqa: E402
+from arbitration.signal_committee import (  # noqa: E402
+    arbitrate_signals,
+    build_committee_signals,
+    candidate_trade_from_signal,
+    candidate_trade_to_dict,
+)
+from arbitration.thesis_exit import evaluate_position_thesis  # noqa: E402
 from arbitration.leverage_policy import (  # noqa: E402
     CommitteeLeverageInputs,
     compute_committee_leverage_policy,
     infer_kit_alignment,
 )
+from contracts import ApprovedTradePlan, ExecutionReceipt, OrderIntent, ReconciliationSnapshot  # noqa: E402
+from kit import KitClient, KitClientConfig, KitExecutionGateway  # noqa: E402
+from position import LivePositionLifecycleService  # noqa: E402
 from run_c_auto_v2_paper import (  # noqa: E402
     DEFAULT_POLICY,
     _build_latest_features,
+    _build_ready_latest_features,
     _build_portfolio_scores,
     _candidate_snapshot,
     _dedupe_ledger_events,
@@ -65,6 +78,7 @@ OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_PASSPHRASE",
 }
 BEIJING_TZ = timezone(timedelta(hours=8))
+EXCLUSIVE_STRATEGY_ID = "c_auto_v2_cross_section"
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,6 +104,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-market-age-sec", type=float, default=2 * 3600.0)
     p.add_argument("--min-fresh-symbols", type=int, default=20)
     p.add_argument("--require-derivatives", action="store_true")
+    p.add_argument("--data-readiness-wait-sec", type=float, default=600.0)
+    p.add_argument("--data-readiness-poll-sec", type=float, default=15.0)
     p.add_argument("--daily-budget-usdt", type=float, default=float(defaults.get("daily_budget_usdt", 50.0)))
     p.add_argument("--per-symbol-margin-usdt", type=float, default=float(defaults.get("per_symbol_margin_usdt", 10.0)))
     p.add_argument("--first-48h-max-positions", type=int, default=int(defaults.get("first_48h_max_positions", 2)))
@@ -106,11 +122,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-stop-margin-loss-pct", type=float, default=float(defaults.get("max_stop_margin_loss_pct", 0.15)))
     p.add_argument("--min-score-quantile", type=float, default=float(defaults.get("min_score_quantile", 0.90)))
     p.add_argument("--min-volume-usd", type=float, default=float(defaults.get("min_volume_usd", 100_000.0)))
+    p.add_argument("--require-slow-confirm", action=argparse.BooleanOptionalAction, default=bool(defaults.get("require_slow_confirm", False)))
     p.add_argument("--fee-bps-per-side", type=float, default=5.0)
     p.add_argument("--slippage-bps-per-side", type=float, default=2.0)
     p.add_argument("--rebalance-hours", type=int, default=int(defaults.get("rebalance_hours", 6)))
     p.add_argument("--entry-scan-minutes", type=int, default=int(defaults.get("entry_scan_minutes", 15)))
     p.add_argument("--post-exit-cooldown-hours", type=float, default=float(defaults.get("post_exit_cooldown_hours", 4.0)))
+    p.add_argument("--thesis-exit-enabled", action=argparse.BooleanOptionalAction, default=bool(defaults.get("thesis_exit_enabled", True)))
+    p.add_argument("--thesis-min-hold-hours", type=float, default=float(defaults.get("thesis_min_hold_hours", 1.0)))
+    p.add_argument("--thesis-score-retain", type=float, default=float(defaults.get("thesis_score_retain", 0.60)))
+    p.add_argument("--thesis-min-score", type=float, default=float(defaults.get("thesis_min_score", 0.0001)))
     p.add_argument("--short-loss-cooldown-hours", type=float, default=float(defaults.get("short_loss_cooldown_hours", 12.0)))
     p.add_argument("--short-loss-lookback-hours", type=float, default=float(defaults.get("short_loss_lookback_hours", 24.0)))
     p.add_argument("--short-loss-cooldown-min-losses", type=int, default=int(defaults.get("short_loss_cooldown_min_losses", 2)))
@@ -127,9 +148,11 @@ def main() -> int:
     args = parse_args()
     if not args.confirm_micro_live and not args.dry_run:
         raise SystemExit("--confirm-micro-live is required for real-money micro-live")
+    _require_environment_runner_for_live(args)
     OKX_PROFILE = str(args.okx_profile or ("live" if args.environment == "competition" else args.environment))
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    _claim_exclusive_strategy_lock(EXCLUSIVE_STRATEGY_ID, args.environment)
     stop_path = CONTROL_DIR / f"c_auto_v2_micro_live_{args.state_id}_{args.environment}.stop"
     try:
         stop_path.unlink()
@@ -160,17 +183,125 @@ def main() -> int:
     return 0
 
 
+def _require_environment_runner_for_live(args: argparse.Namespace) -> None:
+    if bool(args.dry_run):
+        return
+    if os.environ.get("OKX_ENVIRONMENT_RUNNER") == "1":
+        return
+    raise SystemExit(
+        "live strategy adapters must be started by the environment runner; "
+        "use the launcher environment start path instead of running this script directly"
+    )
+
+
+def _claim_exclusive_strategy_lock(strategy_id: str, environment: str) -> None:
+    conflict = _find_conflicting_strategy_process(environment)
+    if conflict:
+        raise SystemExit(
+            f"strategy {strategy_id} already running in {conflict.get('environment')} pid={conflict.get('pid')}; "
+            "personal and competition cannot run the same strategy simultaneously"
+        )
+    safe_strategy = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in strategy_id)
+    lock_path = CONTROL_DIR / f"exclusive_strategy_{safe_strategy}.lock"
+    payload = {"pid": os.getpid(), "environment": environment, "strategy_id": strategy_id, "ts": datetime.now(timezone.utc).isoformat()}
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            existing = _read_lock(lock_path)
+            existing_pid = int(existing.get("pid") or 0) if isinstance(existing, dict) else 0
+            existing_env = str(existing.get("environment") or "") if isinstance(existing, dict) else ""
+            if existing_pid and _pid_alive(existing_pid):
+                if existing_env != environment:
+                    raise SystemExit(
+                        f"strategy {strategy_id} already running in {existing_env}; "
+                        "personal and competition cannot run the same strategy simultaneously"
+                    )
+                raise SystemExit(f"strategy {strategy_id} already running in {environment} pid={existing_pid}")
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            continue
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh, sort_keys=True)
+
+        def _release() -> None:
+            current = _read_lock(lock_path)
+            if isinstance(current, dict) and int(current.get("pid") or 0) == os.getpid():
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+
+        atexit.register(_release)
+        return
+
+
+def _read_lock(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as exc:
+        if getattr(exc, "errno", None) == errno.EPERM:
+            return True
+        return False
+
+
+def _find_conflicting_strategy_process(environment: str) -> dict[str, Any] | None:
+    try:
+        proc = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "scripts/run_c_auto_v2_micro_live.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except ValueError:
+            continue
+        if pid == os.getpid():
+            continue
+        proc_env = _command_arg(command, "--environment") or "competition"
+        if proc_env in {"personal", "competition"} and proc_env != environment:
+            return {"pid": pid, "environment": proc_env, "command": command}
+    return None
+
+
+def _command_arg(command: str, key: str) -> str | None:
+    parts = command.split()
+    for idx, part in enumerate(parts):
+        if part == key and idx + 1 < len(parts):
+            return parts[idx + 1]
+        if part.startswith(f"{key}="):
+            return part.split("=", 1)[1]
+    return None
+
+
 def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     micro_policy = json.loads(Path(args.micro_policy).read_text()) if Path(args.micro_policy).exists() else {}
     strategy_policy = json.loads(Path(args.policy).read_text())
     dataset_dir = ENGINE_DIR / "data" / "features" / args.dataset_id
     train_features = _read_frame(dataset_dir / "features.parquet", dataset_dir / "features.pkl").sort_index()
     train_labels = _read_frame(dataset_dir / "labels.parquet", dataset_dir / "labels.pkl").sort_index()
-    latest_features = _build_latest_features(args)
+    latest_features, readiness_wait = _build_ready_latest_features(args)
     predictions = _predict_policy(strategy_policy, train_features, train_labels, latest_features, args)
     scored = _build_portfolio_scores(predictions)
     now_ts = pd.Timestamp(scored.index.get_level_values("timestamp").max())
     freshness = _freshness_report(latest_features, now_ts, args)
+    if readiness_wait:
+        freshness["readiness_wait"] = readiness_wait
 
     previous = _load_state(args)
     positions = {str(k): dict(v) for k, v in dict(previous.get("positions") or {}).items()}
@@ -180,12 +311,30 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     positions, close_events = _close_due_positions(args, positions, latest_features, now_ts)
     ledger.extend(close_events)
     positions = _mark_positions(positions, latest_features, args)
+    positions, thesis_events = _enforce_thesis_exits(args, positions, scored, now_ts)
+    ledger.extend(thesis_events)
     account_truth = _account_truth_snapshot(positions)
+    unknown_exchange_positions = list(account_truth.get("unknown_exchange_positions") or [])
+    if unknown_exchange_positions:
+        ledger.append(
+            _event(
+                now_ts,
+                "entry_blocked",
+                None,
+                None,
+                "unknown_exchange_positions:" + ",".join(str(item.get("instId") or item.get("inst_id") or "") for item in unknown_exchange_positions),
+            )
+        )
     account_nav_usdt = _account_nav_usdt(args, account_truth)
     positions, loss_stop_events = _enforce_position_loss_limits(args, positions, account_nav_usdt, now_ts)
     ledger.extend(loss_stop_events)
 
     daily = _daily_risk(previous, ledger, args, account_nav_usdt, sum(float(pos.get("unrealized_pnl") or 0.0) for pos in positions.values()))
+    kill_switch = _kill_switch_state()
+    if kill_switch.get("active"):
+        daily["allow_new_entries"] = False
+        daily["block_reason"] = "kill_switch_active"
+        daily["kill_switch"] = kill_switch
     if daily.get("cooldown_active") or daily["realized_pnl_usdt"] <= -abs(float(args.daily_flatten_loss_usdt)):
         reason = "daily_cooldown_loss" if daily.get("cooldown_active") else "daily_flatten_loss"
         positions, flat_events = _flatten_positions(args, positions, reason)
@@ -216,6 +365,8 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     should_scan_entries = (
         bool(freshness.get("passed"))
         and daily["allow_new_entries"]
+        and bool(account_truth.get("positions_ok"))
+        and not unknown_exchange_positions
         and len(positions) < max_positions
         and (run_on_start_entry or scheduled_rebalance or entry_scan_due)
     )
@@ -226,9 +377,15 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         positions.update(opened)
         ledger.extend(open_events)
     elif not freshness.get("passed"):
-        ledger.append(_event(now_ts, "skip", None, None, "freshness_gate_failed:" + ",".join(freshness.get("reasons") or [])))
+        wait_status = str((freshness.get("readiness_wait") or {}).get("status") or "")
+        prefix = "data_readiness_timeout" if wait_status == "timeout" else "freshness_gate_failed"
+        ledger.append(_event(now_ts, "skip", None, None, prefix + ":" + ",".join(freshness.get("reasons") or [])))
     elif not daily["allow_new_entries"]:
         ledger.append(_event(now_ts, "skip", None, None, daily["block_reason"]))
+    elif not account_truth.get("positions_ok"):
+        ledger.append(_event(now_ts, "skip", None, None, "exchange_positions_unavailable"))
+    elif unknown_exchange_positions:
+        ledger.append(_event(now_ts, "skip", None, None, "unknown_exchange_positions"))
 
     positions = _mark_positions(positions, latest_features, args)
     open_impact = sum(float(pos.get("unrealized_pnl") or 0.0) for pos in positions.values())
@@ -247,6 +404,8 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
     if freshness.get("passed"):
         old_ledger = _drop_freshness_skips(old_ledger, now_ts.isoformat())
     ledger_tail = _dedupe_ledger_events(old_ledger + ledger)[-80:]
+    latest_candidates = _candidate_snapshot(scored, now_ts)
+    candidate_history = _candidate_history_snapshot(scored, now_ts)
     return {
         "available": True,
         "running": True,
@@ -289,8 +448,46 @@ def _run_cycle(args: argparse.Namespace) -> dict[str, Any]:
         "last_entry_scan_ts": now_ts.isoformat() if should_scan_entries else last_entry_scan_ts,
         "last_entry_ts": now_ts.isoformat() if _has_entry_event(ledger) else str(previous.get("last_entry_ts") or ""),
         "run_on_start_entry_used": bool(run_on_start_entry and _has_entry_event(ledger)),
-        "latest_candidates": _candidate_snapshot(scored, now_ts),
+        "latest_candidates": latest_candidates,
+        "candidate_history": candidate_history,
         "paper_state_path": str((PAPER_DIR / f"{args.paper_state_id}_{args.environment}.json").relative_to(ROOT)),
+    }
+
+
+def _candidate_history_snapshot(scored: pd.DataFrame, now_ts: pd.Timestamp) -> dict[str, Any]:
+    try:
+        group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
+    except Exception:
+        return {"ts": now_ts.isoformat(), "candidates": []}
+    group = group.sort_values("score", ascending=False)
+    candidates: list[dict[str, Any]] = []
+    for _, row in group.iterrows():
+        candidates.append(
+            {
+                "symbol": str(row.get("symbol")),
+                "side": str(row.get("side")),
+                "score": _json_float(row.get("score")),
+                "eligible": bool(row.get("eligible", False)),
+                "volume_usd": _json_float(row.get("volume_usd")),
+                "close": _json_float(row.get("close")),
+                "btc_regime_6": str(row.get("btc_regime_6")),
+                "signal_family": str(row.get("signal_family") or "c_auto_v2_cross_section"),
+                "blocked_by_crowding": bool(row.get("blocked_by_crowding", False)),
+                "blocked_by_short_decay": bool(row.get("blocked_by_short_decay", False)),
+                "blocked_by_slow_confirm": bool(row.get("blocked_by_slow_confirm", False)),
+                "slow_confirm_ok": bool(row.get("slow_confirm_ok", True)),
+                "trend_pullback_eligible": bool(row.get("trend_pullback_eligible", False)),
+                "trend_pullback_score": _json_float(row.get("trend_pullback_score")),
+                "daily_fib_eligible": bool(row.get("daily_fib_eligible", False)),
+                "daily_fib_score": _json_float(row.get("daily_fib_score")),
+                "daily_fib_support": _json_float(row.get("daily_fib_support")),
+            }
+        )
+    return {
+        "ts": now_ts.isoformat(),
+        "candidate_count": len(candidates),
+        "eligible_count": sum(1 for row in candidates if row.get("eligible")),
+        "candidates": candidates,
     }
 
 
@@ -317,6 +514,12 @@ def _open_micro_positions(
             events.append(_event(now_ts, "committee_note", symbol, None, f"rejected post_exit_cooldown_{float(args.post_exit_cooldown_hours):g}h"))
     group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
     group = group[group["volume_usd"] >= float(args.min_volume_usd)]
+    if bool(getattr(args, "require_slow_confirm", False)):
+        slow_ok = _slow_confirm_ok(group)
+        if bool((~slow_ok).any()):
+            group.loc[:, "slow_confirm_ok"] = slow_ok
+            group.loc[~slow_ok, "blocked_by_slow_confirm"] = True
+            group.loc[~slow_ok, "eligible"] = False
     short_cooldown = _short_loss_cooldown_status(
         risk_events or [],
         now_ts,
@@ -358,6 +561,15 @@ def _open_micro_positions(
         base_risk=signal_base_risk,
         fee_slip_rate=_round_trip_cost_rate(args),
     )
+    candidate_contracts = [candidate_trade_to_dict(candidate_trade_from_signal(signal)) for signal in signals]
+    if candidate_contracts:
+        events.append(
+            {
+                **_event(now_ts, "candidate_contracts", None, None, "normalized_candidate_trade_contracts"),
+                "candidate_count": len(candidate_contracts),
+                "candidates": candidate_contracts[:25],
+            }
+        )
     result = arbitrate_signals(
         signals,
         positions,
@@ -368,6 +580,7 @@ def _open_micro_positions(
         max_decisions=slots,
         max_total_budget_usdt=max(0.0, float(args.daily_budget_usdt) - _used_margin(positions)),
         min_ev=0.0,
+        round_trip_cost_rate=_round_trip_cost_rate(args),
     )
     opened: dict[str, dict[str, Any]] = {}
     row_by_symbol = {str(row["symbol"]): row for _, row in group.iterrows()}
@@ -459,6 +672,7 @@ def _open_micro_positions(
             "exchange_stop_required": True,
             "exchange_stop_attached": bool(_truth_has_live_stop(truth)),
             "exchange_tp_attached": bool(target_price is not None and _truth_has_live_tp(truth)),
+            "thesis_contract": signal.metadata.get("thesis_contract"),
             "order": order,
             "order_ids": _extract_order_ids({"order": order, "truth": truth}),
             "exchange_truth": truth,
@@ -499,6 +713,7 @@ def _open_micro_positions(
                 "signal_entry_price": entry,
                 "exchange_stop_attached": bool(_truth_has_live_stop(truth)),
                 "exchange_tp_attached": bool(target_price is not None and _truth_has_live_tp(truth)),
+                "thesis_contract": signal.metadata.get("thesis_contract"),
                 "exchange_fill_px": avg_fill_px,
                 "exchange_entry_fill_time_ms": _latest_fill_time_ms(truth.get("fills") if isinstance(truth.get("fills"), list) else []),
                 "exchange_fee_usdt": fee_usdt,
@@ -506,11 +721,132 @@ def _open_micro_positions(
                 "order_ids": _extract_order_ids({"order": order, "truth": truth}),
             }
         )
+        _record_live_ownership_entry(
+            args=args,
+            signal=signal,
+            decision_id=decision.decision_id,
+            margin_usdt=margin_usdt,
+            notional_usdt=actual_notional,
+            leverage=leverage,
+            stop_price=stop_price,
+            target_price=target_price,
+            leverage_policy=leverage_policy,
+            order=order,
+            truth=truth,
+            submitted_at=now_ts,
+            fill_price=truth_entry,
+            filled_contracts=truth_contracts,
+            fee_usdt=fee_usdt,
+        )
     for note in result.notes[-8:]:
         events.append(_event(now_ts, "committee_note", None, None, note))
     if not opened and not events:
         events.append(_event(now_ts, "skip", None, None, "committee_no_accepted_signals"))
     return opened, events
+
+
+def _record_live_ownership_entry(
+    *,
+    args: argparse.Namespace,
+    signal: Any,
+    decision_id: str,
+    margin_usdt: float,
+    notional_usdt: float,
+    leverage: float,
+    stop_price: float,
+    target_price: float | None,
+    leverage_policy: dict[str, Any],
+    order: dict[str, Any],
+    truth: dict[str, Any],
+    submitted_at: pd.Timestamp,
+    fill_price: float,
+    filled_contracts: float,
+    fee_usdt: float | None,
+) -> None:
+    candidate = candidate_trade_from_signal(signal)
+    journal = _ownership_journal(args.environment, _okx_profile())
+    journal.append_candidate(candidate, {"source": "c_auto_micro_live"})
+    journal.append_plan(
+        ApprovedTradePlan(
+            decision_id=decision_id,
+            candidate=candidate,
+            environment=args.environment,
+            okx_profile=_okx_profile(),
+            margin_usdt=float(margin_usdt),
+            notional_usdt=float(notional_usdt),
+            leverage=float(leverage),
+            stop_price=float(stop_price),
+            target_price=float(target_price) if target_price is not None else None,
+            max_account_loss_usdt=float(leverage_policy.get("stop_account_loss_usdt") or 0.0),
+            approved_at=_to_utc_datetime(submitted_at),
+            risk_policy_id="committee_leverage_policy_v1",
+            metadata={"leverage_policy": leverage_policy, "committee_reason": getattr(signal, "strategy_id", "")},
+        )
+    )
+    order_ids = _extract_order_ids({"order": order, "truth": truth})
+    journal.append_execution(
+        ExecutionReceipt(
+            decision_id=decision_id,
+            environment=args.environment,
+            okx_profile=_okx_profile(),
+            inst_id=_symbol_to_inst_id(str(signal.symbol)),
+            status="filled" if float(filled_contracts or 0.0) > 0 else ("submitted" if order.get("ok") else "rejected"),
+            submitted_at=_to_utc_datetime(submitted_at),
+            filled_at=datetime.now(timezone.utc) if float(filled_contracts or 0.0) > 0 else None,
+            order_ids=order_ids,
+            fill_price=float(fill_price) if _valid_number(fill_price) else None,
+            filled_contracts=float(filled_contracts or 0.0),
+            fee_usdt=float(fee_usdt or 0.0),
+            raw={"order": order, "truth": truth},
+        )
+    )
+    position_truth = truth.get("position") if isinstance(truth.get("position"), dict) else {}
+    algo_orders = truth.get("algo_orders") if isinstance(truth.get("algo_orders"), list) else []
+    fills = truth.get("fills") if isinstance(truth.get("fills"), list) else []
+    errors: list[str] = []
+    if not _truth_has_live_stop(truth):
+        errors.append("missing_live_stop")
+    journal.append_reconciliation(
+        ReconciliationSnapshot(
+            environment=args.environment,
+            okx_profile=_okx_profile(),
+            checked_at=datetime.now(timezone.utc),
+            positions={_symbol_to_inst_id(str(signal.symbol)): position_truth},
+            algo_orders={_symbol_to_inst_id(str(signal.symbol)): algo_orders},
+            fills=tuple(row for row in fills if isinstance(row, dict)),
+            ok=not errors,
+            errors=tuple(errors),
+        )
+    )
+
+
+def _ownership_journal(environment: str, okx_profile: str) -> LiveOwnershipJournal:
+    return LiveOwnershipJournal.from_engine_dir(ENGINE_DIR, environment, okx_profile)
+
+
+def _to_utc_datetime(value: Any) -> datetime:
+    if isinstance(value, pd.Timestamp):
+        dt = value.to_pydatetime()
+    elif isinstance(value, datetime):
+        dt = value
+    else:
+        dt = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _slow_confirm_ok(group: pd.DataFrame) -> pd.Series:
+    side = group["side"].astype(str)
+    ret_1 = pd.to_numeric(group.get("ret_1", 0.0), errors="coerce").fillna(0.0)
+    h4_ret_1 = pd.to_numeric(group.get("h4_ret_1", 0.0), errors="coerce").fillna(0.0)
+    h4_ret_6 = pd.to_numeric(group.get("h4_ret_6", 0.0), errors="coerce").fillna(0.0)
+    oi_z = pd.to_numeric(group.get("oi_z_24", 0.0), errors="coerce").fillna(0.0)
+    ls_z = pd.to_numeric(group.get("ls_z_24", 0.0), errors="coerce").fillna(0.0)
+    funding_z = pd.to_numeric(group.get("funding_z_24", 0.0), errors="coerce").fillna(0.0)
+    short_ok = (h4_ret_6 < -0.006) | (h4_ret_1 < -0.002) | (((oi_z > 0.35) | (funding_z > 0.25) | (ls_z > 0.35)) & (ret_1 < 0))
+    long_ok = (h4_ret_6 > 0.006) | (h4_ret_1 > 0.002) | (((oi_z > 0.35) | (funding_z < -0.25) | (ls_z < -0.35)) & (ret_1 > 0))
+    return ((side == "short") & short_ok) | ((side == "long") & long_ok)
 
 
 def _pretrade_leverage_policy(
@@ -607,52 +943,40 @@ def _place_entry_with_brackets(
         }
     profile = _okx_profile()
     order_side = "buy" if side == "long" else "sell"
-    lev = _run_okx(["okx", "--profile", profile, "--json", "swap", "leverage", "--instId", inst_id, "--lever", _fmt(leverage), "--mgnMode", "isolated"])
-    if not lev["ok"]:
-        return {"ok": False, "stage": "set_leverage", "error": lev["error"], "leverage": lev}
-    cmd = [
-        "okx",
-        "--profile",
-        profile,
-        "--json",
-        "swap",
-        "place",
-        "--instId",
-        inst_id,
-        "--side",
-        order_side,
-        "--ordType",
-        "market",
-        "--sz",
-        _fmt(size_contracts),
-        "--posSide",
-        "net",
-        "--tdMode",
-        "isolated",
-    ]
-    if target_price is not None and _valid_number(target_price):
-        cmd.extend(
-            [
-                "--tpTriggerPx",
-                _fmt(float(target_price)),
-                "--tpOrdPx=-1",
-                "--tpTriggerPxType",
-                "mark",
-            ]
-        )
-    cmd.extend(
-        [
-        "--slTriggerPx",
-        _fmt(stop_price),
-        "--slOrdPx=-1",
-        "--slTriggerPxType",
-        "mark",
-        ]
+    gateway = _kit_gateway(profile)
+    lev = gateway.set_leverage(inst_id, leverage, mgn_mode="isolated", profile=profile)
+    if not lev.ok:
+        return {
+            "ok": False,
+            "stage": "set_leverage",
+            "error": lev.error,
+            "leverage": {"ok": lev.ok, "argv": lev.argv, "data": lev.data, "error": lev.error},
+        }
+    order = OrderIntent(
+        decision_id=f"c_auto_micro_live_{int(time.time() * 1000)}",
+        inst_id=inst_id,
+        side=order_side,
+        size_contracts=float(size_contracts),
+        order_type="market",
+        timestamp=datetime.now(timezone.utc),
+        profile=profile,
+        leverage=float(leverage),
+        metadata={
+            "strategy_id": EXCLUSIVE_STRATEGY_ID,
+            "td_mode": "isolated",
+            "attach_brackets": True,
+            "target": _fmt(float(target_price)) if target_price is not None and _valid_number(target_price) else None,
+            "stop": _fmt(float(stop_price)),
+            "trigger_px_type": "mark",
+            "source": "kit_execution_gateway",
+        },
     )
-    place = _run_okx(cmd)
-    if not place["ok"]:
-        return {"ok": False, "stage": "place_entry_with_brackets", "error": place["error"], "leverage": lev, "place": place}
-    return {"ok": True, "stage": "placed", "leverage": lev, "place": place, "take_profit_attached": target_price is not None}
+    place = gateway.place_order(order)
+    place_row = {"ok": place.ok, "argv": place.argv, "data": place.data, "error": place.error}
+    lev_row = {"ok": lev.ok, "argv": lev.argv, "data": lev.data, "error": lev.error}
+    if not place.ok:
+        return {"ok": False, "stage": "place_entry_with_brackets", "error": place.error, "leverage": lev_row, "place": place_row}
+    return {"ok": True, "stage": "placed", "source": "kit_execution_gateway", "leverage": lev_row, "place": place_row, "take_profit_attached": target_price is not None}
 
 
 def _post_place_truth(inst_id: str, order: dict[str, Any], side: str) -> dict[str, Any]:
@@ -780,30 +1104,50 @@ def _nullable_price(value: Any) -> float | None:
 def _close_due_positions(args: argparse.Namespace, positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, now_ts: pd.Timestamp) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     remaining = dict(positions)
     events: list[dict[str, Any]] = []
-    for symbol, pos in list(positions.items()):
-        reason = ""
-        exit_ts = pd.Timestamp(pos.get("exit_ts"))
-        if now_ts >= exit_ts:
-            reason = "horizon"
-        else:
-            mark = _latest_price(latest_features, symbol)
-            stop = _json_float(pos.get("stop_price"))
-            target = _json_float(pos.get("tp1_price"))
-            side = str(pos.get("side") or "")
-            if stop is not None and _valid_number(mark):
-                if (side == "long" and mark <= stop) or (side == "short" and mark >= stop):
-                    reason = "local_stop_shadow"
-            if not reason and target is not None and _valid_number(mark):
-                if (side == "long" and mark >= target) or (side == "short" and mark <= target):
-                    reason = "local_take_profit_shadow"
-        if not reason:
-            continue
-        close = _close_position(str(pos.get("inst_id") or _symbol_to_inst_id(symbol)))
-        mark = _latest_price(latest_features, symbol)
+    mark_prices = {
+        symbol: _latest_price(latest_features, symbol)
+        for symbol in positions
+    }
+    service = LivePositionLifecycleService()
+    now_dt = now_ts.to_pydatetime()
+    for exit_plan in service.exit_plans(positions, mark_prices, now=now_dt, nav_usdt=float(args.daily_budget_usdt)):
+        symbol = exit_plan.symbol
+        pos = dict(exit_plan.raw_position)
+        reason = _legacy_exit_reason(exit_plan.reason)
+        close = _close_position(exit_plan.inst_id, args.environment)
+        mark = exit_plan.mark if _valid_number(exit_plan.mark) else _latest_price(latest_features, symbol)
         pnl = _position_pnl(pos, mark, args)
-        events.append({**_event(now_ts, "exit", symbol, pos.get("side"), reason), "pnl": pnl, "close": close, "exit_price": _nullable_price(mark)})
+        events.append(
+            {
+                **_event(now_ts, "exit", symbol, pos.get("side"), reason),
+                "pnl": pnl,
+                "close": close,
+                "exit_price": _nullable_price(mark),
+                "position_intent": _position_intent_payload(exit_plan.intent),
+            }
+        )
         remaining.pop(symbol, None)
     return remaining, events
+
+
+def _legacy_exit_reason(reason: str) -> str:
+    return {
+        "target_hit": "local_take_profit_shadow",
+        "stop_hit": "local_stop_shadow",
+        "time_stop": "horizon",
+    }.get(str(reason), str(reason) or "position_manager_exit")
+
+
+def _position_intent_payload(intent: Any) -> dict[str, Any]:
+    return {
+        "decision_id": getattr(intent, "decision_id", ""),
+        "strategy_id": getattr(intent, "strategy_id", ""),
+        "inst_id": getattr(intent, "inst_id", ""),
+        "action": getattr(intent, "action", ""),
+        "reduce_only": bool(getattr(intent, "reduce_only", False)),
+        "reason": getattr(intent, "reason", ""),
+        "metadata": dict(getattr(intent, "metadata", {}) or {}),
+    }
 
 
 def _reconcile_exchange_positions(
@@ -812,7 +1156,7 @@ def _reconcile_exchange_positions(
     latest_features: pd.DataFrame,
     now_ts: pd.Timestamp,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
-    if bool(getattr(args, "dry_run", False)) or not positions:
+    if bool(getattr(args, "dry_run", False)):
         return positions, []
     exchange = _fetch_exchange_positions()
     if exchange is None:
@@ -910,6 +1254,17 @@ def _account_nav_usdt(args: argparse.Namespace, account_truth: dict[str, Any] | 
     return max(float(args.initial_capital), float(args.daily_budget_usdt))
 
 
+def _kill_switch_state() -> dict[str, Any]:
+    path = CONTROL_DIR / "kill.switch"
+    if not path.exists():
+        return {"active": False}
+    try:
+        payload = json.loads(path.read_text())
+    except Exception:
+        payload = {"reason": path.read_text(errors="ignore").strip() or "kill switch present"}
+    return {"active": True, **payload}
+
+
 def _account_truth_snapshot(positions: dict[str, dict[str, Any]]) -> dict[str, Any]:
     exchange_positions = _fetch_exchange_positions()
     open_orders: dict[str, list[dict[str, Any]]] = {}
@@ -918,6 +1273,14 @@ def _account_truth_snapshot(positions: dict[str, dict[str, Any]]) -> dict[str, A
     for inst_id in inst_ids:
         open_orders[inst_id] = _fetch_open_orders(inst_id)
         algo_orders[inst_id] = _fetch_algo_orders(inst_id)
+    known_inst_ids = set(inst_ids)
+    unknown_exchange_positions = []
+    if exchange_positions is not None:
+        unknown_exchange_positions = [
+            row
+            for inst_id, row in sorted(exchange_positions.items())
+            if inst_id not in known_inst_ids
+        ]
     return {
         "source": "okx_private_endpoints",
         "checked_at": datetime.now(timezone.utc).isoformat(),
@@ -925,6 +1288,7 @@ def _account_truth_snapshot(positions: dict[str, dict[str, Any]]) -> dict[str, A
         "balance": _fetch_account_balance(),
         "positions": exchange_positions,
         "positions_ok": exchange_positions is not None,
+        "unknown_exchange_positions": unknown_exchange_positions,
         "open_orders": open_orders,
         "algo_orders": algo_orders,
     }
@@ -1035,9 +1399,99 @@ def _flatten_positions(args: argparse.Namespace, positions: dict[str, dict[str, 
     now_ts = pd.Timestamp.now(tz="UTC")
     events = []
     for symbol, pos in positions.items():
-        close = _close_position(str(pos.get("inst_id") or _symbol_to_inst_id(symbol)))
+        close = _close_position(str(pos.get("inst_id") or _symbol_to_inst_id(symbol)), args.environment)
         events.append({**_event(now_ts, "forced_exit", symbol, pos.get("side"), reason), "pnl": _json_float(pos.get("unrealized_pnl")), "close": close})
     return {}, events
+
+
+def _enforce_thesis_exits(
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    scored: pd.DataFrame,
+    now_ts: pd.Timestamp,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    if not bool(getattr(args, "thesis_exit_enabled", True)) or not positions:
+        return positions, []
+    if bool(getattr(args, "dry_run", False)):
+        return positions, []
+    remaining = dict(positions)
+    events: list[dict[str, Any]] = []
+    current_signals = _current_position_signals(args, positions, scored, now_ts)
+    for symbol, pos in list(positions.items()):
+        entry_ts = _parse_ts(pos.get("entry_ts"))
+        if entry_ts is not None:
+            held_hours = (now_ts - entry_ts).total_seconds() / 3600.0
+            if held_hours < float(args.thesis_min_hold_hours):
+                continue
+        decision = evaluate_position_thesis(
+            {"symbol": symbol, **pos},
+            current_signals,
+            score_retain=float(args.thesis_score_retain),
+            min_score=float(args.thesis_min_score),
+        )
+        if not decision.should_exit:
+            updated = dict(pos)
+            updated["thesis_last_check"] = {
+                "ts": now_ts.isoformat(),
+                "reason": decision.reason,
+                "current_score": decision.current_score,
+                "entry_score": decision.entry_score,
+            }
+            remaining[symbol] = updated
+            continue
+        inst_id = str(pos.get("inst_id") or _symbol_to_inst_id(symbol))
+        close = _close_position(inst_id, args.environment)
+        pnl = _json_float(pos.get("unrealized_pnl"))
+        if pnl is None:
+            pnl = _position_pnl(pos, _latest_price(scored, symbol), args)
+        events.append(
+            {
+                **_event(now_ts, "exit", symbol, pos.get("side"), decision.reason),
+                "pnl": pnl,
+                "net_return": _json_float(pos.get("net_return")),
+                "exit_price": pos.get("mark_price"),
+                "close": close,
+                "thesis": {
+                    "severity": decision.severity,
+                    "current_score": decision.current_score,
+                    "entry_score": decision.entry_score,
+                    "details": decision.details or {},
+                    "contract": pos.get("thesis_contract"),
+                },
+            }
+        )
+        remaining.pop(symbol, None)
+    return remaining, events
+
+
+def _current_position_signals(
+    args: argparse.Namespace,
+    positions: dict[str, dict[str, Any]],
+    scored: pd.DataFrame,
+    now_ts: pd.Timestamp,
+) -> list[Any]:
+    try:
+        group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
+    except Exception:
+        return []
+    symbols = set(positions)
+    group = group[group["symbol"].astype(str).isin(symbols)].copy()
+    if group.empty:
+        return []
+    group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
+    group = group[group["volume_usd"] >= float(args.min_volume_usd)]
+    signal_base_risk = 0.06
+    signal_base_capital = max(
+        float(args.per_symbol_margin_usdt) / signal_base_risk,
+        float(args.per_symbol_margin_usdt),
+    )
+    return build_committee_signals(
+        group,
+        now_ts,
+        base_capital=signal_base_capital,
+        base_risk=signal_base_risk,
+        fee_slip_rate=_round_trip_cost_rate(args),
+    )
 
 
 def _enforce_position_loss_limits(
@@ -1060,7 +1514,7 @@ def _enforce_position_loss_limits(
         if pnl > -limit_usdt:
             continue
         inst_id = str(pos.get("inst_id") or _symbol_to_inst_id(symbol))
-        close = _close_position(inst_id)
+        close = _close_position(inst_id, args.environment)
         events.append(
             {
                 **_event(now_ts, "forced_exit", symbol, pos.get("side"), "max_position_loss_2pct"),
@@ -1075,14 +1529,32 @@ def _enforce_position_loss_limits(
     return remaining, events
 
 
-def _close_position(inst_id: str) -> dict[str, Any]:
+def _close_position(inst_id: str, environment: str = "") -> dict[str, Any]:
     # This helper is only reached in real mode during normal runs. Dry-run
     # states can still call it from verification paths, so keep it inert.
     if os.environ.get("C_AUTO_MICRO_LIVE_DRY_RUN", "").lower() == "true":
         return {"ok": True, "dry_run": True, "inst_id": inst_id}
     cancel = _run_okx(["okx", "--profile", _okx_profile(), "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
-    close = _run_okx(["okx", "--profile", _okx_profile(), "--json", "swap", "close", "--instId", inst_id, "--mgnMode", "isolated", "--posSide", "net", "--autoCxl"])
-    return {"ok": close["ok"], "cancel_probe": cancel, "close": close}
+    gateway = _kit_gateway(_okx_profile())
+    close = gateway.close_position(inst_id, mgn_mode="isolated", pos_side="net", profile=_okx_profile())
+    close_row = {"ok": close.ok, "argv": close.argv, "data": close.data, "error": close.error}
+    row = {"ok": close.ok, "source": "kit_execution_gateway", "cancel_probe": cancel, "close": close_row}
+    _ownership_journal(environment or "competition", _okx_profile()).append_close(
+        strategy_id=EXCLUSIVE_STRATEGY_ID,
+        inst_id=inst_id,
+        reason="c_auto_close",
+        result=row,
+    )
+    return row
+
+
+def _kit_gateway(profile: str) -> KitExecutionGateway:
+    live_enabled = os.environ.get("LIVE_TRADING", "false").lower() == "true"
+    return KitExecutionGateway(
+        KitClient(KitClientConfig(default_profile=profile, live_enabled=live_enabled)),
+        profile=profile,
+        allow_live=live_enabled,
+    )
 
 
 def _mark_positions(positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> dict[str, dict[str, Any]]:
@@ -1341,6 +1813,8 @@ def _write_state(args: argparse.Namespace, state: dict[str, Any]) -> None:
     (LIVE_DIR / f"{prefix}.json").write_text(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
     if state.get("equity"):
         _append_jsonl(LIVE_DIR / f"{prefix}_equity.jsonl", [state["equity"][-1]])
+    if state.get("candidate_history"):
+        _append_jsonl(LIVE_DIR / f"{prefix}_candidate_history.jsonl", [state["candidate_history"]])
     cycle_events = list(state.get("cycle_events", []))
     if cycle_events:
         _append_jsonl(LIVE_DIR / f"{prefix}_ledger.jsonl", cycle_events)

@@ -1,15 +1,320 @@
 #!/usr/bin/env python3
 """
-Read engine/logs/summary.json and print current trading status.
+Print current trading status for both the legacy engine daemon and the current
+strategy-runner layout.
 Usage: python3 trading_status.py [--json]
 """
+from __future__ import annotations
+
 import argparse
 import json
+import os
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+ENGINE_ROOT = PROJECT_ROOT / "engine"
+sys.path.insert(0, str(ENGINE_ROOT))
 SUMMARY_FILE = PROJECT_ROOT / "engine" / "logs" / "summary.json"
+MICRO_LIVE_DIR = PROJECT_ROOT / "engine" / "logs" / "c_auto_v2_micro_live"
+RESEARCH_SLEEVES_DIR = PROJECT_ROOT / "engine" / "logs" / "research_sleeves"
+
+try:
+    from runtime import EnvironmentRunner
+except Exception:
+    EnvironmentRunner = None  # type: ignore[assignment]
+
+
+def read_json(path: Path):
+    try:
+        return json.loads(path.read_text()) if path.exists() else None
+    except Exception:
+        return None
+
+
+def collect_runner_status() -> dict:
+    schedulers = []
+    for path in sorted(MICRO_LIVE_DIR.glob("*_scheduler.json")) + sorted(RESEARCH_SLEEVES_DIR.glob("*_scheduler.json")):
+        payload = read_json(path)
+        if not isinstance(payload, dict):
+            continue
+        state_path = path.with_name(path.name.removesuffix("_scheduler.json") + ".json")
+        state = read_json(state_path)
+        updated_at = payload.get("updated_at")
+        age_sec = age_seconds(updated_at)
+        schedulers.append(
+            {
+                "scheduler_path": str(path.relative_to(PROJECT_ROOT)),
+                "state_path": str(state_path.relative_to(PROJECT_ROOT)) if state_path.exists() else None,
+                "strategy_id": payload.get("strategy_id"),
+                "state_id": payload.get("state_id"),
+                "environment": payload.get("environment"),
+                "status": payload.get("status"),
+                "cycles": payload.get("cycles"),
+                "updated_at": updated_at,
+                "age_sec": age_sec,
+                "fresh": age_sec is not None and age_sec <= 15 * 60,
+                "last_error": payload.get("last_error"),
+                "execution": payload.get("execution"),
+                "okx_profile": payload.get("okx_profile"),
+                "nav": state.get("nav") if isinstance(state, dict) else None,
+                "positions": len(state.get("positions") or {}) if isinstance(state, dict) else None,
+                "candidate_count": state.get("candidate_count") if isinstance(state, dict) else None,
+            }
+        )
+
+    runner_plans = collect_environment_plans()
+    processes = collect_processes_from_plans(runner_plans)
+    process_error = None
+    try:
+        proc = subprocess.run(["ps", "-axo", "pid,stat,etime,command"], capture_output=True, text=True, timeout=5)
+    except Exception as exc:
+        process_error = f"{type(exc).__name__}: {exc}"
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        for line in proc.stdout.splitlines():
+            if line.lstrip().startswith("PID "):
+                continue
+            if "scripts/run_c_auto_v2_micro_live.py" not in line and "scripts/run_research_sleeve_paper.py" not in line:
+                continue
+            parts = line.strip().split(None, 3)
+            if len(parts) < 4:
+                continue
+            command = parts[3]
+            row = {
+                "pid": int(parts[0]),
+                "stat": parts[1],
+                "etime": parts[2],
+                "strategy_id": command_arg(command, "--strategy-id") or "c_auto_v2_cross_section",
+                "state_id": command_arg(command, "--state-id"),
+                "environment": command_arg(command, "--environment"),
+                "okx_profile": command_arg(command, "--okx-profile"),
+                "command": command,
+                "source": "ps",
+            }
+            if not any(item.get("pid") == row["pid"] for item in processes):
+                processes.append(row)
+    elif proc is not None:
+        process_error = (proc.stderr or proc.stdout or f"ps exited {proc.returncode}").strip()
+
+    planned_by_key = {(item.get("environment"), item.get("strategy_id")): item for item in runner_plans}
+    running_by_key = {(item.get("environment"), item.get("strategy_id")) for item in processes}
+    for item in schedulers:
+        key = (item.get("environment"), item.get("strategy_id"))
+        item["process_running"] = key in running_by_key
+        if not item["process_running"] and str(item.get("status") or "").lower() == "running":
+            item["stale_without_process"] = True
+            item["fresh"] = False
+    missing_plans = [
+        item for key, item in planned_by_key.items()
+        if key not in running_by_key
+    ]
+    readiness_errors = [
+        error
+        for item in runner_plans
+        for error in item.get("readiness_errors", ())
+    ]
+
+    lock_or_ps_processes = bool(processes)
+    return {
+        "mode": "strategy_runners",
+        "ok": (not missing_plans and not readiness_errors)
+        or any(item.get("status") == "running" and item.get("fresh") for item in schedulers),
+        "process_error": None if lock_or_ps_processes else process_error,
+        "process_scan_warning": process_error if lock_or_ps_processes else None,
+        "processes": processes,
+        "runner_plans": runner_plans,
+        "missing_plans": missing_plans,
+        "readiness_errors": readiness_errors,
+        "schedulers": schedulers,
+    }
+
+
+def collect_environment_plans() -> list[dict]:
+    if EnvironmentRunner is None:
+        return []
+    rows = []
+    runner = EnvironmentRunner(root=PROJECT_ROOT)
+    for environment in ("personal", "competition"):
+        try:
+            plans = runner.plan(environment)
+        except Exception as exc:
+            rows.append(
+                {
+                    "environment": environment,
+                    "strategy_id": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+        for plan in plans:
+            existing = list(runner.existing_processes(plan))
+            rows.append(
+                {
+                    "environment": environment,
+                    "strategy_id": plan.strategy_id,
+                    "state_id": plan.state_id,
+                    "runner": plan.runner,
+                    "okx_profile": plan.okx_profile,
+                    "priority": plan.priority,
+                    "readiness_ok": plan.readiness.ok,
+                    "readiness_errors": list(plan.readiness.errors),
+                    "readiness_checked": list(plan.readiness.checked),
+                    "command": list(plan.command),
+                    "running": bool(existing),
+                    "processes": list(existing),
+                }
+            )
+    return rows
+
+
+def collect_processes_from_plans(plans: list[dict]) -> list[dict]:
+    rows = []
+    for plan in plans:
+        for process in plan.get("processes") or []:
+            pid = process.get("pid")
+            if pid is None:
+                continue
+            try:
+                pid_int = int(pid)
+            except Exception:
+                continue
+            if not pid_alive(pid_int):
+                continue
+            rows.append(
+                {
+                    "pid": pid_int,
+                    "stat": process.get("stat") or "?",
+                    "etime": process.get("etime") or "?",
+                    "strategy_id": process.get("strategy_id") or plan.get("strategy_id"),
+                    "state_id": process.get("state_id") or plan.get("state_id"),
+                    "environment": process.get("environment") or plan.get("environment"),
+                    "okx_profile": process.get("okx_profile") or plan.get("okx_profile"),
+                    "command": process.get("command") or " ".join(str(x) for x in plan.get("command") or ()),
+                    "source": process.get("source") or "environment_runner",
+                }
+            )
+    return rows
+
+
+def pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError as exc:
+        if getattr(exc, "errno", None) == 1:
+            return True
+        return False
+
+
+def age_seconds(value) -> float | None:
+    if not value:
+        return None
+    try:
+        updated = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds())
+
+
+def command_arg(command: str, key: str) -> str | None:
+    parts = command.split()
+    for idx, part in enumerate(parts):
+        if part == key and idx + 1 < len(parts):
+            return parts[idx + 1]
+        if part.startswith(f"{key}="):
+            return part.split("=", 1)[1]
+    return None
+
+
+def print_runner_status(status: dict) -> None:
+    processes = status.get("processes") or []
+    runner_plans = status.get("runner_plans") or []
+    schedulers = status.get("schedulers") or []
+    print(f"\n{'='*72}")
+    print("  STRATEGY RUNNER STATUS")
+    print(f"  Plans: {len(runner_plans)}  Processes: {len(processes)}  Schedulers: {len(schedulers)}")
+    print(f"{'='*72}")
+
+    if runner_plans:
+        print("\n  Registry runtime plan")
+        for plan in sorted(runner_plans, key=lambda item: (str(item.get("environment")), -int(item.get("priority") or 0), str(item.get("strategy_id")))):
+            readiness = "ready" if plan.get("readiness_ok") else "blocked"
+            running = "running" if plan.get("running") else "missing"
+            print(
+                "    env={env:<11} {running:<7} {ready:<7} profile={profile:<8} priority={priority:<3} {strategy}".format(
+                    env=plan.get("environment") or "?",
+                    running=running,
+                    ready=readiness,
+                    profile=plan.get("okx_profile") or "?",
+                    priority=plan.get("priority") if plan.get("priority") is not None else "?",
+                    strategy=plan.get("strategy_id") or plan.get("error") or "?",
+                )
+            )
+            for err in plan.get("readiness_errors") or []:
+                print(f"      readiness_error: {err}")
+
+    if processes:
+        print("\n  Running processes")
+        for proc in sorted(processes, key=lambda item: (str(item.get("environment")), str(item.get("strategy_id")))):
+            print(
+                "    PID={pid:<6} {stat:<4} {etime:<9} env={env:<11} profile={profile:<8} source={source:<24} {strategy}".format(
+                    pid=proc.get("pid"),
+                    stat=proc.get("stat") or "?",
+                    etime=proc.get("etime") or "?",
+                    env=proc.get("environment") or "?",
+                    profile=proc.get("okx_profile") or "?",
+                    source=proc.get("source") or "?",
+                    strategy=proc.get("strategy_id") or proc.get("state_id") or "?",
+                )
+            )
+    else:
+        if status.get("process_error"):
+            print(f"\n  Process scan unavailable: {status.get('process_error')}")
+        else:
+            print("\n  No active runner processes found.")
+    if processes and status.get("process_scan_warning"):
+        print(f"\n  Process scan warning: {status.get('process_scan_warning')} (lock-based runner status is active)")
+
+    active = [item for item in schedulers if item.get("status") == "running" and item.get("process_running")]
+    stale_without_process = [item for item in schedulers if item.get("stale_without_process")]
+    if active:
+        print("\n  Active schedulers")
+        for item in sorted(active, key=lambda row: (str(row.get("environment")), str(row.get("strategy_id")))):
+            err = item.get("last_error") or "none"
+            freshness = "fresh" if item.get("fresh") else "stale"
+            age_min = item.get("age_sec") / 60.0 if item.get("age_sec") is not None else None
+            print(
+                "    env={env:<11} {fresh:<5} age={age:<7} cycles={cycles:<5} nav={nav!s:<10} pos={pos!s:<3} cand={cand!s:<4} {strategy}".format(
+                    env=item.get("environment") or "?",
+                    fresh=freshness,
+                    age=(f"{age_min:.1f}m" if age_min is not None else "?"),
+                    cycles=item.get("cycles") if item.get("cycles") is not None else "?",
+                    nav=item.get("nav") if item.get("nav") is not None else "?",
+                    pos=item.get("positions") if item.get("positions") is not None else "?",
+                    cand=item.get("candidate_count") if item.get("candidate_count") is not None else "?",
+                    strategy=item.get("strategy_id") or item.get("state_id") or "?",
+                )
+            )
+            if err != "none":
+                print(f"      last_error: {err}")
+    if stale_without_process:
+        print("\n  Stale scheduler files without live process")
+        for item in sorted(stale_without_process, key=lambda row: (str(row.get("environment")), str(row.get("strategy_id"))))[:12]:
+            age_min = item.get("age_sec") / 60.0 if item.get("age_sec") is not None else None
+            print(
+                "    env={env:<11} age={age:<7} cycles={cycles:<5} {strategy}".format(
+                    env=item.get("environment") or "?",
+                    age=(f"{age_min:.1f}m" if age_min is not None else "?"),
+                    cycles=item.get("cycles") if item.get("cycles") is not None else "?",
+                    strategy=item.get("strategy_id") or item.get("state_id") or "?",
+                )
+            )
+    print(f"\n{'='*72}\n")
 
 
 def main():
@@ -17,16 +322,45 @@ def main():
     p.add_argument("--json", action="store_true", help="Output raw JSON")
     args = p.parse_args()
 
-    if not SUMMARY_FILE.exists():
-        print("No summary.json found. Engine has not started yet.", file=sys.stderr)
-        print('Run: python3 engine/main.py competition demo-start --strategy <id>')
-        sys.exit(1)
-
-    with open(SUMMARY_FILE) as f:
-        summary = json.load(f)
+    runner_status = collect_runner_status()
+    summary = read_json(SUMMARY_FILE)
+    runner_has_truth = bool(runner_status.get("runner_plans") or runner_status.get("processes") or runner_status.get("schedulers"))
 
     if args.json:
-        print(json.dumps(summary, indent=2))
+        print(
+            json.dumps(
+                {
+                    "mode": "strategy_runners",
+                    "runner": runner_status,
+                    "legacy_summary": summary,
+                    "legacy_summary_path": str(SUMMARY_FILE.relative_to(PROJECT_ROOT)),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if runner_has_truth:
+        print_runner_status(runner_status)
+        if summary:
+            updated_at = summary.get("updated_at")
+            age_sec = age_seconds(updated_at)
+            freshness = f"{age_sec / 60.0:.1f}m old" if age_sec is not None else "unknown age"
+            print(
+                "  Legacy engine summary is compatibility-only: "
+                f"status={str(summary.get('engine_status', 'unknown')).upper()} updated={updated_at or '?'} ({freshness})\n"
+            )
+        if not runner_status.get("ok"):
+            sys.exit(1)
+        return
+
+    if not isinstance(summary, dict):
+        print(f"No strategy runner status found and could not parse {SUMMARY_FILE}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
         return
 
     updated = summary.get("updated_at", "?")

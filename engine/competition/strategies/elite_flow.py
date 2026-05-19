@@ -3,6 +3,10 @@ competition/strategies/elite_flow.py
 =====================================
 Elite Flow — Multi-level OFI + Crowding + Regime Gate
 
+ARCHITECTURE_STATUS: retired_legacy_runner
+Do not launch directly. Live startup must go through Strategy Office and
+EnvironmentRunner; this file is kept only for historical analysis.
+
 Successor to Elite Alpha. Uses top-5 book levels for richer OFI,
 crowding signals (OI, funding, premium, L/S ratio) for squeeze detection,
 and a momentum-regime gate to filter chop.

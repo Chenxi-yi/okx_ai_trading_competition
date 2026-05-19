@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -13,6 +14,12 @@ from .schemas import KitCommand, KitResult
 
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
+OKX_ENV_CREDENTIAL_KEYS = {
+    "OKX_API_KEY",
+    "OKX_SECRET_KEY",
+    "OKX_API_SECRET",
+    "OKX_PASSPHRASE",
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,7 @@ class KitClient:
                 capture_output=True,
                 text=True,
                 timeout=command.timeout_sec or self.config.default_timeout_sec,
+                env=_command_env(command.profile or self.config.default_profile),
             )
             stdout = completed.stdout.strip() if completed.stdout else ""
             stderr = completed.stderr.strip() if completed.stderr else ""
@@ -128,3 +136,11 @@ def _redact_argv(argv: Sequence[str]) -> tuple[str, ...]:
     # Current Kit commands do not pass secrets on argv, but keep one place for
     # future redaction if setup/config commands are added.
     return tuple(argv)
+
+
+def _command_env(profile: str | None) -> dict[str, str]:
+    env = os.environ.copy()
+    if profile and profile != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env

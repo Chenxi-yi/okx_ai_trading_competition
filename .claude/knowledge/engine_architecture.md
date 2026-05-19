@@ -1,5 +1,28 @@
 # Engine Architecture Reference
 
+## Current Operating Constraint
+
+Read `.claude/knowledge/runtime_strategy_governance.md` before modifying any
+runner, strategy startup path, strategy registry entry, investment committee
+logic, position management, execution, or dashboard control. The current target
+architecture is:
+
+```text
+Strategy Office registry
+  -> environment runner
+  -> strategy signal process
+  -> investment committee
+  -> position manager
+  -> risk manager
+  -> execution router
+  -> accounting/reconciliation
+  -> observability/control tower
+```
+
+Strategies are not launchers and must not own exchange orders. The frontend
+start/pause/flatten buttons must call environment-level runner/control paths,
+not individual strategy scripts.
+
 ## Directories
 ```
 engine/

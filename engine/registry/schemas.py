@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping as AbcMapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 
-StrategyBook = Literal["core", "tactical", "speculative"]
+StrategyBook = Literal["core", "tactical", "speculative", "competition"]
 StrategyStatus = Literal["idea", "research", "backtest", "paper", "live", "paused", "retired"]
 PerformanceMode = Literal["backtest", "paper", "live", "stress", "monte_carlo"]
 
@@ -40,6 +41,91 @@ class RiskBudget:
 
 
 @dataclass(frozen=True)
+class RuntimeSpec:
+    enabled: bool = False
+    runner: str = ""
+    allowed_environments: tuple[str, ...] = ()
+    interval_sec: float = 300.0
+    priority: int = 0
+    state_id: str = ""
+    health_timeout_sec: float = 900.0
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "runner": self.runner,
+            "allowed_environments": list(self.allowed_environments),
+            "interval_sec": self.interval_sec,
+            "priority": self.priority,
+            "state_id": self.state_id,
+            "health_timeout_sec": self.health_timeout_sec,
+            **dict(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "RuntimeSpec":
+        data = data or {}
+        known = {
+            "enabled",
+            "runner",
+            "allowed_environments",
+            "interval_sec",
+            "priority",
+            "state_id",
+            "health_timeout_sec",
+        }
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            runner=str(data.get("runner", "")),
+            allowed_environments=tuple(str(item) for item in data.get("allowed_environments", ())),
+            interval_sec=float(data.get("interval_sec", 300.0) or 300.0),
+            priority=int(data.get("priority", 0) or 0),
+            state_id=str(data.get("state_id", "")),
+            health_timeout_sec=float(data.get("health_timeout_sec", 900.0) or 900.0),
+            metadata={str(k): v for k, v in data.items() if k not in known},
+        )
+
+
+@dataclass(frozen=True)
+class DataDependency:
+    dependency_id: str
+    kind: str
+    path: str = ""
+    dataset_id: str = ""
+    max_age_sec: float | None = None
+    required: bool = True
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = {
+            "dependency_id": self.dependency_id,
+            "kind": self.kind,
+            "path": self.path,
+            "dataset_id": self.dataset_id,
+            "required": self.required,
+            **dict(self.metadata),
+        }
+        if self.max_age_sec is not None:
+            data["max_age_sec"] = self.max_age_sec
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "DataDependency":
+        known = {"dependency_id", "kind", "path", "dataset_id", "max_age_sec", "required"}
+        max_age = data.get("max_age_sec")
+        return cls(
+            dependency_id=str(data.get("dependency_id") or data.get("dataset_id") or data.get("path") or ""),
+            kind=str(data.get("kind", "dataset")),
+            path=str(data.get("path", "")),
+            dataset_id=str(data.get("dataset_id", "")),
+            max_age_sec=float(max_age) if max_age is not None else None,
+            required=bool(data.get("required", True)),
+            metadata={str(k): v for k, v in data.items() if k not in known},
+        )
+
+
+@dataclass(frozen=True)
 class StrategyRecord:
     strategy_id: str
     name: str
@@ -50,6 +136,8 @@ class StrategyRecord:
     class_name: str
     default_parameter_set_id: str | None
     risk_budget: RiskBudget
+    runtime: RuntimeSpec = field(default_factory=RuntimeSpec)
+    data_dependencies: tuple[DataDependency, ...] = ()
     live_enabled: bool = False
     live_allocation_pct: float = 0.0
     description: str = ""
@@ -62,6 +150,8 @@ class StrategyRecord:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["risk_budget"] = self.risk_budget.to_dict()
+        data["runtime"] = self.runtime.to_dict()
+        data["data_dependencies"] = [item.to_dict() for item in self.data_dependencies]
         data["tags"] = list(self.tags)
         return data
 
@@ -79,6 +169,12 @@ class StrategyRecord:
                 str(data["default_parameter_set_id"]) if data.get("default_parameter_set_id") else None
             ),
             risk_budget=RiskBudget.from_dict(data.get("risk_budget", {})),
+            runtime=RuntimeSpec.from_dict(data.get("runtime", {})),
+            data_dependencies=tuple(
+                DataDependency.from_dict(item)
+                for item in data.get("data_dependencies", data.get("data", {}).get("dependencies", ()))
+                if isinstance(item, AbcMapping)
+            ),
             live_enabled=bool(data.get("live_enabled", False)),
             live_allocation_pct=float(data.get("live_allocation_pct", 0.0)),
             description=str(data.get("description", "")),

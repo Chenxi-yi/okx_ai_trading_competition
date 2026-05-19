@@ -27,6 +27,7 @@ class Position:
     symbol: str
     side: str
     regime: str
+    signal_family: str
     score: float
     signal_ts: pd.Timestamp
     entry_ts: pd.Timestamp
@@ -53,6 +54,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--fixed-notional-capital", type=float, default=1000.0)
     p.add_argument("--min-score-quantile", type=float, default=0.80)
     p.add_argument("--min-volume-usd", type=float, default=100000.0)
+    p.add_argument("--exit-policy", choices=["horizon", "thesis"], default="horizon")
+    p.add_argument("--thesis-min-hold-hours", type=int, default=1)
+    p.add_argument("--thesis-score-retain", type=float, default=0.60)
+    p.add_argument("--thesis-min-score", type=float, default=0.0001)
+    p.add_argument("--entry-persistence-lookback", type=int, default=0, help="Require same-symbol same-side signal persistence over this many score timestamps; 0 disables")
+    p.add_argument("--entry-persistence-min-hits", type=int, default=2)
+    p.add_argument("--entry-score-retain-vs-lookback", type=float, default=0.80)
+    p.add_argument("--entry-max-signal-age", type=int, default=2, help="Do not chase signals older than this many consecutive hits unless pullback-fail is confirmed")
+    p.add_argument("--anti-late-max-ret1-abs", type=float, default=0.0, help="Block entries after an overextended 1h move; 0 disables")
+    p.add_argument("--anti-late-max-ret3-abs", type=float, default=0.0, help="Block entries after an overextended 3h move; 0 disables")
+    p.add_argument("--require-slow-confirm", action="store_true", help="Require 4h trend or derivatives confirmation before entry")
+    p.add_argument("--entry-filter-side", choices=["both", "long", "short"], default="both", help="Apply entry quality filters only to this side")
     p.add_argument("--start", default="")
     p.add_argument("--end", default="")
     return p.parse_args()
@@ -87,6 +100,13 @@ def main() -> int:
                 "funding_rate",
                 "oi_z_24",
                 "ls_z_24",
+                "ret_1",
+                "ret_1_abs",
+                "ret_3",
+                "h4_ret_1",
+                "h4_ret_6",
+                "close_to_high",
+                "close_to_low",
                 "train_eligible_90d",
                 "btc_regime_6",
             ]
@@ -94,6 +114,7 @@ def main() -> int:
         how="left",
     )
     predictions = _build_portfolio_scores(predictions)
+    predictions = _prepare_entry_filter_columns(predictions, args)
 
     folds = _load_folds(dataset_dir)
     result = _simulate(predictions, args)
@@ -127,6 +148,18 @@ def main() -> int:
             "fixed_notional_capital": args.fixed_notional_capital,
             "min_score_quantile": args.min_score_quantile,
             "min_volume_usd": args.min_volume_usd,
+            "exit_policy": args.exit_policy,
+            "thesis_min_hold_hours": args.thesis_min_hold_hours,
+            "thesis_score_retain": args.thesis_score_retain,
+            "thesis_min_score": args.thesis_min_score,
+            "entry_persistence_lookback": args.entry_persistence_lookback,
+            "entry_persistence_min_hits": args.entry_persistence_min_hits,
+            "entry_score_retain_vs_lookback": args.entry_score_retain_vs_lookback,
+            "entry_max_signal_age": args.entry_max_signal_age,
+            "anti_late_max_ret1_abs": args.anti_late_max_ret1_abs,
+            "anti_late_max_ret3_abs": args.anti_late_max_ret3_abs,
+            "require_slow_confirm": args.require_slow_confirm,
+            "entry_filter_side": args.entry_filter_side,
             "start": args.start,
             "end": args.end,
         },
@@ -295,12 +328,12 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
     for ts in score_ts:
         if ts not in timeline:
             continue
-        realized_nav, closed = _close_due(ts, active, close, realized_nav, fee_slip_rate)
+        realized_nav, closed = _close_due(ts, active, close, realized_nav, fee_slip_rate, scores=scores, args=args)
         trades.extend(closed)
         mtm_nav = _mark_to_market_nav(ts, active, close, realized_nav, fee_slip_rate)
         if _is_rebalance_ts(ts, args.rebalance_hours):
             group = scores.xs(ts, level="timestamp", drop_level=False)
-            candidates = _select_candidates(ts, group, close, active, args)
+            candidates = _select_candidates(ts, group, close, active, args, scores)
             for row in candidates:
                 if len(active) >= args.max_positions:
                     break
@@ -323,6 +356,7 @@ def _simulate(scores: pd.DataFrame, args: argparse.Namespace) -> dict[str, list[
                     symbol=symbol,
                     side=str(row["side"]),
                     regime=str(row["regime"]),
+                    signal_family=str(row["signal_family"]),
                     score=float(row["score"]),
                     signal_ts=ts,
                     entry_ts=entry_ts,
@@ -386,6 +420,7 @@ def _select_candidates(
     close: pd.DataFrame,
     active: dict[str, Position],
     args: argparse.Namespace,
+    scores: pd.DataFrame,
 ) -> list[dict[str, Any]]:
     g = group.reset_index()
     g = g[g["eligible"].astype(bool)].copy()
@@ -400,6 +435,9 @@ def _select_candidates(
     g = g[g["score"] >= threshold].copy()
     if g.empty:
         return []
+    g = _apply_entry_quality_filters(ts, g, scores, args)
+    if g.empty:
+        return []
     g["entry_ts"] = _offset_ts(pd.DatetimeIndex(close.index), ts, int(args.entry_delay_hours))
     g = g[g["entry_ts"].notna()]
     g = g.sort_values("score", ascending=False)
@@ -411,6 +449,7 @@ def _select_candidates(
                 "symbol": str(row["symbol"]),
                 "side": str(row["side"]),
                 "regime": str(row["btc_regime_6"]),
+                "signal_family": str(row.get("signal_family") or ""),
                 "score": float(row["score"]),
                 "horizon_hours": int(row["horizon_hours"]),
                 "risk_scalar": float(row["risk_scalar"]),
@@ -418,6 +457,189 @@ def _select_candidates(
             }
         )
     return rows
+
+
+def _prepare_entry_filter_columns(scores: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+    out = scores.copy()
+    if not _entry_quality_filters_enabled(args):
+        out["entry_quality_ok"] = True
+        return out
+
+    ret_1 = pd.to_numeric(out.get("ret_1", 0.0), errors="coerce").fillna(0.0)
+    ret_3 = pd.to_numeric(out.get("ret_3", 0.0), errors="coerce").fillna(0.0)
+    anti_late_ok = pd.Series(True, index=out.index)
+    if float(args.anti_late_max_ret1_abs) > 0:
+        anti_late_ok &= ret_1.abs() <= float(args.anti_late_max_ret1_abs)
+    if float(args.anti_late_max_ret3_abs) > 0:
+        anti_late_ok &= ret_3.abs() <= float(args.anti_late_max_ret3_abs)
+
+    side = out["side"].astype(str)
+    h4_ret_1 = pd.to_numeric(out.get("h4_ret_1", 0.0), errors="coerce").fillna(0.0)
+    h4_ret_6 = pd.to_numeric(out.get("h4_ret_6", 0.0), errors="coerce").fillna(0.0)
+    oi_z = pd.to_numeric(out.get("oi_z_24", 0.0), errors="coerce").fillna(0.0)
+    ls_z = pd.to_numeric(out.get("ls_z_24", 0.0), errors="coerce").fillna(0.0)
+    funding_z = pd.to_numeric(out.get("funding_z_24", 0.0), errors="coerce").fillna(0.0)
+    slow_ok = pd.Series(True, index=out.index)
+    if bool(args.require_slow_confirm):
+        short_ok = (h4_ret_6 < -0.006) | (h4_ret_1 < -0.002) | (((oi_z > 0.35) | (funding_z > 0.25) | (ls_z > 0.35)) & (ret_1 < 0))
+        long_ok = (h4_ret_6 > 0.006) | (h4_ret_1 > 0.002) | (((oi_z > 0.35) | (funding_z < -0.25) | (ls_z < -0.35)) & (ret_1 > 0))
+        slow_ok = ((side == "short") & short_ok) | ((side == "long") & long_ok)
+
+    close_to_high = pd.to_numeric(out.get("close_to_high", 0.0), errors="coerce").fillna(0.0)
+    close_to_low = pd.to_numeric(out.get("close_to_low", 0.0), errors="coerce").fillna(0.0)
+    pullback_fail_ok = ((side == "short") & (ret_3 > 0) & (ret_1 < 0) & (close_to_low > -0.004)) | (
+        (side == "long") & (ret_3 < 0) & (ret_1 > 0) & (close_to_high < 0.004)
+    )
+
+    lookback = int(args.entry_persistence_lookback)
+    persistence_ok = pd.Series(True, index=out.index)
+    if lookback > 1:
+        flat = out.reset_index().sort_values(["symbol", "timestamp"]).copy()
+        flat["_score_num"] = pd.to_numeric(flat["score"], errors="coerce").replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        flat["_hits"] = 0.0
+        flat["_score_sum"] = 0.0
+        flat["_signal_age"] = 0
+        pullback_fail_flat = pd.Series(pullback_fail_ok.to_numpy(), index=range(len(out))).reindex(flat.index).fillna(False).to_numpy()
+        for signal_side in ("long", "short"):
+            mask = flat["eligible"].astype(bool) & (flat["side"].astype(str) == signal_side)
+            weighted_score = flat["_score_num"].where(mask, 0.0)
+            flat.loc[:, f"_hit_{signal_side}"] = mask.astype(float)
+            flat.loc[:, f"_weighted_score_{signal_side}"] = weighted_score
+            flat[f"_hits_{signal_side}"] = (
+                flat.groupby("symbol")[f"_hit_{signal_side}"]
+                .transform(lambda s: s.rolling(lookback, min_periods=1).sum())
+                .astype(float)
+            )
+            flat[f"_score_sum_{signal_side}"] = flat.groupby("symbol")[f"_weighted_score_{signal_side}"].transform(
+                lambda s: s.rolling(lookback, min_periods=1).sum()
+            )
+            flat[f"_signal_age_{signal_side}"] = flat.groupby("symbol")[f"_hit_{signal_side}"].transform(_consecutive_signal_age)
+            side_rows = flat["side"].astype(str) == signal_side
+            flat.loc[side_rows, "_hits"] = flat.loc[side_rows, f"_hits_{signal_side}"]
+            flat.loc[side_rows, "_score_sum"] = flat.loc[side_rows, f"_score_sum_{signal_side}"]
+            flat.loc[side_rows, "_signal_age"] = flat.loc[side_rows, f"_signal_age_{signal_side}"]
+        mean_score = flat["_score_sum"] / flat["_hits"].replace(0.0, np.nan)
+        flat["_persistence_ok"] = (
+            (flat["_hits"] >= int(args.entry_persistence_min_hits))
+            & (flat["_score_num"] >= mean_score.fillna(np.inf) * float(args.entry_score_retain_vs_lookback))
+            & ((flat["_signal_age"] <= int(args.entry_max_signal_age)) | pullback_fail_flat)
+        )
+        persistence_ok = pd.Series(flat["_persistence_ok"].to_numpy(), index=pd.MultiIndex.from_frame(flat[["timestamp", "symbol"]])).reindex(out.index).fillna(False)
+
+    out["entry_anti_late_ok"] = anti_late_ok.astype(bool)
+    out["entry_slow_confirm_ok"] = slow_ok.astype(bool)
+    out["entry_pullback_fail_ok"] = pullback_fail_ok.astype(bool)
+    out["entry_persistence_ok"] = persistence_ok.astype(bool)
+    filtered_side = str(getattr(args, "entry_filter_side", "both") or "both")
+    quality_ok = anti_late_ok.astype(bool) & slow_ok.astype(bool) & persistence_ok.astype(bool)
+    if filtered_side in {"long", "short"}:
+        apply_mask = side == filtered_side
+        quality_ok = (~apply_mask) | quality_ok
+    out["entry_quality_ok"] = quality_ok.astype(bool)
+    return out
+
+
+def _entry_quality_filters_enabled(args: argparse.Namespace) -> bool:
+    return (
+        int(args.entry_persistence_lookback) > 1
+        or float(args.anti_late_max_ret1_abs) > 0
+        or float(args.anti_late_max_ret3_abs) > 0
+        or bool(args.require_slow_confirm)
+    )
+
+
+def _consecutive_signal_age(values: pd.Series) -> pd.Series:
+    mask = values.astype(bool)
+    groups = (~mask).cumsum()
+    return mask.groupby(groups).cumsum().astype(int)
+
+
+def _apply_entry_quality_filters(ts: pd.Timestamp, g: pd.DataFrame, scores: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+    if "entry_quality_ok" in g.columns:
+        return g[g["entry_quality_ok"].astype(bool)].copy()
+
+    out = g.copy()
+    filtered_side = str(getattr(args, "entry_filter_side", "both") or "both")
+    if filtered_side in {"long", "short"}:
+        passthrough = out[out["side"].astype(str) != filtered_side].copy()
+        out = out[out["side"].astype(str) == filtered_side].copy()
+    else:
+        passthrough = out.iloc[0:0].copy()
+    if float(args.anti_late_max_ret1_abs) > 0 and "ret_1" in out:
+        out = out[pd.to_numeric(out["ret_1"], errors="coerce").abs().fillna(0.0) <= float(args.anti_late_max_ret1_abs)]
+    if float(args.anti_late_max_ret3_abs) > 0 and "ret_3" in out:
+        out = out[pd.to_numeric(out["ret_3"], errors="coerce").abs().fillna(0.0) <= float(args.anti_late_max_ret3_abs)]
+    if out.empty:
+        return passthrough
+    if bool(args.require_slow_confirm):
+        slow_ok = []
+        for _, row in out.iterrows():
+            side = str(row.get("side") or "")
+            h4_ret_1 = _finite_float(row.get("h4_ret_1"), 0.0)
+            h4_ret_6 = _finite_float(row.get("h4_ret_6"), 0.0)
+            oi_z = _finite_float(row.get("oi_z_24"), 0.0)
+            ls_z = _finite_float(row.get("ls_z_24"), 0.0)
+            funding_z = _finite_float(row.get("funding_z_24"), 0.0)
+            ret_1 = _finite_float(row.get("ret_1"), 0.0)
+            if side == "short":
+                slow_ok.append((h4_ret_6 < -0.006) or (h4_ret_1 < -0.002) or ((oi_z > 0.35 or funding_z > 0.25 or ls_z > 0.35) and ret_1 < 0))
+            elif side == "long":
+                slow_ok.append((h4_ret_6 > 0.006) or (h4_ret_1 > 0.002) or ((oi_z > 0.35 or funding_z < -0.25 or ls_z < -0.35) and ret_1 > 0))
+            else:
+                slow_ok.append(False)
+        out = out.loc[slow_ok]
+    lookback = int(args.entry_persistence_lookback)
+    if lookback <= 1 or out.empty:
+        return pd.concat([passthrough, out], axis=0)
+    score_ts = pd.DatetimeIndex(scores.index.get_level_values("timestamp").unique()).sort_values()
+    ts_pos = score_ts.searchsorted(ts)
+    history_ts = score_ts[max(0, ts_pos - lookback + 1) : ts_pos + 1]
+    if len(history_ts) == 0:
+        return passthrough
+    keep = []
+    for _, row in out.iterrows():
+        symbol = str(row.get("symbol") or "")
+        side = str(row.get("side") or "")
+        hist = scores.loc[
+            scores.index.get_level_values("timestamp").isin(history_ts)
+            & (scores.index.get_level_values("symbol").astype(str) == symbol)
+        ]
+        hist = hist[(hist["eligible"].astype(bool)) & (hist["side"].astype(str) == side)].copy()
+        hits = len(hist)
+        if hits < int(args.entry_persistence_min_hits):
+            keep.append(False)
+            continue
+        current_score = _finite_float(row.get("score"), math.nan)
+        mean_score = float(pd.to_numeric(hist["score"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna().mean())
+        if not math.isfinite(current_score) or not math.isfinite(mean_score) or current_score < mean_score * float(args.entry_score_retain_vs_lookback):
+            keep.append(False)
+            continue
+        if hits > int(args.entry_max_signal_age) and not _pullback_fail_confirmed(row):
+            keep.append(False)
+            continue
+        keep.append(True)
+    return pd.concat([passthrough, out.loc[keep]], axis=0)
+
+
+def _pullback_fail_confirmed(row: pd.Series) -> bool:
+    side = str(row.get("side") or "")
+    ret_1 = _finite_float(row.get("ret_1"), 0.0)
+    ret_3 = _finite_float(row.get("ret_3"), 0.0)
+    close_to_high = _finite_float(row.get("close_to_high"), 0.0)
+    close_to_low = _finite_float(row.get("close_to_low"), 0.0)
+    if side == "short":
+        return ret_3 > 0 and ret_1 < 0 and close_to_low > -0.004
+    if side == "long":
+        return ret_3 < 0 and ret_1 > 0 and close_to_high < 0.004
+    return False
+
+
+def _finite_float(value: Any, default: float) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        return default
+    return out if math.isfinite(out) else default
 
 
 def _row_fold_ids(row: pd.Series) -> dict[str, int]:
@@ -438,13 +660,23 @@ def _close_due(
     nav: float,
     fee_slip_rate: float,
     force: bool = False,
+    scores: pd.DataFrame | None = None,
+    args: argparse.Namespace | None = None,
 ) -> tuple[float, list[dict[str, Any]]]:
     closed: list[dict[str, Any]] = []
     for symbol in list(active):
         pos = active[symbol]
-        if not force and ts < pos.exit_ts:
-            continue
+        exit_reason = "forced_end" if force else ""
         exit_ts = pos.exit_ts if not force else ts
+        if not force and ts >= pos.exit_ts:
+            exit_reason = "horizon"
+        elif not force and _thesis_exit_enabled(args):
+            thesis_reason = _thesis_exit_reason(ts, pos, scores, args)
+            if thesis_reason:
+                exit_reason = thesis_reason
+                exit_ts = ts
+        if not exit_reason:
+            continue
         exit_price = _price(close, exit_ts, symbol)
         if not _valid_price(exit_price):
             continue
@@ -462,6 +694,7 @@ def _close_due(
                 "symbol": pos.symbol,
                 "side": pos.side,
                 "regime": pos.regime,
+                "signal_family": pos.signal_family,
                 "horizon_hours": pos.horizon_hours,
                 "score": pos.score,
                 "entry_price": pos.entry_price,
@@ -472,11 +705,60 @@ def _close_due(
                 "net_return": net_ret,
                 "pnl": pnl,
                 "cost_usd": cost_usd,
-                "exit_reason": "forced_end" if force else "horizon",
+                "exit_reason": exit_reason,
             }
         )
         active.pop(symbol)
     return nav, closed
+
+
+def _thesis_exit_enabled(args: argparse.Namespace | None) -> bool:
+    return bool(args is not None and str(getattr(args, "exit_policy", "horizon")) == "thesis")
+
+
+def _thesis_exit_reason(
+    ts: pd.Timestamp,
+    pos: Position,
+    scores: pd.DataFrame | None,
+    args: argparse.Namespace | None,
+) -> str:
+    if scores is None or args is None:
+        return ""
+    held_hours = (pd.Timestamp(ts) - pd.Timestamp(pos.entry_ts)).total_seconds() / 3600.0
+    if held_hours < max(0, int(getattr(args, "thesis_min_hold_hours", 1))):
+        return ""
+    try:
+        row = scores.loc[(ts, pos.symbol)]
+    except Exception:
+        return "thesis_missing_signal"
+    current_side = str(row.get("side") or "")
+    current_family = str(row.get("signal_family") or "")
+    current_regime = str(row.get("btc_regime_6") or "")
+    current_score = _safe_float(row.get("score"))
+    current_eligible = bool(row.get("eligible", False))
+    if current_side and current_side != pos.side:
+        return "thesis_side_flip"
+    if current_family and current_family != pos.signal_family:
+        return "thesis_family_change"
+    if current_regime and current_regime != pos.regime:
+        return "thesis_regime_change"
+    if not current_eligible:
+        return "thesis_not_eligible"
+    score_floor = max(
+        float(getattr(args, "thesis_min_score", 0.0001)),
+        abs(float(pos.score)) * float(getattr(args, "thesis_score_retain", 0.60)),
+    )
+    if not math.isfinite(current_score) or current_score < score_floor:
+        return "thesis_score_decay"
+    return ""
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        out = float(value)
+    except Exception:
+        return float("nan")
+    return out if math.isfinite(out) else float("nan")
 
 
 def _mark_to_market_nav(

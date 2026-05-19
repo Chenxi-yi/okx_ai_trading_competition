@@ -59,6 +59,36 @@ There are no unit tests or linters configured in this repository.
 
 ## Architecture
 
+### Current System Constraint
+
+Before changing runtime, strategy startup, strategy registration, data
+readiness, committee logic, position management, execution, reconciliation, or
+dashboard controls, read:
+
+- `.claude/knowledge/runtime_strategy_governance.md`
+- `.claude/knowledge/full_refactor_blueprint.md`
+- `.claude/knowledge/pro_quant_system_architecture.md`
+
+The current target architecture is registry-driven:
+
+```text
+Strategy Office
+  -> Environment Runner
+  -> Data Readiness
+  -> Strategy Adapter
+  -> Investment Committee
+  -> Position Manager
+  -> Risk Manager
+  -> Execution Router
+  -> Accounting / Reconciliation
+  -> Control Tower
+```
+
+Strategies are not launchers. A strategy only emits signals or candidate trade
+plans. Frontend Start/Pause/Flatten controls must go through environment-level
+runner/control paths. Live orders may only be placed by the execution layer
+through OKX Agent Trade Kit after committee, position, and risk approval.
+
 ```
 /Users/yichenxi/Desktop/okx_ai_skill_challenage/
   AGENTS.md                          ← this file

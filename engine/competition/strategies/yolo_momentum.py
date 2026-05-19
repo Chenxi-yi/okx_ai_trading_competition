@@ -3,6 +3,10 @@ competition/strategies/yolo_momentum.py
 ========================================
 YOLO Momentum — Aggressive Leveraged Momentum with Martingale Doubling
 
+ARCHITECTURE_STATUS: retired_legacy_runner
+Do not launch directly. Live startup must go through Strategy Office and
+EnvironmentRunner; this file is kept only for historical analysis.
+
 Strategy:
   - Multi-timeframe momentum analysis (EMA crosses, RSI, MACD, volume)
   - High leverage (30-75x) on single contract
