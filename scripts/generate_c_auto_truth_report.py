@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -23,6 +24,7 @@ ENGINE_DIR = ROOT / "engine"
 PAPER_DIR = ENGINE_DIR / "logs" / "c_auto_v2_paper"
 LIVE_DIR = ENGINE_DIR / "logs" / "c_auto_v2_micro_live"
 REPORT_DIR = ENGINE_DIR / "logs" / "truth_reports"
+OKX_ENV_CREDENTIAL_KEYS = {"OKX_API_KEY", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_PASSPHRASE"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -258,7 +260,7 @@ def _okx(profile: str, args: list[str]) -> Any:
     cmd = ["okx", "--profile", profile, "--json"] + args
     last_error = ""
     for attempt in range(3):
-        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=45)
+        proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=45, env=_okx_env(profile))
         if proc.returncode == 0:
             try:
                 return json.loads(proc.stdout) if proc.stdout.strip() else []
@@ -267,6 +269,14 @@ def _okx(profile: str, args: list[str]) -> Any:
         last_error = proc.stderr.strip() or proc.stdout.strip()
         time.sleep(0.5 * (attempt + 1))
     return {"error": last_error, "argv": cmd}
+
+
+def _okx_env(profile: str) -> dict[str, str]:
+    env = os.environ.copy()
+    if profile != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def _read_json(path: Path) -> dict[str, Any]:

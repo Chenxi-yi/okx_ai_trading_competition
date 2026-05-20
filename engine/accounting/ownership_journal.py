@@ -47,6 +47,7 @@ class LiveOwnershipJournal:
         return self.append_event("approved_plan", {"plan": plan, "metadata": dict(metadata or {})})
 
     def append_execution(self, receipt: ExecutionReceipt, metadata: Mapping[str, Any] | None = None) -> Path:
+        self._validate_receipt(receipt)
         return self.append_event("execution", {"receipt": receipt, "metadata": dict(metadata or {})})
 
     def append_close(
@@ -67,6 +68,92 @@ class LiveOwnershipJournal:
                 "inst_id": inst_id,
                 "reason": reason,
                 "result": dict(result or {}),
+                "metadata": dict(metadata or {}),
+            },
+        )
+
+    def append_external_exit(
+        self,
+        *,
+        inst_id: str,
+        reason: str,
+        reviewed_by: str,
+        decision_id: str = "",
+        strategy_id: str = "",
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Path:
+        return self.append_event(
+            "external_exit",
+            {
+                "inst_id": inst_id,
+                "decision_id": decision_id,
+                "strategy_id": strategy_id,
+                "reason": reason,
+                "reviewed_by": reviewed_by,
+                "metadata": dict(metadata or {}),
+            },
+        )
+
+    def append_adoption(
+        self,
+        *,
+        inst_id: str,
+        strategy_id: str,
+        reason: str,
+        reviewed_by: str,
+        decision_id: str = "",
+        side: str = "",
+        filled_contracts: float = 0.0,
+        fill_price: float = 0.0,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Path:
+        return self.append_event(
+            "adoption",
+            {
+                "inst_id": inst_id,
+                "decision_id": decision_id,
+                "strategy_id": strategy_id,
+                "side": side,
+                "filled_contracts": float(filled_contracts or 0.0),
+                "fill_price": float(fill_price or 0.0),
+                "reason": reason,
+                "reviewed_by": reviewed_by,
+                "metadata": dict(metadata or {}),
+            },
+        )
+
+    def append_transfer(
+        self,
+        *,
+        inst_id: str,
+        direction: str,
+        reason: str,
+        reviewed_by: str,
+        target_environment: str = "",
+        source_environment: str = "",
+        decision_id: str = "",
+        strategy_id: str = "",
+        side: str = "",
+        filled_contracts: float = 0.0,
+        fill_price: float = 0.0,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> Path:
+        if direction not in {"in", "out"}:
+            raise ValueError("ownership transfer direction must be 'in' or 'out'")
+        return self.append_event(
+            "transfer",
+            {
+                "inst_id": inst_id,
+                "direction": direction,
+                "decision_id": decision_id,
+                "strategy_id": strategy_id,
+                "side": side,
+                "filled_contracts": float(filled_contracts or 0.0),
+                "fill_price": float(fill_price or 0.0),
+                "target_environment": target_environment,
+                "source_environment": source_environment,
+                "reason": reason,
+                "reviewed_by": reviewed_by,
                 "metadata": dict(metadata or {}),
             },
         )
@@ -129,11 +216,50 @@ class LiveOwnershipJournal:
                     "plan": plan,
                 }
                 continue
+            if event_type == "adoption":
+                self._apply_repair_open(open_by_inst, event)
+                continue
+            if event_type == "transfer":
+                inst_id = str(event.get("inst_id") or "")
+                if str(event.get("direction") or "") == "out":
+                    if inst_id:
+                        open_by_inst.pop(inst_id, None)
+                elif str(event.get("direction") or "") == "in":
+                    self._apply_repair_open(open_by_inst, event)
+                continue
             if event_type in {"close", "external_exit"}:
                 inst_id = str(event.get("inst_id") or "")
                 if inst_id:
                     open_by_inst.pop(inst_id, None)
         return open_by_inst
+
+    def _apply_repair_open(self, open_by_inst: dict[str, dict[str, Any]], event: Mapping[str, Any]) -> None:
+        inst_id = str(event.get("inst_id") or "")
+        if not inst_id:
+            return
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        open_by_inst[inst_id] = {
+            "inst_id": inst_id,
+            "decision_id": str(event.get("decision_id") or ""),
+            "strategy_id": str(event.get("strategy_id") or ""),
+            "side": str(event.get("side") or ""),
+            "opened_at": event.get("ts"),
+            "filled_contracts": _float(event.get("filled_contracts")),
+            "fill_price": _float(event.get("fill_price")),
+            "fee_usdt": _float(metadata.get("fee_usdt")),
+            "order_ids": metadata.get("order_ids") if isinstance(metadata.get("order_ids"), dict) else {},
+            "repair_event": dict(event),
+        }
+
+    def _validate_receipt(self, receipt: ExecutionReceipt) -> None:
+        if receipt.environment != self.environment:
+            raise ValueError(
+                f"ownership receipt environment mismatch: journal={self.environment} receipt={receipt.environment}"
+            )
+        if receipt.okx_profile != self.okx_profile:
+            raise ValueError(
+                f"ownership receipt profile mismatch: journal={self.okx_profile} receipt={receipt.okx_profile}"
+            )
 
 
 def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:

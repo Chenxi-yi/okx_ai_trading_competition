@@ -19,6 +19,7 @@ class KitExecutionGateway:
     client: KitClient
     profile: str = "demo"
     allow_live: bool = False
+    environment: str = ""
 
     def place_order(self, order: OrderIntent) -> KitResult:
         td_mode = str(order.metadata.get("td_mode") or order.metadata.get("mgnMode") or "cross")
@@ -58,7 +59,11 @@ class KitExecutionGateway:
                 tuple(args),
                 profile=profile,
                 allow_live=self.allow_live,
-                metadata={"decision_id": order.decision_id, "inst_id": order.inst_id},
+                metadata={
+                    "decision_id": order.decision_id,
+                    "inst_id": order.inst_id,
+                    "environment": order.metadata.get("environment") or self.environment,
+                },
             )
         )
 
@@ -70,7 +75,7 @@ class KitExecutionGateway:
                 ("--instId", inst_id, "--mgnMode", mgn_mode, "--posSide", pos_side),
                 profile=profile or self.profile,
                 allow_live=self.allow_live,
-                metadata={"inst_id": inst_id},
+                metadata={"inst_id": inst_id, "environment": self.environment},
             )
         )
 
@@ -82,7 +87,7 @@ class KitExecutionGateway:
                 (inst_id, "--ordId", order_id),
                 profile=profile or self.profile,
                 allow_live=self.allow_live,
-                metadata={"inst_id": inst_id, "order_id": order_id},
+                metadata={"inst_id": inst_id, "order_id": order_id, "environment": self.environment},
             )
         )
 
@@ -94,7 +99,7 @@ class KitExecutionGateway:
                 ("--instId", inst_id, "--lever", str(leverage), "--mgnMode", mgn_mode),
                 profile=profile or self.profile,
                 allow_live=self.allow_live,
-                metadata={"inst_id": inst_id, "leverage": leverage},
+                metadata={"inst_id": inst_id, "leverage": leverage, "environment": self.environment},
             )
         )
 
@@ -131,7 +136,7 @@ class KitExecutionGateway:
                 ),
                 profile=profile or self.profile,
                 allow_live=self.allow_live,
-                metadata={"inst_id": inst_id, "stop_trigger_px": stop_trigger_px},
+                metadata={"inst_id": inst_id, "stop_trigger_px": stop_trigger_px, "environment": self.environment},
             )
         )
 

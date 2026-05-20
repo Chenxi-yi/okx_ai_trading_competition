@@ -384,6 +384,13 @@ def cmd_competition(args):
         strategy_def = reg.get(args.strategy)
 
         if strategy_def.get("base_profile") == "custom":
+            if os.environ.get("OKX_ALLOW_RETIRED_LEGACY_RUNNER", "").lower() != "true":
+                raise SystemExit(
+                    "retired custom strategy runners are disabled; use Strategy Office "
+                    "and EnvironmentRunner instead"
+                )
+            if getattr(args, "profile", None) not in {None, "demo"}:
+                raise SystemExit("retired custom strategy runners may only be used with the demo profile")
             # Custom execution-loop strategy (e.g. elite_flow) — bypass TradingEngine
             _run_custom_strategy(
                 args.strategy,

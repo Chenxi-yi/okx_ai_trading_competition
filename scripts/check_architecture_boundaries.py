@@ -23,6 +23,7 @@ EXECUTION_ALLOWED = {
 LEGACY_WARNING = {
     "engine/competition/strategies/elite_flow.py",
     "engine/competition/strategies/yolo_momentum.py",
+    "engine/competition/strategies/yolo_orchestrator.py",
 }
 RETIRED_MARKER = "ARCHITECTURE_STATUS: retired_legacy_runner"
 COMPAT_ALLOWED = {

@@ -25,6 +25,7 @@ class BrokerLike(Protocol):
 @dataclass
 class ExecutionConfig:
     profile: str = "demo"
+    environment: str = ""
     order_type: str = "market"
     default_leverage: float = 1.0
     taker_fee_rate: float = 0.0004
@@ -65,6 +66,7 @@ class ExecutionRouter:
             reduce_only=bool(decision.metadata.get("reduce_only", False)),
             metadata={
                 "strategy_id": decision.signal.strategy_id,
+                "environment": config.environment,
                 "position_action": decision.metadata.get("position_action"),
                 "exit_reason": decision.metadata.get("exit_reason"),
                 "partial_exit": decision.metadata.get("partial_exit", False),
@@ -156,6 +158,7 @@ class LiveExecutionRouter(ExecutionRouter):
                 ),
                 profile=order.profile or self.config.profile,
                 allow_live=os.environ.get("LIVE_TRADING", "false").lower() == "true",
+                environment=self.config.environment,
             )
             if order.leverage and self.broker is not None:
                 self.broker.set_leverage(symbol, order.leverage)

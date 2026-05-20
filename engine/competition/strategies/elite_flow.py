@@ -1456,5 +1456,9 @@ if __name__ == "__main__":
     parser.add_argument("--symbols", nargs="+", default=["BTC-USDT-SWAP", "ETH-USDT-SWAP"])
     parser.add_argument("--profile", default="live", choices=["demo", "live"])
     args = parser.parse_args()
+    if os.environ.get("OKX_ALLOW_RETIRED_LEGACY_RUNNER", "").lower() != "true":
+        raise SystemExit("retired legacy runner disabled; use Strategy Office and EnvironmentRunner")
+    if args.profile != "demo":
+        raise SystemExit("retired legacy runner direct entry only allows demo profile")
 
     run(config={"symbols": args.symbols, "profile": args.profile})

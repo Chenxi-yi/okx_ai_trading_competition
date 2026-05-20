@@ -11,6 +11,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ LOG_ERROR = TOOLS_DIR / "log_error.py"
 
 VALID_SWAP_SUFFIXES = ("-USDT-SWAP",)
 VALID_SIDES = ("buy", "sell")
+OKX_ENV_CREDENTIAL_KEYS = {"OKX_API_KEY", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_PASSPHRASE"}
 
 
 def validate(args):
@@ -95,7 +97,7 @@ def main():
     print(f"Executing: {' '.join(cmd)}", file=sys.stderr)
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=_okx_env(args.profile))
     except FileNotFoundError:
         _log("ATK_NOT_FOUND", "okx CLI not found", {"cmd": cmd[0]})
         print(json.dumps({"success": False, "error": "okx CLI not found. Run: npm install -g @okx_ai/okx-trade-cli"}))
@@ -120,6 +122,14 @@ def _log(code, msg, context=None):
         )
     except Exception:
         pass
+
+
+def _okx_env(profile):
+    env = os.environ.copy()
+    if os.environ.get("OKX_TOOLS_ALLOW_ENV_CREDENTIALS") != "1":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 if __name__ == "__main__":

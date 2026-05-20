@@ -3,6 +3,10 @@ competition/strategies/yolo_orchestrator.py
 ============================================
 YOLO Demo Test (10x) — Orchestrator for 10 staggered YOLO Momentum instances.
 
+ARCHITECTURE_STATUS: retired_legacy_runner
+Do not launch directly. Live startup must go through Strategy Office and
+EnvironmentRunner; this file is kept only for historical analysis.
+
 Manages 10 independent YOLO slots, each with $1,000 budget.
 Slots are deployed staggered: one at a time (shared OKX demo account in net mode).
 When a slot finishes (success = 20% ROI hit, or drained = all 4 rounds used),
@@ -646,6 +650,10 @@ if __name__ == "__main__":
     parser.add_argument("--slots", type=int, default=10, help="Number of slots")
     parser.add_argument("--budget", type=int, default=1000, help="Budget per slot in USDT")
     args = parser.parse_args()
+    if os.environ.get("OKX_ALLOW_RETIRED_LEGACY_RUNNER", "").lower() != "true":
+        raise SystemExit("retired legacy runner disabled; use Strategy Office and EnvironmentRunner")
+    if args.profile != "demo":
+        raise SystemExit("retired legacy runner direct entry only allows demo profile")
 
     run(config={
         "profile": args.profile,

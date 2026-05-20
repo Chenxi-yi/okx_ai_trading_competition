@@ -20,6 +20,11 @@ OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_API_SECRET",
     "OKX_PASSPHRASE",
 }
+ENVIRONMENT_OKX_PROFILE = {
+    "competition": "live",
+    "personal": "personal",
+    "demo": "demo",
+}
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,7 @@ class KitClient:
         self.runner = runner or subprocess.run
 
     def run(self, command: KitCommand) -> KitResult:
+        _validate_environment_profile(command)
         if command.profile == "live" and command.is_trade and not (command.allow_live and self.config.live_enabled):
             raise PermissionError("live trading through KitClient requires allow_live=True and live_enabled=True")
 
@@ -113,6 +119,7 @@ class KitClient:
             "ok": result.ok,
             "returncode": result.returncode,
             "profile": result.command.profile,
+            "environment": result.command.metadata.get("environment"),
             "module": result.command.module,
             "action": result.command.action,
             "argv": list(_redact_argv(result.argv)),
@@ -144,3 +151,15 @@ def _command_env(profile: str | None) -> dict[str, str]:
         for key in OKX_ENV_CREDENTIAL_KEYS:
             env.pop(key, None)
     return env
+
+
+def _validate_environment_profile(command: KitCommand) -> None:
+    environment = str(command.metadata.get("environment") or "")
+    if not environment:
+        return
+    expected = ENVIRONMENT_OKX_PROFILE.get(environment)
+    if expected is None:
+        raise ValueError(f"unsupported OKX execution environment: {environment}")
+    profile = command.profile or ""
+    if profile != expected:
+        raise ValueError(f"OKX profile mismatch for {environment}: expected {expected}, got {profile or 'missing'}")

@@ -39,13 +39,17 @@ sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from accounting import LiveOwnershipJournal  # noqa: E402
-from arbitration.signal_committee import arbitrate_signals, candidate_trade_from_signal, candidate_trade_to_dict  # noqa: E402
-from arbitration.thesis_exit import thesis_contract  # noqa: E402
+from arbitration.signal_committee import candidate_trade_from_signal  # noqa: E402
 from contracts import ApprovedTradePlan, Decision, ExecutionReceipt, InstrumentSpec, Signal  # noqa: E402
+from execution.position_close import close_position_via_kit  # noqa: E402
 from execution.router import ExecutionConfig, LiveExecutionRouter  # noqa: E402
-from kit import KitClient, KitClientConfig, KitExecutionGateway  # noqa: E402
 from position import LivePositionLifecycleService  # noqa: E402
 from run_c_auto_v2_paper import _build_latest_features as _build_c_auto_latest_features  # noqa: E402
+from strategies.research_sleeve_signal import (  # noqa: E402
+    ResearchSleeveSignalConfig,
+    candidate_to_signal,
+    submit_research_candidates_to_committee,
+)
 
 OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_API_KEY",
@@ -317,17 +321,19 @@ def _run_cycle(args: argparse.Namespace, state_id: str) -> dict[str, Any]:
                 marks[symbol] = live_mark
         recovered = _recover_live_positions_from_ledger(args, state_id, live_position_rows, marks, existing_symbols=set(positions))
         positions.update(recovered)
-        unknown_live_symbols = sorted(symbol for symbol in live_open_symbols if symbol not in positions)
-        if unknown_live_symbols:
-            candidates = []
+        foreign_live_symbols = sorted(symbol for symbol in live_open_symbols if symbol not in positions)
+        blocked_symbols = sorted({str(cand["symbol"]) for cand in candidates if str(cand["symbol"]) in foreign_live_symbols})
+        if blocked_symbols:
+            candidates = [cand for cand in candidates if str(cand["symbol"]) not in blocked_symbols]
             ledger.append(
                 {
                     "ts": now,
                     "event": "entry_blocked",
                     "strategy_id": args.strategy_id,
                     "source_strategy_id": args.strategy_id,
-                    "reason": "unknown_exchange_positions",
-                    "symbols": unknown_live_symbols,
+                    "reason": "symbol_has_foreign_or_unknown_exchange_position",
+                    "symbols": blocked_symbols,
+                    "foreign_live_symbols": foreign_live_symbols,
                 }
             )
         for symbol, pos in list(positions.items()):
@@ -445,6 +451,19 @@ def _run_cycle(args: argparse.Namespace, state_id: str) -> dict[str, Any]:
                 )
                 continue
             live_order = _place_live_entry(args, pos) if args.execution == "live" else None
+            if args.execution == "live" and not _live_entry_filled(live_order):
+                ledger.append(
+                    _event(
+                        now,
+                        "entry_failed",
+                        pos,
+                        pos.entry_price,
+                        reason=str(cand["signal_family"]),
+                        live_order=live_order,
+                    )
+                    | fee_guard
+                )
+                continue
             positions[symbol] = pos
             ledger.append(_event(now, "entry", pos, pos.entry_price, reason=str(cand["signal_family"]), live_order=live_order) | fee_guard)
             break
@@ -519,116 +538,24 @@ def _submit_trend_candidates_to_committee(
     realized_nav: float,
     now: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    now_ts = pd.Timestamp(now)
-    signals: list[Signal] = []
-    by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    for cand in candidates:
-        signal = _trend_candidate_signal(args, cand, now_ts)
-        signals.append(signal)
-        by_key[(signal.symbol, signal.side)] = cand
-    candidate_contracts = [candidate_trade_to_dict(candidate_trade_from_signal(signal)) for signal in signals]
     max_positions = int(_parameter_params(args).get("max_concurrent_positions") or 3)
-    budget_total = max(0.0, float(args.initial_capital) - sum(float(pos.notional) / max(float(pos.leverage), 1.0) for pos in positions.values()))
-    result = arbitrate_signals(
-        signals,
-        {symbol: vars(pos) for symbol, pos in positions.items()},
-        now_ts,
-        initial_capital=float(args.initial_capital),
-        realized_nav=float(realized_nav),
-        max_positions=max_positions,
-        max_decisions=max_positions,
-        max_total_budget_usdt=budget_total,
-        min_ev=0.0,
-        round_trip_cost_rate=_round_trip_cost_rate(),
+    result = submit_research_candidates_to_committee(
+        candidates,
+        positions=positions,
+        realized_nav=realized_nav,
+        now=now,
+        config=ResearchSleeveSignalConfig(
+            strategy_id=args.strategy_id,
+            initial_capital=float(args.initial_capital),
+            max_positions=max_positions,
+            round_trip_cost_rate=_round_trip_cost_rate(),
+        ),
     )
-    accepted: list[dict[str, Any]] = []
-    for decision in result.decisions:
-        cand = dict(by_key.get((decision.signal.symbol, decision.signal.side)) or {})
-        if not cand:
-            continue
-        cand["committee_decision_id"] = decision.decision_id
-        cand["committee_reason"] = decision.reason
-        cand["committee_size_usdt"] = decision.size_usdt
-        accepted.append(cand)
-    events = [
-        {
-            "ts": now,
-            "event": "committee_submission",
-            "strategy_id": args.strategy_id,
-            "source_strategy_id": args.strategy_id,
-            "candidate_count": len(candidates),
-            "signal_count": len(signals),
-            "candidate_contract_count": len(candidate_contracts),
-            "candidate_contracts": candidate_contracts[:25],
-            "accepted_count": len(accepted),
-            "rejected_count": len(result.rejected),
-            "notes": list(result.notes),
-            "accepted": [
-                {
-                    "symbol": decision.signal.symbol,
-                    "side": decision.signal.side,
-                    "decision_id": decision.decision_id,
-                    "size_usdt": decision.size_usdt,
-                    "reason": decision.reason,
-                    "forward_ev": decision.signal.forward_ev,
-                }
-                for decision in result.decisions
-            ],
-            "rejected": [
-                {
-                    "symbol": signal.symbol,
-                    "side": signal.side,
-                    "strategy_id": signal.strategy_id,
-                    "forward_ev": signal.forward_ev,
-                }
-                for signal in result.rejected
-            ],
-        }
-    ]
-    return accepted, events
+    return list(result.accepted_candidates), [result.event]
 
 
 def _trend_candidate_signal(args: argparse.Namespace, cand: dict[str, Any], now_ts: pd.Timestamp) -> Signal:
-    entry = float(cand["entry_price"])
-    side = str(cand["side"])
-    target = cand.get("target")
-    stop = cand.get("stop")
-    target_pct = abs(float(target) / entry - 1.0) if target is not None and entry > 0 else 0.03
-    stop_pct = abs(float(stop) / entry - 1.0) if stop is not None and entry > 0 else 0.015
-    quality = float((cand.get("thesis_contract") or {}).get("quality_score") or 0.0)
-    p_target = max(0.51, min(0.66, 0.53 + quality * 0.12 - _round_trip_cost_rate()))
-    confidence = max(0.52, min(0.82, 0.52 + quality * 0.25))
-    metadata = dict(cand.get("thesis_contract") or {})
-    metadata.update(
-        {
-            "signal_family": cand.get("signal_family") or args.strategy_id,
-            "score": quality,
-            "risk_budget_usdt": float(cand.get("budget") or args.initial_capital),
-            "target_pct": target_pct,
-            "stop_pct": stop_pct,
-            "thesis_contract": thesis_contract(
-                strategy_id=args.strategy_id,
-                side=side,
-                signal_family=str(cand.get("signal_family") or args.strategy_id),
-                regime=str(metadata.get("regime") or ""),
-                score=quality,
-            ),
-        }
-    )
-    return Signal(
-        strategy_id=args.strategy_id,
-        symbol=str(cand["symbol"]),
-        side=side,  # type: ignore[arg-type]
-        timestamp=now_ts.to_pydatetime(),
-        entry=entry,
-        target=float(target) if target is not None else None,
-        stop=float(stop) if stop is not None else None,
-        horizon_sec=int(float((cand.get("thesis_contract") or {}).get("max_hold_hours") or 12) * 3600),
-        p_target=p_target,
-        adverse_pct_estimate=stop_pct,
-        confidence=confidence,
-        metadata=metadata,
-    )
+    return candidate_to_signal(args.strategy_id, cand, now_ts, _round_trip_cost_rate())
 
 
 def _parameter_params(args: argparse.Namespace) -> dict[str, Any]:
@@ -1342,7 +1269,7 @@ def _event(
 
 def _place_live_entry(args: argparse.Namespace, pos: Position) -> dict[str, Any]:
     decision = _decision_from_position(pos)
-    instrument = _instrument_from_position(pos)
+    instrument = _instrument_from_position(args, pos)
     candidate = candidate_trade_from_signal(decision.signal)
     plan = ApprovedTradePlan(
         decision_id=decision.decision_id,
@@ -1362,7 +1289,9 @@ def _place_live_entry(args: argparse.Namespace, pos: Position) -> dict[str, Any]
     journal = _ownership_journal(args)
     journal.append_candidate(candidate, {"source": "research_sleeve"})
     journal.append_plan(plan)
-    router = LiveExecutionRouter(config=ExecutionConfig(profile=args.okx_profile, default_leverage=pos.leverage))
+    router = LiveExecutionRouter(
+        config=ExecutionConfig(profile=args.okx_profile, environment=args.environment, default_leverage=pos.leverage)
+    )
     order = router.build_order(decision, instrument, router.config)
     if bool(getattr(args, "live_dry_run", False)):
         return {
@@ -1428,14 +1357,15 @@ def _decision_from_position(pos: Position) -> Decision:
     )
 
 
-def _instrument_from_position(pos: Position) -> InstrumentSpec:
+def _instrument_from_position(args: argparse.Namespace, pos: Position) -> InstrumentSpec:
     inst_id = pos.symbol.replace("_", "-") + "-SWAP"
+    spec = _live_instrument_rules(args, inst_id) if str(args.execution) == "live" else {}
     return InstrumentSpec(
         inst_id=inst_id,
         symbol=pos.symbol,
-        ct_val=_contract_value(pos.symbol),
-        lot_sz=0.01,
-        min_sz=0.01,
+        ct_val=float(spec.get("ct_val") or _contract_value(pos.symbol)),
+        lot_sz=float(spec.get("lot_sz") or 0.01),
+        min_sz=float(spec.get("min_sz") or 0.01),
         max_leverage=pos.leverage,
         source="research_sleeve_adapter",
     )
@@ -1606,6 +1536,22 @@ def _event_has_executed_live_order(event: dict[str, Any]) -> bool:
     return False
 
 
+def _live_entry_filled(live_order: Any) -> bool:
+    if not isinstance(live_order, dict):
+        return False
+    if live_order.get("dry_run"):
+        return False
+    fill = live_order.get("fill")
+    if isinstance(fill, dict):
+        status = str(fill.get("status") or "").lower()
+        try:
+            fill_size = float(fill.get("fill_size") or 0.0)
+        except (TypeError, ValueError):
+            fill_size = 0.0
+        return status == "filled" and fill_size > 0
+    return False
+
+
 def _external_live_exit_from_bills(args: argparse.Namespace, pos: Position) -> tuple[float | None, float | None, str | None, str]:
     inst_id = pos.symbol.replace("_", "-") + "-SWAP"
     try:
@@ -1710,27 +1656,14 @@ def _float_or_none(value: Any) -> float | None:
 
 def _close_live_position(args: argparse.Namespace, pos: Position) -> dict[str, Any]:
     inst_id = pos.symbol.replace("_", "-") + "-SWAP"
-    if bool(getattr(args, "live_dry_run", False)):
-        return {
-            "dry_run": True,
-            "source": "kit_execution_gateway",
-            "action": "close_position",
-            "inst_id": inst_id,
-            "profile": args.okx_profile,
-        }
-    gateway = KitExecutionGateway(
-        KitClient(KitClientConfig(default_profile=args.okx_profile, live_enabled=os.environ.get("LIVE_TRADING", "false").lower() == "true")),
+    row = close_position_via_kit(
+        inst_id=inst_id,
         profile=args.okx_profile,
-        allow_live=os.environ.get("LIVE_TRADING", "false").lower() == "true",
+        environment=args.environment,
+        mgn_mode="cross",
+        pos_side="net",
+        dry_run=bool(getattr(args, "live_dry_run", False)),
     )
-    result = gateway.close_position(inst_id, mgn_mode="cross", pos_side="net", profile=args.okx_profile)
-    row = {
-        "source": "kit_execution_gateway",
-        "ok": result.ok,
-        "argv": result.argv,
-        "data": result.data,
-        "error": result.error,
-    }
     _ownership_journal(args).append_close(
         strategy_id=pos.source_strategy_id,
         inst_id=inst_id,
@@ -1767,6 +1700,30 @@ def _contract_value(symbol: str) -> float:
         "BTC_USDT": 0.01,
         "ETH_USDT": 0.1,
     }.get(symbol, 1.0)
+
+
+def _live_instrument_rules(args: argparse.Namespace, inst_id: str) -> dict[str, float]:
+    try:
+        data = _call_okx(["market", "instruments", "--instType", "SWAP", "--instId", inst_id], args.okx_profile, json_output=True, retries=2)
+    except Exception:
+        return {}
+    rows = data.get("data", data) if isinstance(data, dict) else data
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list) or not rows:
+        return {}
+    row = next((item for item in rows if isinstance(item, dict) and str(item.get("instId") or "") == inst_id), rows[0])
+    if not isinstance(row, dict):
+        return {}
+    out: dict[str, float] = {}
+    for dst, src in (("ct_val", "ctVal"), ("lot_sz", "lotSz"), ("min_sz", "minSz")):
+        try:
+            value = float(row.get(src) or 0.0)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            out[dst] = value
+    return out
 
 
 def _px(value: float) -> str:

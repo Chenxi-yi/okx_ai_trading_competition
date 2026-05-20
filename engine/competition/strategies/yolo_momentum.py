@@ -2262,6 +2262,10 @@ if __name__ == "__main__":
     parser.add_argument("--profile", default="live", choices=["demo", "live"])
     parser.add_argument("--round", type=int, default=None, help="Force start at specific round")
     args = parser.parse_args()
+    if os.environ.get("OKX_ALLOW_RETIRED_LEGACY_RUNNER", "").lower() != "true":
+        raise SystemExit("retired legacy runner disabled; use Strategy Office and EnvironmentRunner")
+    if args.profile != "demo":
+        raise SystemExit("retired legacy runner direct entry only allows demo profile")
 
     cfg = {"profile": args.profile}
     if args.round:

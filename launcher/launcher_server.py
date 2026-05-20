@@ -55,6 +55,7 @@ KILL_SWITCH_PATH = CONTROL_DIR / "kill.switch"
 STOP_GRACE_SEC = 3.0
 
 from registry import StrategyRegistry
+from accounting import LiveOwnershipJournal
 from runtime.environment_runner import EnvironmentRunner
 
 
@@ -1613,6 +1614,14 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
         cancel_orders = _cancel_profile_symbol_open_orders(profile, inst_id)
         cancel_algos = _cancel_profile_symbol_algo_orders(profile, inst_id)
         verification = wait_account_reconciliation(environment, symbols=[inst_id], require_flat=True)
+        if bool(verification.get("flat")) and bool(verification.get("orders_clean")):
+            _append_account_close_ownership_exit(
+                environment,
+                profile,
+                inst_id,
+                reason="launcher_account_symbol_already_flat",
+                metadata={"verification": verification, "closed": False},
+            )
         return {
             "ok": bool(verification.get("flat")) and bool(verification.get("orders_clean")),
             "closed": False,
@@ -1664,6 +1673,14 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
     append_operation("account_close_symbol", environment, "accepted" if result["ok"] else "partial_error", result)
     if not ok:
         raise RuntimeError(close_result["message"] or f"close failed for {inst_id}")
+    if result["ok"]:
+        _append_account_close_ownership_exit(
+            environment,
+            profile,
+            inst_id,
+            reason="launcher_account_close_symbol",
+            metadata={"verification": verification, "closed": True},
+        )
     return result
 
 
@@ -1717,8 +1734,56 @@ def close_account_positions(payload: dict[str, Any]) -> dict[str, Any]:
         "order_cancel": order_cancel,
         "verification": verification,
     }
+    if result["ok"]:
+        _append_flat_account_ownership_exits(
+            environment,
+            profile,
+            reason="launcher_account_close_all",
+            metadata={"verification": verification, "positions_found": len(positions)},
+        )
     append_operation("account_close_all", environment, "accepted" if result["ok"] else "partial_error", result)
     return result
+
+
+def _append_account_close_ownership_exit(
+    environment: str,
+    profile: str,
+    inst_id: str,
+    *,
+    reason: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    journal = LiveOwnershipJournal.from_engine_dir(ENGINE_DIR, environment, profile)
+    owned = journal.rebuild_open_ownership().get(inst_id)
+    if not owned:
+        return
+    journal.append_external_exit(
+        inst_id=inst_id,
+        reason=reason,
+        reviewed_by="launcher",
+        decision_id=str(owned.get("decision_id") or ""),
+        strategy_id=str(owned.get("strategy_id") or ""),
+        metadata=dict(metadata or {}),
+    )
+
+
+def _append_flat_account_ownership_exits(
+    environment: str,
+    profile: str,
+    *,
+    reason: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    journal = LiveOwnershipJournal.from_engine_dir(ENGINE_DIR, environment, profile)
+    for inst_id, owned in journal.rebuild_open_ownership().items():
+        journal.append_external_exit(
+            inst_id=inst_id,
+            reason=reason,
+            reviewed_by="launcher",
+            decision_id=str(owned.get("decision_id") or ""),
+            strategy_id=str(owned.get("strategy_id") or ""),
+            metadata=dict(metadata or {}),
+        )
 
 
 def close_monster_paper_symbol(payload: dict[str, Any]) -> dict[str, Any]:

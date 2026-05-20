@@ -3,10 +3,11 @@
 Fetch and display current open swap positions.
 Usage: python3 check_positions.py [--profile demo|live] [--json]
 """
-import argparse, json, subprocess, sys
+import argparse, json, os, subprocess, sys
 from pathlib import Path
 
 LOG_ERROR = Path(__file__).resolve().parent / "log_error.py"
+OKX_ENV_CREDENTIAL_KEYS = {"OKX_API_KEY", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_PASSPHRASE"}
 
 
 def main():
@@ -18,7 +19,7 @@ def main():
     cmd = ["okx", "--profile", args.profile, "--json", "account", "positions",
            "--instType", "SWAP"]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_env(args.profile))
     except FileNotFoundError:
         print("ERROR: okx CLI not found", file=sys.stderr); sys.exit(1)
 
@@ -58,6 +59,14 @@ def _log(code, msg, context=None):
         subprocess.run(["python3", str(LOG_ERROR), "--code", code, "--msg", msg,
                         "--context", json.dumps(context or {})], capture_output=True, timeout=5)
     except Exception: pass
+
+
+def _okx_env(profile):
+    env = os.environ.copy()
+    if os.environ.get("OKX_TOOLS_ALLOW_ENV_CREDENTIALS") != "1":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 if __name__ == "__main__":

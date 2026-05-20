@@ -30,6 +30,7 @@ BASE_DIR   = Path(__file__).resolve().parent
 LOGS_DIR   = BASE_DIR / "logs"
 STATIC_DIR = BASE_DIR / "dashboard"
 DEFAULT_ELITE_LEVERAGE = 2
+OKX_ENV_CREDENTIAL_KEYS = {"OKX_API_KEY", "OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_PASSPHRASE"}
 
 # Cache backtest result so repeated page loads don't re-run it
 _backtest_cache: Dict[str, Any] = {}
@@ -81,6 +82,7 @@ def run_okx_json(args: List[str], profile: str | None = None, timeout: int = 15)
             text=True,
             timeout=timeout,
             cwd=str(BASE_DIR),
+            env=okx_command_env(profile),
         )
         if r.returncode != 0 or not r.stdout.strip():
             return None
@@ -90,6 +92,14 @@ def run_okx_json(args: List[str], profile: str | None = None, timeout: int = 15)
         return data
     except Exception:
         return None
+
+
+def okx_command_env(profile: str) -> dict[str, str]:
+    env = os.environ.copy()
+    if profile != "live":
+        for key in OKX_ENV_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
 
 
 def read_csv_as_dicts(path: Path) -> List[Dict]:
@@ -1054,11 +1064,12 @@ def api_bills(qs: Dict) -> List[Dict]:
     }
 
     all_fills: List[Dict] = []
+    profile = get_okx_default_profile()
     for inst in instruments:
         try:
             r = subprocess.run(
-                ["okx", "--profile", get_okx_default_profile(), "--json", "swap", "fills", "--instId", inst],
-                capture_output=True, text=True, timeout=15,
+                ["okx", "--profile", profile, "--json", "swap", "fills", "--instId", inst],
+                capture_output=True, text=True, timeout=15, env=okx_command_env(profile),
             )
             if r.returncode == 0 and r.stdout.strip():
                 import json as _json

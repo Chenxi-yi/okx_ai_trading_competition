@@ -31,10 +31,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from accounting import LiveOwnershipJournal  # noqa: E402
 from arbitration.signal_committee import (  # noqa: E402
-    arbitrate_signals,
     build_committee_signals,
     candidate_trade_from_signal,
-    candidate_trade_to_dict,
 )
 from arbitration.thesis_exit import evaluate_position_thesis  # noqa: E402
 from arbitration.leverage_policy import (  # noqa: E402
@@ -42,9 +40,11 @@ from arbitration.leverage_policy import (  # noqa: E402
     compute_committee_leverage_policy,
     infer_kit_alignment,
 )
-from contracts import ApprovedTradePlan, ExecutionReceipt, OrderIntent, ReconciliationSnapshot  # noqa: E402
-from kit import KitClient, KitClientConfig, KitExecutionGateway  # noqa: E402
+from contracts import ApprovedTradePlan, ExecutionReceipt, ReconciliationSnapshot  # noqa: E402
+from execution.bracket_entry import place_entry_with_brackets  # noqa: E402
+from execution.position_close import close_position_via_kit  # noqa: E402
 from position import LivePositionLifecycleService  # noqa: E402
+from strategies.c_auto_v2_signal import CAutoV2SignalConfig, generate_c_auto_v2_signal_decisions  # noqa: E402
 from run_c_auto_v2_paper import (  # noqa: E402
     DEFAULT_POLICY,
     _build_latest_features,
@@ -61,7 +61,6 @@ from run_c_auto_v2_paper import (  # noqa: E402
     _predict_policy,
     _read_frame,
     _round_trip_cost_rate,
-    _short_loss_cooldown_status,
     _valid_number,
 )
 
@@ -149,7 +148,14 @@ def main() -> int:
     if not args.confirm_micro_live and not args.dry_run:
         raise SystemExit("--confirm-micro-live is required for real-money micro-live")
     _require_environment_runner_for_live(args)
-    OKX_PROFILE = str(args.okx_profile or ("live" if args.environment == "competition" else args.environment))
+    expected_profile = "live" if args.environment == "competition" else "personal"
+    supplied_profile = str(args.okx_profile or expected_profile)
+    if supplied_profile != expected_profile:
+        raise SystemExit(
+            f"environment/profile mismatch: environment={args.environment} requires "
+            f"--okx-profile {expected_profile}, got {supplied_profile}"
+        )
+    OKX_PROFILE = supplied_profile
     LIVE_DIR.mkdir(parents=True, exist_ok=True)
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     _claim_exclusive_strategy_lock(EXCLUSIVE_STRATEGY_ID, args.environment)
@@ -505,86 +511,33 @@ def _open_micro_positions(
     if slots <= 0:
         return {}, [_event(now_ts, "skip", None, None, "micro_live_no_slot")]
     group = scored.xs(now_ts, level="timestamp", drop_level=False).reset_index()
-    group = group[~group["symbol"].isin(positions)]
-    events: list[dict[str, Any]] = []
-    blocked_by_cooldown = set(cooldown_symbols or set())
-    if blocked_by_cooldown:
-        group = group[~group["symbol"].astype(str).isin(blocked_by_cooldown)]
-        for symbol in sorted(blocked_by_cooldown):
-            events.append(_event(now_ts, "committee_note", symbol, None, f"rejected post_exit_cooldown_{float(args.post_exit_cooldown_hours):g}h"))
-    group["volume_usd"] = pd.to_numeric(group["volume_usd"], errors="coerce").fillna(0.0)
-    group = group[group["volume_usd"] >= float(args.min_volume_usd)]
-    if bool(getattr(args, "require_slow_confirm", False)):
-        slow_ok = _slow_confirm_ok(group)
-        if bool((~slow_ok).any()):
-            group.loc[:, "slow_confirm_ok"] = slow_ok
-            group.loc[~slow_ok, "blocked_by_slow_confirm"] = True
-            group.loc[~slow_ok, "eligible"] = False
-    short_cooldown = _short_loss_cooldown_status(
-        risk_events or [],
-        now_ts,
-        cooldown_hours=float(args.short_loss_cooldown_hours),
-        lookback_hours=float(args.short_loss_lookback_hours),
-        min_losses=int(args.short_loss_cooldown_min_losses),
-    )
-    if short_cooldown["active"]:
-        short_mask = group["side"].astype(str) == "short"
-        if bool(short_mask.any()):
-            group.loc[short_mask, "eligible"] = False
-            group.loc[short_mask, "short_entries_disabled"] = True
-            events.append(
-                {
-                    **_event(
-                        now_ts,
-                        "committee_note",
-                        None,
-                        "short",
-                        f"rejected portfolio_short_loss_cooldown_{float(args.short_loss_cooldown_hours):g}h",
-                    ),
-                    "short_cooldown": short_cooldown,
-                }
-            )
-    c_auto_group = group[group["eligible"].astype(bool)].copy()
-    if not c_auto_group.empty:
-        threshold = c_auto_group.groupby("side")["score"].transform(lambda s: s.quantile(float(args.min_score_quantile)))
-        c_auto_symbols = set(c_auto_group[c_auto_group["score"] >= threshold]["symbol"].astype(str))
-        group.loc[~group["symbol"].astype(str).isin(c_auto_symbols), "eligible"] = False
-    signal_base_risk = 0.06
-    signal_base_capital = max(
-        float(args.per_symbol_margin_usdt) / signal_base_risk,
-        float(args.per_symbol_margin_usdt),
-    )
-    signals = build_committee_signals(
-        group,
-        now_ts,
-        base_capital=signal_base_capital,
-        base_risk=signal_base_risk,
-        fee_slip_rate=_round_trip_cost_rate(args),
-    )
-    candidate_contracts = [candidate_trade_to_dict(candidate_trade_from_signal(signal)) for signal in signals]
-    if candidate_contracts:
-        events.append(
-            {
-                **_event(now_ts, "candidate_contracts", None, None, "normalized_candidate_trade_contracts"),
-                "candidate_count": len(candidate_contracts),
-                "candidates": candidate_contracts[:25],
-            }
-        )
-    result = arbitrate_signals(
-        signals,
-        positions,
-        now_ts,
-        initial_capital=float(args.daily_budget_usdt),
-        realized_nav=float(args.daily_budget_usdt),
+    signal_result = generate_c_auto_v2_signal_decisions(
+        scored,
+        now_ts=now_ts,
+        positions=positions,
         max_positions=max_positions,
         max_decisions=slots,
-        max_total_budget_usdt=max(0.0, float(args.daily_budget_usdt) - _used_margin(positions)),
-        min_ev=0.0,
-        round_trip_cost_rate=_round_trip_cost_rate(args),
+        used_margin_usdt=_used_margin(positions),
+        cooldown_symbols=cooldown_symbols,
+        risk_events=risk_events,
+        config=CAutoV2SignalConfig(
+            min_volume_usd=float(args.min_volume_usd),
+            min_score_quantile=float(args.min_score_quantile),
+            per_symbol_margin_usdt=float(args.per_symbol_margin_usdt),
+            daily_budget_usdt=float(args.daily_budget_usdt),
+            post_exit_cooldown_hours=float(args.post_exit_cooldown_hours),
+            short_loss_cooldown_hours=float(args.short_loss_cooldown_hours),
+            short_loss_lookback_hours=float(args.short_loss_lookback_hours),
+            short_loss_cooldown_min_losses=int(args.short_loss_cooldown_min_losses),
+            fee_bps_per_side=float(args.fee_bps_per_side),
+            slippage_bps_per_side=float(args.slippage_bps_per_side),
+            require_slow_confirm=bool(getattr(args, "require_slow_confirm", False)),
+        ),
     )
+    events: list[dict[str, Any]] = list(signal_result.events)
     opened: dict[str, dict[str, Any]] = {}
     row_by_symbol = {str(row["symbol"]): row for _, row in group.iterrows()}
-    for decision in result.decisions[:slots]:
+    for decision in signal_result.decisions[:slots]:
         signal = decision.signal
         symbol = str(signal.symbol)
         entry = float(signal.entry)
@@ -738,7 +691,7 @@ def _open_micro_positions(
             filled_contracts=truth_contracts,
             fee_usdt=fee_usdt,
         )
-    for note in result.notes[-8:]:
+    for note in signal_result.notes[-8:]:
         events.append(_event(now_ts, "committee_note", None, None, note))
     if not opened and not events:
         events.append(_event(now_ts, "skip", None, None, "committee_no_accepted_signals"))
@@ -925,58 +878,18 @@ def _place_entry_with_brackets(
     target_price: float | None,
     args: argparse.Namespace,
 ) -> dict[str, Any]:
-    if bool(getattr(args, "dry_run", False)):
-        return {
-            "ok": True,
-            "stage": "dry_run",
-            "leverage": {"ok": True, "dry_run": True},
-            "take_profit_attached": target_price is not None,
-            "place": {
-                "ok": True,
-                "dry_run": True,
-                "inst_id": inst_id,
-                "side": side,
-                "size_contracts": size_contracts,
-                "stop_price": stop_price,
-                "target_price": target_price,
-            },
-        }
-    profile = _okx_profile()
-    order_side = "buy" if side == "long" else "sell"
-    gateway = _kit_gateway(profile)
-    lev = gateway.set_leverage(inst_id, leverage, mgn_mode="isolated", profile=profile)
-    if not lev.ok:
-        return {
-            "ok": False,
-            "stage": "set_leverage",
-            "error": lev.error,
-            "leverage": {"ok": lev.ok, "argv": lev.argv, "data": lev.data, "error": lev.error},
-        }
-    order = OrderIntent(
-        decision_id=f"c_auto_micro_live_{int(time.time() * 1000)}",
+    return place_entry_with_brackets(
         inst_id=inst_id,
-        side=order_side,
+        side=side,
         size_contracts=float(size_contracts),
-        order_type="market",
-        timestamp=datetime.now(timezone.utc),
-        profile=profile,
         leverage=float(leverage),
-        metadata={
-            "strategy_id": EXCLUSIVE_STRATEGY_ID,
-            "td_mode": "isolated",
-            "attach_brackets": True,
-            "target": _fmt(float(target_price)) if target_price is not None and _valid_number(target_price) else None,
-            "stop": _fmt(float(stop_price)),
-            "trigger_px_type": "mark",
-            "source": "kit_execution_gateway",
-        },
+        stop_price=float(stop_price),
+        target_price=float(target_price) if target_price is not None and _valid_number(target_price) else None,
+        profile=_okx_profile(),
+        environment=args.environment,
+        strategy_id=EXCLUSIVE_STRATEGY_ID,
+        dry_run=bool(getattr(args, "dry_run", False)),
     )
-    place = gateway.place_order(order)
-    place_row = {"ok": place.ok, "argv": place.argv, "data": place.data, "error": place.error}
-    lev_row = {"ok": lev.ok, "argv": lev.argv, "data": lev.data, "error": lev.error}
-    if not place.ok:
-        return {"ok": False, "stage": "place_entry_with_brackets", "error": place.error, "leverage": lev_row, "place": place_row}
-    return {"ok": True, "stage": "placed", "source": "kit_execution_gateway", "leverage": lev_row, "place": place_row, "take_profit_attached": target_price is not None}
 
 
 def _post_place_truth(inst_id: str, order: dict[str, Any], side: str) -> dict[str, Any]:
@@ -1535,10 +1448,14 @@ def _close_position(inst_id: str, environment: str = "") -> dict[str, Any]:
     if os.environ.get("C_AUTO_MICRO_LIVE_DRY_RUN", "").lower() == "true":
         return {"ok": True, "dry_run": True, "inst_id": inst_id}
     cancel = _run_okx(["okx", "--profile", _okx_profile(), "--json", "swap", "orders", "--instId", inst_id, "--status", "open"])
-    gateway = _kit_gateway(_okx_profile())
-    close = gateway.close_position(inst_id, mgn_mode="isolated", pos_side="net", profile=_okx_profile())
-    close_row = {"ok": close.ok, "argv": close.argv, "data": close.data, "error": close.error}
-    row = {"ok": close.ok, "source": "kit_execution_gateway", "cancel_probe": cancel, "close": close_row}
+    row = close_position_via_kit(
+        inst_id=inst_id,
+        profile=_okx_profile(),
+        environment=environment or "competition",
+        mgn_mode="isolated",
+        pos_side="net",
+        cancel_probe=cancel,
+    )
     _ownership_journal(environment or "competition", _okx_profile()).append_close(
         strategy_id=EXCLUSIVE_STRATEGY_ID,
         inst_id=inst_id,
@@ -1546,15 +1463,6 @@ def _close_position(inst_id: str, environment: str = "") -> dict[str, Any]:
         result=row,
     )
     return row
-
-
-def _kit_gateway(profile: str) -> KitExecutionGateway:
-    live_enabled = os.environ.get("LIVE_TRADING", "false").lower() == "true"
-    return KitExecutionGateway(
-        KitClient(KitClientConfig(default_profile=profile, live_enabled=live_enabled)),
-        profile=profile,
-        allow_live=live_enabled,
-    )
 
 
 def _mark_positions(positions: dict[str, dict[str, Any]], latest_features: pd.DataFrame, args: argparse.Namespace) -> dict[str, dict[str, Any]]:
