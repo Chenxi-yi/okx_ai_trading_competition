@@ -2850,6 +2850,26 @@ def _balance_view(balance: Any) -> dict[str, Any]:
 
 
 def position_strategy_attribution(environment: str) -> dict[str, dict[str, Any]]:
+    ownership_by_key: dict[str, dict[str, Any]] = {}
+    profile = okx_profile_for_environment(environment)
+    try:
+        owned = LiveOwnershipJournal.from_engine_dir(ENGINE_DIR, environment, profile).rebuild_open_ownership()
+    except Exception:
+        owned = {}
+    for inst_id, row in owned.items():
+        strategy_id = str(row.get("strategy_id") or "unknown")
+        record = {
+            "strategy_id": strategy_id,
+            "strategy_display_name": _strategy_display_name(strategy_id),
+            "source": "ownership_journal",
+            "signal_family": ((row.get("plan") or {}).get("metadata") or {}).get("signal_family") if isinstance(row.get("plan"), dict) else "",
+            "entry_ts": row.get("opened_at"),
+            "entry_price": row.get("fill_price"),
+            "side": row.get("side"),
+        }
+        for key in _symbol_aliases(str(inst_id)):
+            ownership_by_key[key] = record
+
     sources: list[tuple[str, Path]] = []
     if environment == "competition":
         sources.extend(
@@ -2895,6 +2915,7 @@ def position_strategy_attribution(environment: str) -> dict[str, dict[str, Any]]
             elif event_type in close_events:
                 for key in keys:
                     by_key.pop(key, None)
+    by_key.update(ownership_by_key)
     return by_key
 
 
