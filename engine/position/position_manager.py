@@ -314,6 +314,8 @@ class PositionManager:
             if stop_time.tzinfo is None:
                 stop_time = stop_time.replace(tzinfo=timezone.utc)
             if now >= stop_time:
+                if not PositionManager._time_exit_allowed(position, mark, now):
+                    return None
                 return "time_stop"
         horizon_sec = position.metadata.get("horizon_sec")
         if horizon_sec:
@@ -321,8 +323,32 @@ class PositionManager:
             if opened_at.tzinfo is None:
                 opened_at = opened_at.replace(tzinfo=timezone.utc)
             if now >= opened_at + timedelta(seconds=float(horizon_sec)):
+                if not PositionManager._time_exit_allowed(position, mark, now):
+                    return None
                 return "time_stop"
         return None
+
+    @staticmethod
+    def _time_exit_allowed(position: Position, mark: float, now: datetime) -> bool:
+        floor = position.metadata.get("min_time_stop_net_return")
+        if floor is None:
+            return True
+        hard_horizon_sec = position.metadata.get("hard_horizon_sec")
+        if hard_horizon_sec:
+            opened_at = position.opened_at
+            if opened_at.tzinfo is None:
+                opened_at = opened_at.replace(tzinfo=timezone.utc)
+            if now >= opened_at + timedelta(seconds=float(hard_horizon_sec)):
+                return True
+        return PositionManager._position_return(position, mark) >= float(floor)
+
+    @staticmethod
+    def _position_return(position: Position, mark: float) -> float:
+        if position.entry_price <= 0 or mark <= 0:
+            return 0.0
+        if position.side == "long":
+            return mark / position.entry_price - 1.0
+        return position.entry_price / mark - 1.0
 
     def _exit_contracts(self, position: Position, reason: str) -> float:
         if reason != "target_hit":

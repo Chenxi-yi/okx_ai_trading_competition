@@ -52,6 +52,21 @@
       "id": "trend_pullback_candidate_priority",
       "type": "veto",
       "description": "When the three trend-pullback candidate strategies request the same symbol simultaneously, accept at most one in priority order: cluster_elite_quality60, quality_top20, rank_top1."
+    },
+    {
+      "id": "trend_pullback_quality_top20_short_only_gate",
+      "type": "veto",
+      "description": "Reject long-side Trend Pullback Quality Top20 candidates; historical attribution showed the strategy's realised edge is short-side bounce-fade, not long-side pullback continuation."
+    },
+    {
+      "id": "trend_pullback_cluster_elite_short_only_gate",
+      "type": "veto",
+      "description": "Reject long-side Trend Pullback Cluster Elite Quality60 candidates; historical attribution showed the cluster sleeve's realised edge is concentrated in short-side bounce-fade setups."
+    },
+    {
+      "id": "trend_pullback_rank_top1_short_only_gate",
+      "type": "veto",
+      "description": "Reject long-side Trend Pullback Rank Top1 candidates; historical attribution showed the concentrated rank sleeve is profitable on short-side setups and negative on long-side setups."
     }
   ],
   "leverage_bands": [

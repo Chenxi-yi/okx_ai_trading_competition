@@ -28,6 +28,7 @@ sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from config.settings import BASE_DIR, DATA_DIR  # noqa: E402
+from data.frame_store import read_frame  # noqa: E402
 from features import build_feature_panel  # noqa: E402
 from build_c_auto_feature_store import (  # noqa: E402
     DEFAULT_DERIV_RUN,
@@ -290,7 +291,7 @@ def _run_live_cycle(args: argparse.Namespace) -> dict[str, Any]:
 
 def _read_frame(parquet: Path, csv_path: Path) -> pd.DataFrame:
     if parquet.exists():
-        return pd.read_parquet(parquet)
+        return read_frame(parquet)
     if csv_path.exists():
         if csv_path.suffix == ".pkl":
             return pd.read_pickle(csv_path)
@@ -426,7 +427,21 @@ def _load_ohlcv_cache(symbol: str, timeframe: str, start: pd.Timestamp, end: pd.
         path = DATA_DIR / f"{safe}_futures_{timeframe}.{ext}"
         if not path.exists():
             continue
-        df = pd.read_parquet(path) if ext == "parquet" else pd.read_pickle(path)
+        try:
+            df = read_frame(path)
+        except Exception:
+            if ext == "parquet":
+                _refresh_ohlcv_cache(symbol, timeframe, end, force=True)
+                pkl = DATA_DIR / f"{safe}_futures_{timeframe}.pkl"
+                if pkl.exists():
+                    try:
+                        df = read_frame(pkl)
+                    except Exception:
+                        continue
+                else:
+                    continue
+            else:
+                continue
         df = df.copy()
         df.index = pd.to_datetime(df.index, utc=True)
         df = df.sort_index()
@@ -723,7 +738,7 @@ def _load_ohlcv_cache_by_safe(safe_symbol: str, timeframe: str) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
     try:
-        df = pd.read_parquet(path)
+        df = read_frame(path)
     except Exception:
         return pd.DataFrame()
     if df.empty:

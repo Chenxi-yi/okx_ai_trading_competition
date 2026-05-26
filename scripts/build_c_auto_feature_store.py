@@ -18,6 +18,7 @@ ENGINE_DIR = ROOT / "engine"
 sys.path.insert(0, str(ENGINE_DIR))
 
 from config.settings import BASE_DIR, DATA_DIR
+from data.frame_store import read_frame
 from data.catalog import DataCatalog
 from features import (
     build_default_feature_registry,
@@ -204,7 +205,7 @@ def _read_quality(quality_dir: Path) -> pd.DataFrame:
     parquet = quality_dir / "symbol_quality.parquet"
     csv = quality_dir / "symbol_quality.csv"
     if parquet.exists():
-        return pd.read_parquet(parquet)
+        return read_frame(parquet)
     if csv.exists():
         return pd.read_csv(csv)
     raise FileNotFoundError(f"Missing quality dataset in {quality_dir}")
@@ -229,7 +230,7 @@ def _load_ohlcv(symbol: str, timeframe: str, start: str, end: str) -> pd.DataFra
         path = DATA_DIR / f"{safe}_futures_{timeframe}.{ext}"
         if not path.exists():
             continue
-        df = pd.read_parquet(path) if ext == "parquet" else pd.read_pickle(path)
+        df = read_frame(path)
         df = df.copy()
         df.index = pd.to_datetime(df.index, utc=True)
         df = df.sort_index()
@@ -295,7 +296,7 @@ def _load_derivative(symbol: str, run_id: str, kind: str) -> pd.DataFrame:
     path = next((candidate for candidate in candidates if candidate.exists()), None)
     if path is None:
         return pd.DataFrame()
-    df = pd.read_parquet(path)
+    df = read_frame(path)
     df.index = pd.to_datetime(df.index, utc=True)
     return df.sort_index()
 
@@ -338,7 +339,7 @@ def _snapshot_features(symbol: str, snapshot_run_id: str) -> dict[str, Any]:
 def _read_first(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    df = pd.read_parquet(path)
+    df = read_frame(path)
     if df.empty:
         return {}
     return df.iloc[0].to_dict()

@@ -28,6 +28,13 @@ ROOT = Path(__file__).resolve().parents[1]
 ENGINE_DIR = ROOT / "engine"
 sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
+WINDOWS_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+
+
+def _cli_run_kwargs() -> dict[str, int]:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": WINDOWS_NO_WINDOW}
 
 from accounting import LiveOwnershipJournal  # noqa: E402
 from arbitration.signal_committee import (  # noqa: E402
@@ -43,6 +50,7 @@ from arbitration.leverage_policy import (  # noqa: E402
 from contracts import ApprovedTradePlan, ExecutionReceipt, ReconciliationSnapshot  # noqa: E402
 from execution.bracket_entry import place_entry_with_brackets  # noqa: E402
 from execution.position_close import close_position_via_kit  # noqa: E402
+from kit.client import default_okx_binary  # noqa: E402
 from position import LivePositionLifecycleService  # noqa: E402
 from strategies.c_auto_v2_signal import CAutoV2SignalConfig, generate_c_auto_v2_signal_decisions  # noqa: E402
 from run_c_auto_v2_paper import (  # noqa: E402
@@ -1664,7 +1672,18 @@ def _contracts_for_notional(notional_usdt: float, price: float, spec: dict[str, 
 
 
 def _run_okx(cmd: list[str]) -> dict[str, Any]:
-    proc = subprocess.run(cmd, cwd=ROOT, env=_okx_command_env(), capture_output=True, text=True, timeout=45)
+    resolved_cmd = list(cmd)
+    if resolved_cmd and resolved_cmd[0] == "okx":
+        resolved_cmd[0] = default_okx_binary()
+    proc = subprocess.run(
+        resolved_cmd,
+        cwd=ROOT,
+        env=_okx_command_env(),
+        capture_output=True,
+        text=True,
+        timeout=45,
+        **_cli_run_kwargs(),
+    )
     stdout = proc.stdout.strip()
     stderr = proc.stderr.strip()
     data = None
@@ -1676,7 +1695,7 @@ def _run_okx(cmd: list[str]) -> dict[str, Any]:
     return {
         "ok": proc.returncode == 0,
         "returncode": proc.returncode,
-        "argv": cmd,
+        "argv": resolved_cmd,
         "stdout": stdout[-2000:],
         "stderr": stderr[-2000:],
         "data": data,

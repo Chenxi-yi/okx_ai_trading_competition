@@ -17,24 +17,33 @@ from arbitration.thesis_exit import thesis_contract
 from contracts import CandidateTrade, PortfolioState, Signal
 
 
-TREND_PULLBACK_CANDIDATE_RULES: dict[str, dict[str, float | int]] = {
+TREND_PULLBACK_CANDIDATE_RULES: dict[str, dict[str, Any]] = {
     "trend_pullback_reversal_cluster_elite_quality60_v1": {
         "priority": 300,
         "max_positions": 3,
         "budget_usdt": 50.0,
         "order_margin_usdt": 10.0,
+        "allowed_sides": ("short",),
     },
     "trend_pullback_reversal_quality_top20_v1": {
         "priority": 200,
         "max_positions": 3,
         "budget_usdt": 50.0,
         "order_margin_usdt": 10.0,
+        "allowed_sides": ("short",),
     },
     "trend_pullback_reversal_rank_top1_v1": {
         "priority": 100,
         "max_positions": 3,
         "budget_usdt": 50.0,
         "order_margin_usdt": 10.0,
+        "allowed_sides": ("short",),
+    },
+    "xau_supertrend_ema_4h_v1": {
+        "priority": 250,
+        "max_positions": 1,
+        "budget_usdt": 50.0,
+        "order_margin_usdt": 30.0,
     },
 }
 
@@ -152,6 +161,7 @@ def arbitrate_signals(
             "per_strategy_open_count": _per_strategy_open_count(positions),
         },
     )
+    filtered_signals, side_rejected, side_notes = _apply_strategy_side_rules(signals)
     arbiter = PortfolioArbiter(
         max_fractional_kelly=0.08,
         default_budget_usdt=25.0,
@@ -165,7 +175,30 @@ def arbitrate_signals(
         strategy_order_usdt={sid: float(rule["order_margin_usdt"]) for sid, rule in TREND_PULLBACK_CANDIDATE_RULES.items()},
         round_trip_cost_rate=float(round_trip_cost_rate),
     )
-    return arbiter.arbitrate(signals, portfolio, now=_to_datetime(now_ts))
+    result = arbiter.arbitrate(filtered_signals, portfolio, now=_to_datetime(now_ts))
+    return ArbitrationResult(
+        decisions=result.decisions,
+        rejected=tuple(side_rejected) + result.rejected,
+        notes=tuple(side_notes) + result.notes,
+    )
+
+
+def _apply_strategy_side_rules(signals: list[Signal]) -> tuple[list[Signal], list[Signal], list[str]]:
+    accepted: list[Signal] = []
+    rejected: list[Signal] = []
+    notes: list[str] = []
+    for signal in signals:
+        rule = TREND_PULLBACK_CANDIDATE_RULES.get(str(signal.strategy_id)) or {}
+        allowed = {str(item) for item in rule.get("allowed_sides", ()) if item}
+        if allowed and str(signal.side) not in allowed:
+            rejected.append(signal)
+            notes.append(
+                f"{signal.symbol}: rejected {signal.strategy_id} side {signal.side}; "
+                f"allowed sides={','.join(sorted(allowed))}"
+            )
+            continue
+        accepted.append(signal)
+    return accepted, rejected, notes
 
 
 def _c_auto_signal(

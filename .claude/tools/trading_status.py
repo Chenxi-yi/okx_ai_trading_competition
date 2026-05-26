@@ -66,38 +66,29 @@ def collect_runner_status() -> dict:
         )
 
     runner_plans = collect_environment_plans()
+    interval_by_key = {
+        (item.get("environment"), item.get("strategy_id")): command_interval_sec(" ".join(str(x) for x in item.get("command") or ()))
+        for item in runner_plans
+    }
+    for item in schedulers:
+        key = (item.get("environment"), item.get("strategy_id"))
+        interval_sec = interval_by_key.get(key)
+        if interval_sec is None:
+            continue
+        item["interval_sec"] = interval_sec
+        age_sec = item.get("age_sec")
+        if age_sec is not None:
+            item["fresh"] = float(age_sec) <= max(15 * 60, interval_sec * 1.25 + 5 * 60)
     processes = collect_processes_from_plans(runner_plans)
     process_error = None
     try:
-        proc = subprocess.run(["ps", "-axo", "pid,stat,etime,command"], capture_output=True, text=True, timeout=5)
+        scanned = collect_os_processes()
     except Exception as exc:
         process_error = f"{type(exc).__name__}: {exc}"
-        proc = None
-    if proc is not None and proc.returncode == 0:
-        for line in proc.stdout.splitlines():
-            if line.lstrip().startswith("PID "):
-                continue
-            if "scripts/run_c_auto_v2_micro_live.py" not in line and "scripts/run_research_sleeve_paper.py" not in line:
-                continue
-            parts = line.strip().split(None, 3)
-            if len(parts) < 4:
-                continue
-            command = parts[3]
-            row = {
-                "pid": int(parts[0]),
-                "stat": parts[1],
-                "etime": parts[2],
-                "strategy_id": command_arg(command, "--strategy-id") or "c_auto_v2_cross_section",
-                "state_id": command_arg(command, "--state-id"),
-                "environment": command_arg(command, "--environment"),
-                "okx_profile": command_arg(command, "--okx-profile"),
-                "command": command,
-                "source": "ps",
-            }
-            if not any(item.get("pid") == row["pid"] for item in processes):
-                processes.append(row)
-    elif proc is not None:
-        process_error = (proc.stderr or proc.stdout or f"ps exited {proc.returncode}").strip()
+        scanned = []
+    for row in scanned:
+        if not any(item.get("pid") == row["pid"] for item in processes):
+            processes.append(row)
 
     planned_by_key = {(item.get("environment"), item.get("strategy_id")): item for item in runner_plans}
     running_by_key = {(item.get("environment"), item.get("strategy_id")) for item in processes}
@@ -199,6 +190,72 @@ def collect_processes_from_plans(plans: list[dict]) -> list[dict]:
     return rows
 
 
+def collect_os_processes() -> list[dict]:
+    if os.name == "nt":
+        return collect_windows_processes()
+    return collect_posix_processes()
+
+
+def collect_posix_processes() -> list[dict]:
+    proc = subprocess.run(["ps", "-axo", "pid,stat,etime,command"], capture_output=True, text=True, timeout=5)
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or f"ps exited {proc.returncode}").strip())
+    rows = []
+    for line in proc.stdout.splitlines():
+        if line.lstrip().startswith("PID "):
+            continue
+        if "scripts/run_c_auto_v2_micro_live.py" not in line and "scripts/run_research_sleeve_paper.py" not in line:
+            continue
+        parts = line.strip().split(None, 3)
+        if len(parts) < 4:
+            continue
+        rows.append(process_row(int(parts[0]), parts[3], stat=parts[1], etime=parts[2], source="ps"))
+    return rows
+
+
+def collect_windows_processes() -> list[dict]:
+    script = (
+        "$rows = Get-CimInstance Win32_Process | "
+        "Where-Object { $_.CommandLine -match 'scripts[/\\\\](run_c_auto_v2_micro_live|run_research_sleeve_paper)\\.py' }; "
+        "$rows | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+    )
+    proc = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=8,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError((proc.stderr or proc.stdout or f"powershell exited {proc.returncode}").strip())
+    text = proc.stdout.strip()
+    if not text:
+        return []
+    payload = json.loads(text)
+    if isinstance(payload, dict):
+        payload = [payload]
+    rows = []
+    for item in payload if isinstance(payload, list) else []:
+        command = str(item.get("CommandLine") or "")
+        if not command:
+            continue
+        rows.append(process_row(int(item.get("ProcessId")), command, stat="win", etime="?", source="windows_process"))
+    return rows
+
+
+def process_row(pid: int, command: str, *, stat: str, etime: str, source: str) -> dict:
+    return {
+        "pid": pid,
+        "stat": stat,
+        "etime": etime,
+        "strategy_id": command_arg(command, "--strategy-id") or "c_auto_v2_cross_section",
+        "state_id": command_arg(command, "--state-id"),
+        "environment": command_arg(command, "--environment"),
+        "okx_profile": command_arg(command, "--okx-profile"),
+        "command": command,
+        "source": source,
+    }
+
+
 def pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -229,6 +286,16 @@ def command_arg(command: str, key: str) -> str | None:
         if part.startswith(f"{key}="):
             return part.split("=", 1)[1]
     return None
+
+
+def command_interval_sec(command: str) -> float | None:
+    raw = command_arg(command, "--interval-sec")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except Exception:
+        return None
 
 
 def print_runner_status(status: dict) -> None:

@@ -193,9 +193,9 @@ def _performance_summary(
             if fill_pnl != 0.0:
                 row["closed_fills"] += 1
                 if net > 0:
-                    row["wins"] += 1
+                    row["gross_wins"] += 1
                 elif net < 0:
-                    row["losses"] += 1
+                    row["gross_losses"] += 1
 
     related_bills = 0
     for bill in bills:
@@ -218,16 +218,38 @@ def _performance_summary(
 
     open_owned = journal.rebuild_open_ownership()
     for owned in open_owned.values():
-        strategy_id = str(owned.get("strategy_id") or "unknown")
-        _perf_row(strategies, strategy_id)["open_positions"] += 1
+        owners = owned.get("owners")
+        if isinstance(owners, list) and owners:
+            seen: set[str] = set()
+            for owner in owners:
+                if not isinstance(owner, dict):
+                    continue
+                strategy_id = str(owner.get("strategy_id") or "unknown")
+                if strategy_id in seen:
+                    continue
+                seen.add(strategy_id)
+                _perf_row(strategies, strategy_id)["open_positions"] += 1
+        else:
+            strategy_id = str(owned.get("strategy_id") or "unknown")
+            _perf_row(strategies, strategy_id)["open_positions"] += 1
 
     rows = []
     for strategy_id, row in strategies.items():
         closed = int(row["closed_fills"])
-        wins = int(row["wins"])
         row["strategy_id"] = strategy_id
-        row["win_rate"] = wins / closed if closed > 0 else None
         row["net_pnl_usdt"] = row["exchange_fill_pnl_usdt"] + row["exchange_fees_usdt"] + row["bill_pnl_usdt"] + row["bill_fees_usdt"]
+        row["gross_win_rate"] = row["gross_wins"] / closed if closed > 0 else None
+        row["wins"] = int(row["gross_wins"])
+        row["losses"] = int(row["gross_losses"])
+        if closed > 0 and row["net_pnl_usdt"] < 0 and row["losses"] == 0:
+            row["wins"] = 0
+            row["losses"] = closed
+        elif closed > 0 and row["net_pnl_usdt"] > 0 and row["wins"] == 0:
+            row["wins"] = closed
+            row["losses"] = 0
+        wins = int(row["wins"])
+        losses = int(row["losses"])
+        row["win_rate"] = wins / (wins + losses) if (wins + losses) > 0 else None
         rows.append(row)
     rows.sort(key=lambda item: (-float(item.get("net_pnl_usdt") or 0.0), str(item.get("strategy_id") or "")))
     return {
@@ -286,6 +308,9 @@ def _perf_row(strategies: dict[str, dict[str, Any]], strategy_id: str) -> dict[s
             "close_events": 0,
             "wins": 0,
             "losses": 0,
+            "gross_wins": 0,
+            "gross_losses": 0,
+            "gross_win_rate": None,
             "open_positions": 0,
             "filled_contracts": 0.0,
             "execution_fees_usdt": 0.0,

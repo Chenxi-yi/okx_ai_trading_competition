@@ -23,4 +23,5 @@ matplotlib>=3.7
 python-dotenv>=1.0
 python-dateutil>=2.8
 pyarrow>=14.0        # Parquet cache support
+duckdb>=1.0          # Data-layer fallback for migrated Parquet artifacts
 tqdm>=4.66           # Progress bars (optional)

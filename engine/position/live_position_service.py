@@ -136,7 +136,10 @@ def _position_from_raw(
     target = _first_float(raw, ("tp1_price", "target"))
     ct_val = _float(raw.get("ct_val"), _contract_value(symbol))
     strategy_id = str(raw.get("source_strategy_id") or raw.get("strategy_id") or raw.get("signal_family") or "unknown")
+    thesis = raw.get("thesis_contract") if isinstance(raw.get("thesis_contract"), Mapping) else {}
     horizon_sec = _horizon_sec(raw)
+    hard_horizon_sec = _hard_horizon_sec(raw, thesis)
+    min_time_stop_net_return = _optional_float(raw, thesis, "min_time_stop_net_return")
     return Position(
         symbol=symbol,
         inst_id=inst_id,
@@ -152,6 +155,8 @@ def _position_from_raw(
             "strategy_id": strategy_id,
             "ct_val": ct_val,
             "horizon_sec": horizon_sec,
+            "hard_horizon_sec": hard_horizon_sec,
+            "min_time_stop_net_return": min_time_stop_net_return,
             "leverage": raw.get("leverage"),
         },
     )
@@ -205,6 +210,24 @@ def _horizon_sec(raw: Mapping[str, Any]) -> float | None:
     hours = _float(raw.get("horizon_hours"), 0.0)
     if hours > 0:
         return hours * 3600.0
+    return None
+
+
+def _hard_horizon_sec(raw: Mapping[str, Any], thesis: Mapping[str, Any]) -> float | None:
+    value = _float(raw.get("hard_horizon_sec"), 0.0)
+    if value > 0:
+        return value
+    hours = _float(raw.get("hard_max_hold_hours"), _float(thesis.get("hard_max_hold_hours"), 0.0))
+    if hours > 0:
+        return hours * 3600.0
+    return None
+
+
+def _optional_float(raw: Mapping[str, Any], thesis: Mapping[str, Any], key: str) -> float | None:
+    if raw.get(key) is not None:
+        return _float(raw.get(key), 0.0)
+    if thesis.get(key) is not None:
+        return _float(thesis.get(key), 0.0)
     return None
 
 

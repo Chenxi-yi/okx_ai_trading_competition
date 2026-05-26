@@ -92,6 +92,7 @@ class PortfolioArbiter:
             strategy_order_cap = self.strategy_order_usdt.get(strategy_id)
             if strategy_order_cap is not None:
                 size = min(size, max(0.0, float(strategy_order_cap)))
+            size = self._apply_size_tiers(size, winner)
             strategy_max = self.strategy_max_positions.get(strategy_id)
             if strategy_max is not None and per_strategy_open.get(strategy_id, 0) + new_strategy_count[strategy_id] >= int(strategy_max):
                 rejected.append(winner)
@@ -172,6 +173,27 @@ class PortfolioArbiter:
             return min(self.default_budget_usdt, max(portfolio.free_usdt, 0.0))
         fraction = min(kelly, self.max_fractional_kelly)
         return max(0.0, min(portfolio.free_usdt, portfolio.nav_usdt * fraction))
+
+    @staticmethod
+    def _apply_size_tiers(size: float, signal: Signal) -> float:
+        tiers_raw = (signal.metadata or {}).get("committee_size_tiers_usdt")
+        if not tiers_raw:
+            return size
+        try:
+            tiers = sorted({float(item) for item in tiers_raw if float(item) > 0.0})
+        except Exception:
+            return size
+        if not tiers:
+            return size
+        confidence = float(signal.confidence or 0.0)
+        ev = signal.forward_ev
+        if confidence >= 0.64 or (ev is not None and ev >= 0.02):
+            target = tiers[-1]
+        elif confidence >= 0.58 or (ev is not None and ev >= 0.01):
+            target = tiers[min(1, len(tiers) - 1)]
+        else:
+            target = tiers[0]
+        return min(size, target)
 
     @staticmethod
     def _reason(winner: Signal, losers: tuple[Signal, ...]) -> str:

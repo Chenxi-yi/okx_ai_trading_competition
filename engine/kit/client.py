@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,9 +28,25 @@ ENVIRONMENT_OKX_PROFILE = {
 }
 
 
+def default_okx_binary() -> str:
+    configured = os.environ.get("OKX_CLI_BIN")
+    if configured:
+        return configured
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidate = Path(appdata) / "npm" / "okx.cmd"
+            if candidate.exists():
+                return str(candidate)
+        found = shutil.which("okx.cmd")
+        if found:
+            return found
+    return shutil.which("okx") or "okx"
+
+
 @dataclass(frozen=True)
 class KitClientConfig:
-    binary: str = "okx"
+    binary: str = default_okx_binary()
     default_profile: str = "demo"
     default_timeout_sec: float = 30.0
     audit_path: Path | str | None = Path("engine/logs/kit/audit.jsonl")
@@ -147,6 +164,15 @@ def _redact_argv(argv: Sequence[str]) -> tuple[str, ...]:
 
 def _command_env(profile: str | None) -> dict[str, str]:
     env = os.environ.copy()
+    if os.name == "nt":
+        path_parts = []
+        appdata = env.get("APPDATA")
+        if appdata:
+            path_parts.append(str(Path(appdata) / "npm"))
+        path_parts.append(r"C:\Program Files\nodejs")
+        if env.get("PATH"):
+            path_parts.append(env["PATH"])
+        env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
     if profile and profile != "live":
         for key in OKX_ENV_CREDENTIAL_KEYS:
             env.pop(key, None)

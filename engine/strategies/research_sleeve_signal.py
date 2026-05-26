@@ -134,6 +134,7 @@ def candidate_to_signal(strategy_id: str, cand: dict[str, Any], now_ts: pd.Times
             "signal_family": cand.get("signal_family") or strategy_id,
             "score": quality,
             "risk_budget_usdt": float(cand.get("budget") or 0.0),
+            "committee_size_tiers_usdt": list(metadata.get("committee_size_tiers_usdt") or ()),
             "target_pct": target_pct,
             "stop_pct": stop_pct,
             "thesis_contract": thesis_contract(

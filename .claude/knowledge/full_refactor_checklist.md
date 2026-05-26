@@ -50,6 +50,8 @@ Legend:
 - [x] Readiness supports file freshness checks.
 - [~] Registry data dependencies filled for current live trend strategies.
 - [x] Readiness supports dataset manifests, feature manifests, and row coverage.
+- [x] Data artifact read compatibility is centralized in `engine/data/frame_store.py`;
+  migrated parquet repair is a data maintenance concern, not strategy logic.
 - [x] Readiness status is shown as a separate health dimension in dashboard,
   including required/ready counts and blocking dependency reasons.
 

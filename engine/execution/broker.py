@@ -36,14 +36,22 @@ from config.settings import (
     TRADING_MODE,
     TRANSACTION_COSTS,
 )
+from kit.client import default_okx_binary
 
 logger = logging.getLogger(__name__)
+WINDOWS_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_API_KEY",
     "OKX_SECRET_KEY",
     "OKX_API_SECRET",
     "OKX_PASSPHRASE",
 }
+
+
+def _cli_run_kwargs() -> dict[str, int]:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": WINDOWS_NO_WINDOW}
 
 
 def _is_live_trading() -> bool:
@@ -56,6 +64,13 @@ def _okx_command_env(profile: str) -> dict[str, str]:
         for key in OKX_ENV_CREDENTIAL_KEYS:
             env.pop(key, None)
     return env
+
+
+def _resolve_okx_cmd(cmd: List[str]) -> List[str]:
+    resolved = list(cmd)
+    if resolved and resolved[0] == "okx":
+        resolved[0] = default_okx_binary()
+    return resolved
 
 LIVE_TRADING = _SETTINGS_LIVE_TRADING
 
@@ -126,7 +141,7 @@ def _place_via_cli(
 
     logger.info("[ATK] %s", " ".join(cmd))
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=_okx_command_env(profile))
+        result = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=30, env=_okx_command_env(profile), **_cli_run_kwargs())
     except FileNotFoundError:
         raise RuntimeError("Agent Trade Kit CLI not found. Run: npm install -g @okx_ai/okx-trade-cli")
 
@@ -144,9 +159,9 @@ def _place_via_cli(
                 # Query fill price for market orders
                 try:
                     fill_r = subprocess.run(
-                        ["okx", "--profile", profile, "--json", "swap", "get",
-                         "--instId", inst_id, "--ordId", ord_id],
-                        capture_output=True, text=True, timeout=10, env=_okx_command_env(profile),
+                        _resolve_okx_cmd(["okx", "--profile", profile, "--json", "swap", "get",
+                         "--instId", inst_id, "--ordId", ord_id]),
+                        capture_output=True, text=True, timeout=10, env=_okx_command_env(profile), **_cli_run_kwargs(),
                     )
                     if fill_r.returncode == 0 and fill_r.stdout.strip():
                         fill_data = json.loads(fill_r.stdout)
@@ -188,6 +203,9 @@ def create_exchange(mode: str = TRADING_MODE, sandbox: bool = False) -> Any:
 
     default_type = "swap" if mode == "futures" else ("margin" if mode == "margin" else "spot")
     exchange = ccxt.okx({**creds, "options": {"defaultType": default_type}})
+    session = getattr(exchange, "session", None)
+    if session is not None and hasattr(session, "trust_env"):
+        session.trust_env = True
     # Prevent ccxt from calling the private /asset/currencies endpoint during
     # load_markets — not needed for trading and fails on restricted sub-accounts.
     exchange.has["fetchCurrencies"] = False
@@ -319,7 +337,7 @@ class Broker:
         cmd = ["okx", "--profile", profile, "swap", "leverage",
                "--instId", inst_id, "--lever", str(int(capped)), "--mgnMode", "cross"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode != 0:
                 logger.warning("set_leverage failed for %s: %s", symbol, (r.stderr or r.stdout)[:200])
         except Exception as e:
@@ -378,7 +396,7 @@ class Broker:
         cmd = ["okx", "--profile", profile, "--json", "swap", "get",
                "--instId", inst_id, "--ordId", order_id]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode == 0 and r.stdout.strip():
                 data = json.loads(r.stdout)
                 if isinstance(data, list) and data:
@@ -404,7 +422,7 @@ class Broker:
         profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "swap", "cancel", inst_id, "--ordId", order_id]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode != 0:
                 logger.warning("cancel_order failed: %s", (r.stderr or r.stdout)[:200])
         except Exception as e:
@@ -422,7 +440,7 @@ class Broker:
         profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "swap", "positions"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode == 0 and r.stdout.strip():
                 return json.loads(r.stdout)
         except Exception as e:
@@ -437,7 +455,7 @@ class Broker:
         profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "account", "balance"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode == 0 and r.stdout.strip():
                 return json.loads(r.stdout)
         except Exception as e:
@@ -455,7 +473,7 @@ class Broker:
             # List open orders, then cancel each
             cmd = ["okx", "--profile", profile, "--json", "swap", "orders", "--instId", inst_id]
             try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+                r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
                 if r.returncode == 0 and r.stdout.strip():
                     orders = json.loads(r.stdout)
                     for o in (orders if isinstance(orders, list) else []):
@@ -481,7 +499,7 @@ class Broker:
         profile = self.okx_profile
         cmd = ["okx", "--profile", profile, "--json", "account", "balance"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15, env=_okx_command_env(profile))
+            r = subprocess.run(_resolve_okx_cmd(cmd), capture_output=True, text=True, timeout=15, env=_okx_command_env(profile), **_cli_run_kwargs())
             if r.returncode == 0 and r.stdout.strip():
                 data = json.loads(r.stdout)
                 # OKX account balance response format

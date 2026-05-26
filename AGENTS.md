@@ -59,6 +59,21 @@ There are no unit tests or linters configured in this repository.
 
 ## Architecture
 
+### Cross-Platform Git Policy
+
+This is one trading system shared by macOS and Windows. Do not split it into
+separate GitHub repositories or separate strategy/runtime implementations.
+
+- Keep `engine/`, `launcher/`, and `scripts/` platform-neutral whenever possible.
+- Keep platform launchers and setup wrappers under `platform/mac/` and
+  `platform/windows/`.
+- Root-level launchers are compatibility shims only; they delegate into
+  `platform/` so existing double-click workflows keep working.
+- Keep one strategy registry, one investment committee, one position manager,
+  one risk/execution path, and one frontend control tower for both platforms.
+- Never add platform-specific single-strategy runners. Platform differences are
+  limited to shell, PowerShell, path, environment, and process-start behavior.
+
 ### Current System Constraint
 
 Before changing runtime, strategy startup, strategy registration, data

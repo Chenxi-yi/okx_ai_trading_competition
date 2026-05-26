@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from config.settings import DATA_DIR  # noqa: E402
 from data.fetcher import fetch_ohlcv  # noqa: E402
+from data.frame_store import read_frame  # noqa: E402
 from build_c_auto_feature_store import DEFAULT_DERIV_RUN  # noqa: E402
 from fetch_derivatives_structure import (  # noqa: E402
     _create_okx as _create_derivatives_okx,
@@ -49,6 +50,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run unified OKX market data refresh scheduler")
     p.add_argument("--interval-sec", type=float, default=900.0)
     p.add_argument("--max-symbols", type=int, default=150)
+    p.add_argument("--extra-symbols", default="", help="Comma-separated symbols that registry strategies require in addition to the dynamic universe")
     p.add_argument("--timeframes", default="5m,15m,1h,4h,1d")
     p.add_argument("--lookback-days", type=int, default=3)
     p.add_argument("--sleep-sec", type=float, default=0.2)
@@ -100,7 +102,8 @@ def main() -> int:
 
 
 def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dict[str, Any]:
-    symbols = _symbols(int(args.max_symbols))
+    symbols = _symbols(int(args.max_symbols), extra_symbols=str(args.extra_symbols or ""))
+    priority_symbols = [symbol for symbol in _parse_extra_symbols(str(args.extra_symbols or "")) if symbol in symbols]
     timeframes = _prioritize_timeframes([item.strip() for item in str(args.timeframes).split(",") if item.strip()])
     derivative_symbols = symbols[: max(0, min(int(args.derivatives_max_symbols), len(symbols)))]
     derivative_kinds = [item.strip() for item in str(args.derivatives_kinds).split(",") if item.strip()]
@@ -163,6 +166,26 @@ def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dic
             skipped=skipped,
             latest_records=latest_records,
         )
+    if priority_symbols:
+        for timeframe in deferred_timeframes:
+            ok, failed, skipped = _refresh_ohlcv_timeframe(
+                args=args,
+                cycle=cycle,
+                started_at=started_at,
+                symbols=priority_symbols,
+                timeframes=timeframes,
+                derivative_symbols=derivative_symbols,
+                derivative_kinds=derivative_kinds,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                target_end=target_end,
+                total_jobs=total_jobs,
+                ok=ok,
+                failed=failed,
+                skipped=skipped,
+                latest_records=latest_records,
+            )
     if not args.skip_derivatives and not STOP:
         derivatives_ex = None
         for symbol in derivative_symbols:
@@ -222,11 +245,14 @@ def run_cycle(args: argparse.Namespace, cycle: int, started_at: datetime) -> dic
                 )
                 _sleep_interruptibly(max(0.0, float(args.sleep_sec)))
     for timeframe in deferred_timeframes:
+        remaining_symbols = [symbol for symbol in symbols if symbol not in set(priority_symbols)]
+        if not remaining_symbols:
+            continue
         ok, failed, skipped = _refresh_ohlcv_timeframe(
             args=args,
             cycle=cycle,
             started_at=started_at,
-            symbols=symbols,
+            symbols=remaining_symbols,
             timeframes=timeframes,
             derivative_symbols=derivative_symbols,
             derivative_kinds=derivative_kinds,
@@ -462,9 +488,9 @@ def _refresh_derivative_one(
         }
 
 
-def _symbols(max_symbols: int) -> list[str]:
+def _symbols(max_symbols: int, extra_symbols: str = "") -> list[str]:
     if QUALITY_PATH.exists():
-        df = pd.read_parquet(QUALITY_PATH)
+        df = read_frame(QUALITY_PATH)
         if "has_core_inputs" in df:
             df = df[df["has_core_inputs"].astype(bool)].copy()
         sort_cols = [col for col in ("train_eligible_180d", "1h_rows") if col in df.columns]
@@ -480,7 +506,23 @@ def _symbols(max_symbols: int) -> list[str]:
         symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     if "BTC/USDT" not in symbols:
         symbols.insert(0, "BTC/USDT")
-    return symbols[: max(max_symbols, 1)]
+    for symbol in _parse_extra_symbols(extra_symbols):
+        if symbol not in symbols:
+            symbols.append(symbol)
+    return symbols[: max(max_symbols, 1) + len(_parse_extra_symbols(extra_symbols))]
+
+
+def _parse_extra_symbols(value: str) -> list[str]:
+    out: list[str] = []
+    for raw in str(value or "").split(","):
+        symbol = raw.strip().upper().replace("-", "/")
+        if not symbol:
+            continue
+        if "/" not in symbol and symbol.endswith("USDT"):
+            symbol = f"{symbol[:-4]}/USDT"
+        if symbol and symbol not in out:
+            out.append(symbol)
+    return out
 
 
 def _target_end_for_timeframe(timeframe: str) -> pd.Timestamp:
@@ -539,7 +581,7 @@ def _cache_max_ts(symbol: str, timeframe: str) -> pd.Timestamp | None:
         if not path.exists():
             continue
         try:
-            df = pd.read_parquet(path) if ext == "parquet" else pd.read_pickle(path)
+            df = read_frame(path, index_utc=True) if ext == "parquet" else pd.read_pickle(path)
             if df.empty:
                 return None
             return pd.Timestamp(pd.to_datetime(df.index, utc=True).max())
@@ -570,7 +612,7 @@ def _read_frame(path: Path) -> pd.DataFrame:
         if not candidate.exists():
             continue
         try:
-            df = pd.read_parquet(candidate) if candidate.suffix == ".parquet" else pd.read_pickle(candidate)
+            df = read_frame(candidate, index_utc=True) if candidate.suffix == ".parquet" else pd.read_pickle(candidate)
             if not df.empty:
                 df.index = pd.to_datetime(df.index, utc=True)
                 return df.sort_index()

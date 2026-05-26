@@ -39,6 +39,15 @@ DIRECT_TRADE_PATTERNS = (
     re.compile(r'"swap"\s*,\s*"leverage"'),
     re.compile(r"okx\s+.*swap\s+(place|close|leverage)"),
 )
+DATA_COMPAT_ALLOWED_PREFIXES = (
+    "engine/data/",
+)
+DATA_COMPAT_PATTERNS = (
+    re.compile(r"\bimport\s+duckdb\b"),
+    re.compile(r"\bfrom\s+duckdb\s+import\b"),
+    re.compile(r"read_parquet\(\?\)"),
+    re.compile(r"_read_parquet_compat"),
+)
 
 
 def main() -> int:
@@ -65,6 +74,11 @@ def main() -> int:
                 if rel in COMPAT_ALLOWED and "_run_okx" not in line and "subprocess" not in line:
                     continue
                 violations.append(f"{rel}:{line_no}: {line.strip()}")
+            if not rel.startswith(DATA_COMPAT_ALLOWED_PREFIXES):
+                for pattern in DATA_COMPAT_PATTERNS:
+                    if pattern.search(line):
+                        violations.append(f"{rel}:{line_no}: data compatibility belongs in engine/data")
+                        break
     if violations:
         print("Architecture boundary violations:")
         for item in violations:

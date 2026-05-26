@@ -11,16 +11,21 @@ import os
 import json
 import errno
 import subprocess
+import shutil
+import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 try:
     from config.settings import BASE_DIR
+    from data.frame_store import FRAME_SUFFIXES, frame_health
     from registry import StrategyRecord, StrategyRegistry
 except ModuleNotFoundError:
     from engine.config.settings import BASE_DIR
+    from engine.data.frame_store import FRAME_SUFFIXES, frame_health
     from engine.registry import StrategyRecord, StrategyRegistry
 
 
@@ -35,6 +40,7 @@ OKX_ENV_CREDENTIAL_KEYS = {
     "OKX_API_SECRET",
     "OKX_PASSPHRASE",
 }
+WINDOWS_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
 @dataclass(frozen=True)
@@ -65,6 +71,7 @@ class StrategyLaunchResult:
     already_running: bool = False
     pid: int | None = None
     error: str | None = None
+    log_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +83,19 @@ class EnvironmentRunResult:
     @property
     def ok(self) -> bool:
         return all(item.error is None for item in self.results)
+
+
+@dataclass(frozen=True)
+class StrategyStopResult:
+    plan: StrategyLaunchPlan
+    stopped_pids: tuple[int, ...] = ()
+    stop_files: tuple[str, ...] = ()
+    terminations: tuple[dict[str, object], ...] = ()
+    remaining: tuple[Mapping[str, object], ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.remaining
 
 
 ProcessStarter = Callable[[Sequence[str], Mapping[str, str]], subprocess.Popen]
@@ -117,6 +137,9 @@ class DataReadinessProbe:
                 row.update({"exists": True, "age_sec": age_sec})
                 if dep.max_age_sec is not None and age_sec > dep.max_age_sec:
                     errors.append(f"{dep.dependency_id}: stale age_sec={age_sec:.0f} max={dep.max_age_sec:.0f}")
+                if dep.kind == "scheduler_status":
+                    self._apply_scheduler_status_checks(dep, row, path, errors)
+                self._apply_frame_checks(dep, row, path, errors)
                 manifest = self._manifest_for_path(path)
                 self._apply_manifest_checks(dep, row, manifest, errors)
             elif dep.dataset_id:
@@ -136,6 +159,60 @@ class DataReadinessProbe:
             checked=tuple(checked),
             errors=tuple(errors),
         )
+
+    def _apply_frame_checks(
+        self,
+        dep: object,
+        row: dict[str, object],
+        path: Path,
+        errors: list[str],
+    ) -> None:
+        if path.is_dir() or path.suffix.lower() not in FRAME_SUFFIXES:
+            return
+        health = frame_health(path)
+        row["readable"] = health.ok
+        row["frame_reader"] = health.reader
+        row["frame_rows"] = health.rows
+        if health.columns:
+            row["frame_columns_sample"] = list(health.columns[:12])
+        if not health.ok:
+            row["frame_error"] = health.error
+            errors.append(f"{dep.dependency_id}: unreadable {path.name}: {health.error}")
+
+    def _apply_scheduler_status_checks(
+        self,
+        dep: object,
+        row: dict[str, object],
+        path: Path,
+        errors: list[str],
+    ) -> None:
+        status = self._read_json_file(path)
+        if not status:
+            row["scheduler_readable"] = False
+            errors.append(f"{dep.dependency_id}: scheduler status unreadable")
+            return
+        row["scheduler_readable"] = True
+        scheduler_status = str(status.get("scheduler_status") or status.get("status") or "").lower()
+        ok_count = self._int_value(status.get("ok"))
+        failed_count = self._int_value(status.get("failed"))
+        total_jobs = self._int_value(status.get("total_jobs"))
+        row["scheduler_status"] = scheduler_status
+        row["scheduler_ok_jobs"] = ok_count
+        row["scheduler_failed_jobs"] = failed_count
+        row["scheduler_total_jobs"] = total_jobs
+        last_record = status.get("last_record")
+        if isinstance(last_record, Mapping):
+            row["last_refresh_record"] = {
+                key: last_record.get(key)
+                for key in ("status", "kind", "symbol", "timeframe", "fresh", "freshness_error", "error", "cache_after")
+                if key in last_record
+            }
+        if scheduler_status != "running":
+            errors.append(f"{dep.dependency_id}: scheduler_status={scheduler_status or 'missing'}")
+        if total_jobs > 0 and ok_count <= 0:
+            errors.append(f"{dep.dependency_id}: no successful refresh jobs")
+        if ok_count <= 0 and failed_count > 0:
+            errors.append(f"{dep.dependency_id}: refresh failing failed={failed_count}")
 
     def _dependency_path(self, value: str) -> Path | None:
         if not value:
@@ -159,6 +236,13 @@ class DataReadinessProbe:
             if isinstance(data, Mapping):
                 return data
         return {}
+
+    def _read_json_file(self, path: Path) -> Mapping[str, object]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        return data if isinstance(data, Mapping) else {}
 
     def _manifest_for_dataset(self, dataset_id: str) -> Mapping[str, object]:
         catalog_path = self.root / "engine" / "data" / "catalog.json"
@@ -246,6 +330,13 @@ class DataReadinessProbe:
                     return float(value)
         return None
 
+    @staticmethod
+    def _int_value(value: object) -> int:
+        try:
+            return int(float(value or 0))
+        except Exception:
+            return 0
+
 
 class EnvironmentRunner:
     """Starts registry-selected strategy adapters for one environment."""
@@ -284,13 +375,31 @@ class EnvironmentRunner:
         self.write_status(environment, plans=plans, results=results)
         return EnvironmentRunResult(environment=environment, plans=plans, results=results)
 
+    def stop(self, environment: str) -> dict[str, object]:
+        """Stop all registry-managed runner processes for one environment."""
+        self._validate_environment(environment)
+        plans = self.plan(environment)
+        results = tuple(self._stop_plan(plan) for plan in plans)
+        remaining = [dict(proc) for plan in plans for proc in self.existing_processes(plan)]
+        self.write_status(environment, plans=plans)
+        return {
+            "ok": not remaining,
+            "environment": environment,
+            "mode": "environment_runner_stop",
+            "stopped_pids": [pid for result in results for pid in result.stopped_pids],
+            "stop_files": [path for result in results for path in result.stop_files],
+            "terminations": [item for result in results for item in result.terminations],
+            "remaining_processes": remaining,
+            "strategies": [self._stop_result_row(result) for result in results],
+        }
+
     def status(self, environment: str, *, plans: Sequence[StrategyLaunchPlan] | None = None) -> dict[str, object]:
         """Return structured runner truth for control-plane consumers."""
         self._validate_environment(environment)
         selected_plans = tuple(plans) if plans is not None else self.plan(environment)
         rows = [self._status_row(plan) for plan in selected_plans]
         blocked = [row for row in rows if not row.get("readiness", {}).get("ok")]
-        running = [row for row in rows if row.get("running")]
+        running = [row for row in rows if row.get("running") and row.get("scheduler", {}).get("fresh", True)]
         return {
             "ok": not blocked and len(running) == len(rows),
             "environment": environment,
@@ -330,7 +439,7 @@ class EnvironmentRunner:
         parameter_set_id = record.default_parameter_set_id or ""
         if runner == "c_auto_v2_micro_live":
             command = (
-                "python3",
+                self._python_bin(),
                 "scripts/run_c_auto_v2_micro_live.py",
                 "--state-id",
                 state_id,
@@ -390,7 +499,7 @@ class EnvironmentRunner:
         elif runner in {"research_sleeve_live", "scripts.run_research_sleeve_paper", "scripts.run_trend_pullback_reversal_variants"}:
             capital = self._runtime_capital(parameter_set_id)
             command = (
-                "python3",
+                self._python_bin(),
                 "scripts/run_research_sleeve_paper.py",
                 "--strategy-id",
                 record.strategy_id,
@@ -437,14 +546,52 @@ class EnvironmentRunner:
                 pid=int(pid) if pid is not None else None,
             )
         try:
-            proc = self.process_starter(plan.command, self._okx_cli_env(plan.okx_profile))
-            return StrategyLaunchResult(plan=plan, started=True, pid=int(proc.pid))
+            self._clear_start_blockers(plan)
+            log_path = self._launch_log_path_for_plan(plan)
+            env = self._okx_cli_env(plan.okx_profile)
+            env["OKX_RUNNER_LOG_PATH"] = str(log_path)
+            proc = self.process_starter(plan.command, env)
+            return StrategyLaunchResult(
+                plan=plan,
+                started=True,
+                pid=int(proc.pid),
+                log_path=str(log_path.relative_to(self.root)),
+            )
         except Exception as exc:
             return StrategyLaunchResult(plan=plan, started=False, error=str(exc))
+
+    def _stop_plan(self, plan: StrategyLaunchPlan) -> StrategyStopResult:
+        processes = self._dedupe_processes(self.existing_processes(plan))
+        if not processes:
+            return StrategyStopResult(plan=plan)
+        stop_path = self._stop_file(plan)
+        stop_path.parent.mkdir(parents=True, exist_ok=True)
+        stop_path.write_text(time.strftime("%Y-%m-%dT%H:%M:%S%z"), encoding="utf-8")
+        stopped: list[int] = []
+        terminations: list[dict[str, object]] = []
+        for proc in processes:
+            termination = self._terminate_process(proc.get("pid"))
+            terminations.append(termination)
+            if termination.get("terminated"):
+                try:
+                    stopped.append(int(proc.get("pid") or 0))
+                except Exception:
+                    pass
+        remaining = self._dedupe_processes(self.existing_processes(plan))
+        if not remaining:
+            self._remove_exclusive_locks(plan)
+        return StrategyStopResult(
+            plan=plan,
+            stopped_pids=tuple(pid for pid in stopped if pid > 0),
+            stop_files=(str(stop_path.relative_to(self.root)),),
+            terminations=tuple(terminations),
+            remaining=remaining,
+        )
 
     def _status_row(self, plan: StrategyLaunchPlan) -> dict[str, object]:
         processes = [dict(item) for item in self.existing_processes(plan)]
         scheduler = self._scheduler_snapshot(plan)
+        scheduler = self._scheduler_health(plan, scheduler)
         if not processes and self._scheduler_claims_running(scheduler):
             scheduler = dict(scheduler)
             scheduler["stale_without_process"] = True
@@ -493,10 +640,34 @@ class EnvironmentRunner:
             "already_running": result.already_running,
             "pid": result.pid,
             "error": result.error,
+            "log_path": result.log_path,
+        }
+
+    def _stop_result_row(self, result: StrategyStopResult) -> dict[str, object]:
+        return {
+            "strategy_id": result.plan.strategy_id,
+            "environment": result.plan.environment,
+            "runner": result.plan.runner,
+            "stopped_pids": list(result.stopped_pids),
+            "stop_files": list(result.stop_files),
+            "terminations": list(result.terminations),
+            "remaining": [dict(item) for item in result.remaining],
+            "ok": result.ok,
         }
 
     def _scheduler_snapshot(self, plan: StrategyLaunchPlan) -> dict[str, object]:
         return self._read_json(self._state_file(plan, suffix="_scheduler.json"))
+
+    def _scheduler_health(self, plan: StrategyLaunchPlan, scheduler: Mapping[str, object]) -> dict[str, object]:
+        row = dict(scheduler)
+        updated_at = row.get("updated_at")
+        age_sec = self._age_seconds(updated_at)
+        if age_sec is not None:
+            row["age_sec"] = age_sec
+            interval_sec = self._plan_interval_sec(plan)
+            row["interval_sec"] = interval_sec
+            row["fresh"] = age_sec <= max(15 * 60, interval_sec * 1.25 + 5 * 60)
+        return row
 
     def _state_snapshot(self, plan: StrategyLaunchPlan) -> dict[str, object]:
         return self._read_json(self._state_file(plan, suffix=".json"))
@@ -507,6 +678,20 @@ class EnvironmentRunner:
             return self.root / "engine" / "logs" / "c_auto_v2_micro_live" / f"{prefix}{suffix}"
         prefix = f"{plan.state_id}_{plan.environment}"
         return self.root / "engine" / "logs" / "research_sleeves" / f"{prefix}{suffix}"
+
+    def _stop_file(self, plan: StrategyLaunchPlan) -> Path:
+        if plan.runner == "c_auto_v2_micro_live":
+            return self.root / "engine" / "control" / f"c_auto_v2_micro_live_{plan.state_id}_{plan.environment}.stop"
+        return self.root / "engine" / "control" / f"research_sleeve_{plan.state_id}_{plan.environment}.stop"
+
+    def _clear_start_blockers(self, plan: StrategyLaunchPlan) -> None:
+        try:
+            self._stop_file(plan).unlink()
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+        self._remove_exclusive_locks(plan)
 
     def _read_json(self, path: Path) -> dict[str, object]:
         try:
@@ -543,6 +728,27 @@ class EnvironmentRunner:
     def _utc_now_iso() -> str:
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    @staticmethod
+    def _age_seconds(value: object) -> float | None:
+        if not value:
+            return None
+        try:
+            ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - ts.astimezone(timezone.utc)).total_seconds())
+
+    @staticmethod
+    def _plan_interval_sec(plan: StrategyLaunchPlan) -> float:
+        command = " ".join(str(item) for item in plan.command)
+        raw = EnvironmentRunner._command_arg(command, "--interval-sec")
+        try:
+            return float(raw or 0.0)
+        except Exception:
+            return 0.0
+
     def _runtime_capital(self, parameter_set_id: str) -> float:
         if not parameter_set_id:
             return 50.0
@@ -556,6 +762,8 @@ class EnvironmentRunner:
         lock_match = self._process_from_exclusive_lock(plan)
         if lock_match:
             return (lock_match,)
+        if os.name == "nt":
+            return self._default_windows_process_finder(plan)
         try:
             proc = subprocess.run(
                 ["ps", "-axo", "pid=,command="],
@@ -587,10 +795,45 @@ class EnvironmentRunner:
                 matches.append({"pid": pid, "command": command, "environment": found_env})
         return tuple(matches)
 
+    def _default_windows_process_finder(self, plan: StrategyLaunchPlan) -> Sequence[Mapping[str, object]]:
+        script = (
+            "$rows = Get-CimInstance Win32_Process -Filter \"name = 'python.exe'\" | "
+            "Where-Object { $_.CommandLine -match 'scripts[/\\\\](run_research_sleeve_paper|run_c_auto_v2_micro_live)\\.py' }; "
+            "$rows | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", script],
+                cwd=str(self.root),
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+        except Exception:
+            return ()
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return ()
+        try:
+            payload = json.loads(proc.stdout)
+        except Exception:
+            return ()
+        if isinstance(payload, dict):
+            payload = [payload]
+        matches: list[dict[str, object]] = []
+        for item in payload if isinstance(payload, list) else []:
+            command = str(item.get("CommandLine") or "")
+            if not command:
+                continue
+            found_strategy = self._command_arg(command, "--strategy-id")
+            found_state = self._command_arg(command, "--state-id")
+            found_env = self._command_arg(command, "--environment")
+            if found_env == plan.environment and (found_strategy == plan.strategy_id or found_state == plan.state_id):
+                matches.append({"pid": int(item.get("ProcessId")), "command": command, "environment": found_env})
+        return tuple(matches)
+
     def _process_from_exclusive_lock(self, plan: StrategyLaunchPlan) -> Mapping[str, object] | None:
-        for strategy_id in self._lock_strategy_ids(plan):
-            safe_strategy = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in strategy_id)
-            path = self.root / "engine" / "control" / f"exclusive_strategy_{safe_strategy}.lock"
+        for path in self._exclusive_lock_paths(plan):
             try:
                 data = json.loads(path.read_text())
             except Exception:
@@ -607,11 +850,42 @@ class EnvironmentRunner:
                 "pid": pid,
                 "environment": plan.environment,
                 "strategy_id": plan.strategy_id,
-                "lock_strategy_id": strategy_id,
+                "lock_strategy_id": data.get("strategy_id") or plan.strategy_id,
                 "source": "exclusive_strategy_lock",
                 "lock_path": str(path),
             }
         return None
+
+    def _exclusive_lock_paths(self, plan: StrategyLaunchPlan) -> tuple[Path, ...]:
+        paths: list[Path] = []
+        for strategy_id in self._lock_strategy_ids(plan):
+            safe_strategy = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in strategy_id)
+            paths.append(self.root / "engine" / "control" / f"exclusive_strategy_{safe_strategy}.lock")
+        return tuple(dict.fromkeys(paths))
+
+    def _remove_exclusive_locks(self, plan: StrategyLaunchPlan) -> None:
+        for path in self._exclusive_lock_paths(plan):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+
+    @staticmethod
+    def _dedupe_processes(processes: Sequence[Mapping[str, object]]) -> tuple[Mapping[str, object], ...]:
+        seen: set[int] = set()
+        out: list[Mapping[str, object]] = []
+        for proc in processes:
+            try:
+                pid = int(proc.get("pid") or 0)
+            except Exception:
+                pid = 0
+            if pid <= 0 or pid in seen:
+                continue
+            seen.add(pid)
+            out.append(proc)
+        return tuple(out)
 
     @staticmethod
     def _lock_strategy_ids(plan: StrategyLaunchPlan) -> tuple[str, ...]:
@@ -623,6 +897,18 @@ class EnvironmentRunner:
 
     @staticmethod
     def _pid_alive(pid: int) -> bool:
+        if os.name == "nt":
+            try:
+                proc = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-Command", f"Get-CimInstance Win32_Process -Filter \"ProcessId = {int(pid)}\""],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    creationflags=WINDOWS_NO_WINDOW,
+                )
+                return proc.returncode == 0 and bool(proc.stdout.strip())
+            except Exception:
+                return False
         try:
             os.kill(pid, 0)
             return True
@@ -631,18 +917,141 @@ class EnvironmentRunner:
                 return True
             return False
 
+    def _terminate_process(self, pid: object, *, grace_sec: float = 3.0) -> dict[str, object]:
+        if not pid:
+            return {"pid": pid, "terminated": False, "reason": "missing_pid"}
+        try:
+            pid_int = int(pid)
+        except Exception:
+            return {"pid": pid, "terminated": False, "reason": "invalid_pid"}
+        if not self._pid_alive(pid_int):
+            return {"pid": pid_int, "terminated": True, "already_stopped": True}
+        if os.name == "nt":
+            return self._terminate_windows_process(pid_int, grace_sec=grace_sec)
+        result: dict[str, object] = {"pid": pid_int, "terminated": False, "signal": "TERM", "escalated": False}
+        try:
+            try:
+                os.killpg(pid_int, 15)
+                result["target"] = "process_group"
+            except OSError:
+                os.kill(pid_int, 15)
+                result["target"] = "process"
+        except OSError as exc:
+            result["error"] = str(exc)
+            return result
+        deadline = time.time() + max(0.1, grace_sec)
+        while time.time() < deadline:
+            if not self._pid_alive(pid_int):
+                result["terminated"] = True
+                return result
+            time.sleep(0.1)
+        result["escalated"] = True
+        result["signal"] = "KILL"
+        try:
+            try:
+                os.killpg(pid_int, 9)
+            except OSError:
+                os.kill(pid_int, 9)
+        except OSError as exc:
+            result["error"] = str(exc)
+        time.sleep(0.2)
+        result["terminated"] = not self._pid_alive(pid_int)
+        return result
+
+    def _terminate_windows_process(self, pid: int, *, grace_sec: float) -> dict[str, object]:
+        result: dict[str, object] = {"pid": pid, "terminated": False, "signal": "TERM", "escalated": False, "target": "process_tree"}
+        proc = subprocess.run(
+            ["taskkill.exe", "/PID", str(pid), "/T"],
+            cwd=str(self.root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=WINDOWS_NO_WINDOW,
+        )
+        result["returncode"] = proc.returncode
+        if proc.stdout.strip():
+            result["stdout"] = proc.stdout.strip()
+        if proc.stderr.strip():
+            result["stderr"] = proc.stderr.strip()
+        deadline = time.time() + max(0.1, grace_sec)
+        while time.time() < deadline:
+            if not self._pid_alive(pid):
+                result["terminated"] = True
+                return result
+            time.sleep(0.1)
+        result["escalated"] = True
+        result["signal"] = "KILL"
+        forced = subprocess.run(
+            ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+            cwd=str(self.root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=WINDOWS_NO_WINDOW,
+        )
+        result["force_returncode"] = forced.returncode
+        if forced.stdout.strip():
+            result["force_stdout"] = forced.stdout.strip()
+        if forced.stderr.strip():
+            result["force_stderr"] = forced.stderr.strip()
+        time.sleep(0.2)
+        result["terminated"] = not self._pid_alive(pid)
+        return result
+
     def _default_process_starter(self, command: Sequence[str], env: Mapping[str, str]) -> subprocess.Popen:
+        popen_kwargs = {}
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        log_path = Path(str(env.get("OKX_RUNNER_LOG_PATH") or "")) if env.get("OKX_RUNNER_LOG_PATH") else self._launch_log_path_from_command(command)
+        if not log_path.is_absolute():
+            log_path = self.root / log_path
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("a", buffering=1, encoding="utf-8")
+        log_file.write(f"\n[{self._utc_now_iso()}] launch: {' '.join(map(str, command))}\n")
         return subprocess.Popen(
             list(command),
             cwd=str(self.root),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             env=dict(env),
+            **popen_kwargs,
         )
+
+    def _launch_log_path(self, plan: StrategyLaunchPlan) -> str:
+        return str(self._launch_log_path_for_plan(plan).relative_to(self.root))
+
+    def _launch_log_path_for_plan(self, plan: StrategyLaunchPlan) -> Path:
+        stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+        safe_strategy = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in plan.strategy_id)
+        name = f"launcher_environment_{plan.environment}_{safe_strategy}_{stamp}.log"
+        return self.root / "engine" / "logs" / name
+
+    def _launch_log_path_from_command(self, command: Sequence[str]) -> Path:
+        command_line = " ".join(str(item) for item in command)
+        environment = self._command_arg(command_line, "--environment") or "unknown"
+        strategy_id = self._command_arg(command_line, "--strategy-id") or self._command_arg(command_line, "--state-id") or "unknown"
+        safe_strategy = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in strategy_id)
+        stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+        name = f"launcher_environment_{environment}_{safe_strategy}_{stamp}.log"
+        return self.root / "engine" / "logs" / name
+
+    @staticmethod
+    def _python_bin() -> str:
+        return os.environ.get("OKX_TRADING_SYSTEM_PYTHON") or sys.executable or "python3"
 
     def _okx_cli_env(self, profile: str) -> dict[str, str]:
         env = os.environ.copy()
         env["OKX_ENVIRONMENT_RUNNER"] = "1"
+        if os.name == "nt" and not env.get("OKX_CLI_BIN"):
+            appdata = env.get("APPDATA")
+            if appdata:
+                candidate = Path(appdata) / "npm" / "okx.cmd"
+                if candidate.exists():
+                    env["OKX_CLI_BIN"] = str(candidate)
+            if not env.get("OKX_CLI_BIN"):
+                found = shutil.which("okx.cmd")
+                if found:
+                    env["OKX_CLI_BIN"] = found
         if profile == "live":
             env["LIVE_TRADING"] = "true"
         if profile != "live":

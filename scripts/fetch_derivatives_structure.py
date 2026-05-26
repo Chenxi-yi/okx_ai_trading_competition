@@ -221,6 +221,9 @@ def main() -> int:
 
 def _create_okx() -> ccxt.okx:
     ex = ccxt.okx({"enableRateLimit": True, "options": {"defaultType": "swap", "fetchMarkets": {"types": ["swap"]}}})
+    session = getattr(ex, "session", None)
+    if session is not None and hasattr(session, "trust_env"):
+        session.trust_env = True
     ex.load_markets()
     return ex
 

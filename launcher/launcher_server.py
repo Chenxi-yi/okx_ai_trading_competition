@@ -53,6 +53,7 @@ OKX_ENV_CREDENTIAL_KEYS = {
 }
 KILL_SWITCH_PATH = CONTROL_DIR / "kill.switch"
 STOP_GRACE_SEC = 3.0
+WINDOWS_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 from registry import StrategyRegistry
 from accounting import LiveOwnershipJournal
@@ -72,6 +73,10 @@ C_AUTO_V2_CAPITAL_USDT = 3000.0
 START_READINESS_MIN_SYMBOLS = 40
 START_READINESS_TIMEFRAMES = ("1h", "4h")
 START_READINESS_DERIVATIVE_KINDS = ("funding", "open_interest", "long_short")
+STRATEGY_PERFORMANCE_CACHE: dict[str, Any] = {"ts": 0.0, "data": None}
+STRATEGY_PERFORMANCE_CACHE_SEC = 20.0
+STRATEGY_PERFORMANCE_FILE_CACHE_SEC = 3600.0
+STRATEGY_PERFORMANCE_STATUS_PATH = LOGS_DIR / "strategy_performance_status.json"
 KNOWN_STRATEGY_SLEEVES = [
     {
         "strategy_id": "c_auto_v2_cross_section",
@@ -83,6 +88,12 @@ KNOWN_STRATEGY_SLEEVES = [
         "strategy_id": "trend_pullback_reversal_long",
         "display_name": "Trend Pullback Reversal",
         "paper_source": "paper_competition",
+        "registration_kind": "registered_variants",
+        "registered_variants": [
+            "trend_pullback_reversal_cluster_elite_quality60_v1",
+            "trend_pullback_reversal_quality_top20_v1",
+            "trend_pullback_reversal_rank_top1_v1",
+        ],
         "paper_role": "4h 定趋势，1h 回调/分型确认",
     },
     {
@@ -110,18 +121,21 @@ KNOWN_STRATEGY_SLEEVES = [
         "strategy_id": "daily_fib_support_rebound_long",
         "display_name": "Daily Fib Support Rebound",
         "paper_source": "paper_competition",
+        "registration_kind": "committee_signal_family",
         "paper_role": "关键支撑位触达、未破、收回",
     },
     {
         "strategy_id": "deriv_oi_compression_breakout",
         "display_name": "OI Compression Breakout",
         "paper_source": "paper_competition",
+        "registration_kind": "committee_signal_family",
         "paper_role": "衍生品 OI 压缩突破",
     },
     {
         "strategy_id": "deriv_crowding_reversal",
         "display_name": "Crowding Reversal",
         "paper_source": "paper_competition",
+        "registration_kind": "committee_signal_family",
         "paper_role": "拥挤反转 sleeve",
     },
     {
@@ -137,18 +151,132 @@ KNOWN_STRATEGY_SLEEVES = [
         "paper_role": "BTC 日线 80d 突破 + 周线趋势过滤，100U 比赛环境预算，2x",
     },
     {
+        "strategy_id": "us_equity_token_dislocation_reversion",
+        "display_name": "US Equity Dislocation Reversion",
+        "paper_source": "research_personal",
+        "paper_role": "OKX US equity-token AMZN/TSLA/NVDA dislocation reversion, personal runtime, 1x",
+    },
+    {
         "strategy_id": "us_equity_token_equity_momentum",
         "display_name": "美股策略-高质量美股动量",
-        "paper_source": "research_competition",
+        "paper_source": "research_personal",
         "paper_role": "OKX 美股合约：AMZN/GOOGL/NVDA 真实美股动量精选池，20U 比赛环境预算，1x",
     },
     {
         "strategy_id": "us_equity_token_okx_momentum",
         "display_name": "美股策略-OKX自身动量精选版",
-        "paper_source": "research_competition",
+        "paper_source": "research_personal",
         "paper_role": "OKX 美股合约：COIN/HOOD/AMZN/GOOGL token 自身动量精选池，25U 比赛环境预算，1x",
     },
 ]
+STRATEGY_COMFORT_ZONES: dict[str, dict[str, Any]] = {
+    "trend_pullback_reversal_cluster_elite_quality60_v1": {
+        "summary": "Short-side 4h trend / 1h bounce-fade only. Committee rejects long candidates.",
+        "allowed_sides": ["short"],
+        "conditions": [
+            "quality_score >= 0.68; historical median about 0.68",
+            "BTC 24h return flat-to-down; strongest when btc_ret_24h is negative",
+            "Best BTC regime: chop_short, then deep_bear/bear; avoid strong_bull",
+            "Normal vol band: atr_14_pct about 1.6%-2.5%, rv_24 about 1.1%-1.7%",
+        ],
+        "history": "1142 trades; win 55.5%; long win 12.1% / total -1.19 units; short win 87.1% / total +27.15 units.",
+        "committee_gate": "short_only",
+    },
+    "trend_pullback_reversal_quality_top20_v1": {
+        "summary": "Short-side 4h trend / 1h bounce-fade only. Top20 is relative rank, now combined with an absolute quality gate.",
+        "allowed_sides": ["short"],
+        "conditions": [
+            "quality_score >= 0.63 and top 5% by quality_score per scan",
+            "BTC 24h return flat-to-down; winners historically had negative btc_ret_24h",
+            "Best BTC regimes: chop_short, bear, deep_bear",
+            "Normal vol band: atr_14_pct about 1.0%-1.9%, rv_24 about 0.6%-1.2%",
+        ],
+        "history": "8413 trades; win 50.1%; long win 17.3% / total -24.24 units; short win 81.4% / total +155.31 units.",
+        "committee_gate": "short_only",
+    },
+    "trend_pullback_reversal_rank_top1_v1": {
+        "summary": "Short-side concentrated top-rank pullback reversal. Committee rejects long candidates.",
+        "allowed_sides": ["short"],
+        "conditions": [
+            "Rank 1 by quality_score per scan and quality_score >= 0.61",
+            "BTC 24h return flat-to-down; avoid strong_bull",
+            "Best BTC regimes: chop_short, bear, deep_bear",
+            "Do not reopen same symbol during post-exit cooldown",
+        ],
+        "history": "6029 trades; win 49.6%; long win 18.6% / total -27.38 units; short win 80.4% / total +103.73 units.",
+        "committee_gate": "short_only",
+    },
+    "btc_daily_breakout_swing": {
+        "summary": "BTC daily 80d breakout under weekly trend confirmation.",
+        "allowed_sides": ["long"],
+        "conditions": [
+            "Fully closed daily candle breaks 80d high",
+            "Weekly regime remains constructive; weekly slope not deeply negative",
+            "ATR stop and 2R target are present before order submission",
+        ],
+        "history": "Sparse trend breakout sleeve; comfort is persistent BTC bull breakout, not chop.",
+    },
+    "btc_weekly_swing_3x": {
+        "summary": "BTC weekly 13w breakout swing with elevated leverage only in weekly trend comfort zone.",
+        "allowed_sides": ["long"],
+        "conditions": [
+            "Weekly 13w breakout confirmed by closed weekly candle",
+            "Weekly exit SMA/trailing stop remains below price",
+            "Committee caps exposure at approved 10/20/30U tiers",
+        ],
+        "history": "Sparse weekly trend-following sleeve; comfort is strong weekly continuation.",
+    },
+    "xau_supertrend_ema_4h_v1": {
+        "summary": "XAU 4h Supertrend + EMA trend filter; trend-following, not mean reversion.",
+        "allowed_sides": ["long", "short"],
+        "conditions": [
+            "4h XAU data fresh",
+            "Supertrend direction agrees with EMA trend filter",
+            "Avoid stale-data or flat no-trend regimes",
+        ],
+        "history": "Best suited to persistent XAU 4h trends with clean ATR stop structure.",
+    },
+    "c_auto_v2_fixed1000_conservative": {
+        "summary": "Cross-sectional crypto sleeve; committee should only accept high-confidence diversified candidates.",
+        "allowed_sides": ["long", "short"],
+        "conditions": [
+            "Feature store fresh for 1h/4h data",
+            "Prediction clears quantile and min_abs_prediction thresholds",
+            "Portfolio correlation, daily loss, and per-position stop loss gates all pass",
+        ],
+        "history": "Comfort is broad, liquid universe with fresh features and no account-level loss lockout.",
+    },
+    "us_equity_token_dislocation_reversion": {
+        "summary": "US equity token dislocation mean reversion.",
+        "allowed_sides": ["long", "short"],
+        "conditions": [
+            "OKX token deviates from equity reference enough to clear dislocation threshold",
+            "Reference/equity data fresh and market session context valid",
+            "Exit on mean reversion or thesis invalidation; avoid stale reference pricing",
+        ],
+        "history": "Comfort is temporary token/reference dislocation, not one-way trend.",
+    },
+    "us_equity_token_equity_momentum": {
+        "summary": "US equity token momentum based on high-quality equity basket.",
+        "allowed_sides": ["long"],
+        "conditions": [
+            "Underlying equity momentum is positive and reference data fresh",
+            "Token price follows the equity move without large stale mismatch",
+            "Avoid opening during missing or stale market data",
+        ],
+        "history": "Comfort is aligned US equity momentum with liquid token execution.",
+    },
+    "us_equity_token_okx_momentum": {
+        "summary": "OKX-listed US equity token self-momentum sleeve.",
+        "allowed_sides": ["long"],
+        "conditions": [
+            "Token's own momentum clears selection threshold",
+            "Volume/liquidity is adequate",
+            "Avoid isolated token spikes without sustained follow-through",
+        ],
+        "history": "Comfort is clean token-side momentum in liquid US equity tokens.",
+    },
+}
 DISPLAY_TZ = ZoneInfo("Asia/Shanghai")
 TIME_FIELD_NAMES = {
     "archived_at",
@@ -274,7 +402,23 @@ def process_alive(pid: str | int | None) -> bool:
     if not pid:
         return False
     try:
-        os.kill(int(pid), 0)
+        pid_int = int(pid)
+    except Exception:
+        return False
+    if os.name == "nt":
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", f"if (Get-Process -Id {pid_int} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+    try:
+        os.kill(pid_int, 0)
         return True
     except Exception:
         return False
@@ -290,6 +434,24 @@ def terminate_process(pid: str | int | None, *, grace_sec: float = STOP_GRACE_SE
         return {"pid": pid, "terminated": False, "reason": "invalid_pid"}
     if not process_alive(pid_int):
         return {"pid": pid_int, "terminated": True, "already_stopped": True}
+    if os.name == "nt":
+        result: dict[str, Any] = {"pid": pid_int, "terminated": False, "signal": "TASKKILL", "escalated": True}
+        try:
+            proc = subprocess.run(
+                ["taskkill", "/PID", str(pid_int), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=max(5.0, grace_sec + 2.0),
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+            result["returncode"] = proc.returncode
+            result["stdout"] = (proc.stdout or "").strip()
+            result["stderr"] = (proc.stderr or "").strip()
+        except Exception as exc:
+            result["error"] = str(exc)
+        time.sleep(0.2)
+        result["terminated"] = not process_alive(pid_int)
+        return result
 
     result: dict[str, Any] = {"pid": pid_int, "terminated": False, "signal": "TERM", "escalated": False}
     try:
@@ -452,6 +614,69 @@ def registry_parameter_params(parameter_set_id: str | None) -> dict[str, Any]:
         if str(item.get("parameter_set_id") or "") == parameter_set_id:
             return dict(item.get("params") or {})
     return {}
+
+
+def registry_required_ohlcv_symbols() -> list[str]:
+    """Symbols required by live registry strategies in addition to the dynamic universe."""
+    symbols: list[str] = []
+    try:
+        records = StrategyRegistry().list_strategies()
+    except Exception:
+        records = []
+    for record in records:
+        runtime = getattr(record, "runtime", None)
+        if not bool(getattr(record, "live_enabled", False)):
+            continue
+        if str(getattr(record, "status", "") or "") != "live":
+            continue
+        if runtime is not None and not bool(getattr(runtime, "enabled", False)):
+            continue
+        for dep in getattr(record, "data_dependencies", []) or []:
+            if str(getattr(dep, "kind", "") or "") != "ohlcv_cache":
+                continue
+            metadata = dict(getattr(dep, "metadata", {}) or {})
+            symbol = normalize_data_symbol(metadata.get("symbol") or "")
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
+    return symbols
+
+
+def normalize_data_symbol(value: Any) -> str:
+    symbol = str(value or "").strip().upper().replace("-", "/").replace("_", "/")
+    if not symbol:
+        return ""
+    if "/" not in symbol and symbol.endswith("USDT"):
+        symbol = f"{symbol[:-4]}/USDT"
+    parts = [part for part in symbol.split("/") if part]
+    if len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}"
+    return symbol
+
+
+def data_refresh_processes_cover_symbols(processes: list[dict[str, Any]], required_symbols: list[str]) -> bool:
+    missing = data_refresh_missing_symbols_from_processes(processes, required_symbols)
+    return not missing
+
+
+def data_refresh_missing_symbols_from_processes(processes: list[dict[str, Any]], required_symbols: list[str]) -> list[str]:
+    required = [normalize_data_symbol(item) for item in required_symbols if normalize_data_symbol(item)]
+    if not required:
+        return []
+    commands = " ".join(str(proc.get("command") or "") for proc in processes).upper().replace("-", "/").replace("_", "/")
+    return [symbol for symbol in required if symbol.upper() not in commands]
+
+
+def data_refresh_status_covers_symbols(status: dict[str, Any], required_symbols: list[str]) -> bool:
+    missing = data_refresh_missing_symbols_from_status(status, required_symbols)
+    return not missing
+
+
+def data_refresh_missing_symbols_from_status(status: dict[str, Any], required_symbols: list[str]) -> list[str]:
+    required = [normalize_data_symbol(item) for item in required_symbols if normalize_data_symbol(item)]
+    if not required:
+        return []
+    present = {normalize_data_symbol(item) for item in status.get("symbols") or []}
+    return [symbol for symbol in required if symbol not in present]
 
 
 def environment_runtime_strategies(environment: str) -> list[dict[str, Any]]:
@@ -760,10 +985,42 @@ def command_profile(command: list[str]) -> str | None:
 
 def okx_command_env(profile: str | None) -> dict[str, str]:
     env = os.environ.copy()
+    if os.name == "nt":
+        path_parts: list[str] = []
+        appdata = env.get("APPDATA")
+        if appdata:
+            path_parts.append(str(Path(appdata) / "npm"))
+        path_parts.append(r"C:\Program Files\nodejs")
+        if env.get("PATH"):
+            path_parts.append(env["PATH"])
+        env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
     if profile and profile != "live":
         for key in OKX_ENV_CREDENTIAL_KEYS:
             env.pop(key, None)
     return env
+
+
+def okx_binary() -> str:
+    configured = os.environ.get("OKX_CLI_BIN")
+    if configured:
+        return configured
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidate = Path(appdata) / "npm" / "okx.cmd"
+            if candidate.exists():
+                return str(candidate)
+        found = shutil.which("okx.cmd")
+        if found:
+            return found
+    return shutil.which("okx") or "okx"
+
+
+def normalize_okx_command(cmd: list[str]) -> list[str]:
+    out = list(cmd)
+    if out and out[0] == "okx":
+        out[0] = okx_binary()
+    return out
 
 
 def pro_paper_status(strategy_id: str = "core_c_auto_h24_regression_v1", environment: str = "personal") -> dict[str, Any]:
@@ -1155,8 +1412,27 @@ def _mask_stale_strategy_state(out: dict[str, Any], raw_state: dict[str, Any]) -
 
 
 def strategy_performance_status() -> dict[str, Any]:
-    refresh_ownership_reconciliation("personal")
-    refresh_ownership_reconciliation("competition")
+    now = time.time()
+    cached = STRATEGY_PERFORMANCE_CACHE.get("data")
+    if isinstance(cached, dict) and now - float(STRATEGY_PERFORMANCE_CACHE.get("ts") or 0.0) < STRATEGY_PERFORMANCE_CACHE_SEC:
+        return cached
+    try:
+        cache_mtime = STRATEGY_PERFORMANCE_STATUS_PATH.stat().st_mtime if STRATEGY_PERFORMANCE_STATUS_PATH.exists() else 0.0
+        dependency_mtime = (ENGINE_DIR / "config" / "strategy_registry.json").stat().st_mtime
+        for perf_path in (
+            OWNERSHIP_DIR / "personal" / "performance_status.json",
+            OWNERSHIP_DIR / "competition" / "performance_status.json",
+        ):
+            if perf_path.exists():
+                dependency_mtime = max(dependency_mtime, perf_path.stat().st_mtime)
+        if cache_mtime >= dependency_mtime and now - cache_mtime < STRATEGY_PERFORMANCE_FILE_CACHE_SEC:
+            file_cached = read_json(STRATEGY_PERFORMANCE_STATUS_PATH)
+            if isinstance(file_cached, dict):
+                STRATEGY_PERFORMANCE_CACHE["ts"] = now
+                STRATEGY_PERFORMANCE_CACHE["data"] = file_cached
+                return file_cached
+    except Exception:
+        pass
     sources = [
         ("paper_competition", C_AUTO_V2_MICRO_LIVE_DIR, "micro_live_competition_competition"),
         ("micro_live_personal", C_AUTO_V2_MICRO_LIVE_DIR, "micro_live_personal_personal"),
@@ -1165,6 +1441,12 @@ def strategy_performance_status() -> dict[str, Any]:
         ("research_competition", RESEARCH_SLEEVES_DIR, "us_equity_token_equity_momentum_competition"),
         ("research_competition", RESEARCH_SLEEVES_DIR, "us_equity_token_dislocation_reversion_competition"),
         ("research_competition", RESEARCH_SLEEVES_DIR, "us_equity_token_okx_momentum_competition"),
+        ("research_competition", RESEARCH_SLEEVES_DIR, "trend_pullback_reversal_cluster_elite_quality60_v1_competition"),
+        ("research_competition", RESEARCH_SLEEVES_DIR, "trend_pullback_reversal_quality_top20_v1_competition"),
+        ("research_competition", RESEARCH_SLEEVES_DIR, "trend_pullback_reversal_rank_top1_v1_competition"),
+        ("research_personal", RESEARCH_SLEEVES_DIR, "us_equity_token_equity_momentum_personal"),
+        ("research_personal", RESEARCH_SLEEVES_DIR, "us_equity_token_dislocation_reversion_personal"),
+        ("research_personal", RESEARCH_SLEEVES_DIR, "us_equity_token_okx_momentum_personal"),
     ]
     running_sources = _running_strategy_sources()
     strategies: dict[str, dict[str, Any]] = {}
@@ -1177,6 +1459,7 @@ def strategy_performance_status() -> dict[str, Any]:
         _merge_strategy_equity(strategies, source_id, equity, state, strategy_ids)
     _merge_ownership_performance(strategies, "personal")
     _merge_ownership_performance(strategies, "competition")
+    _merge_runtime_environment_status(strategies)
     _merge_known_strategy_sleeves(strategies, running_sources)
     rows = []
     for strategy_id, row in strategies.items():
@@ -1184,13 +1467,28 @@ def strategy_performance_status() -> dict[str, Any]:
         wins = int(row.get("wins") or 0)
         row["win_rate"] = wins / closed if closed > 0 else None
         row["pnl"] = float(row.get("realized_pnl") or 0.0) + float(row.get("unrealized_pnl") or 0.0)
-        row["running_sources"] = [
+        detected_running_sources = [
             source
             for source in row.get("sources") or []
             if _is_strategy_source_running(str(row.get("strategy_id") or ""), source, running_sources)
         ]
+        runtime_running_sources = [
+            f"runtime_{item.get('environment')}"
+            for item in row.get("runtime") or []
+            if isinstance(item, dict) and item.get("running") and item.get("environment")
+        ]
+        row["running_sources"] = sorted(set(detected_running_sources + runtime_running_sources))
         row["running"] = bool(row["running_sources"])
+        row["runtime_status"] = _strategy_runtime_status(row)
+        row["runtime_days"] = _strategy_runtime_days(row)
+        row["why_not_running"] = _strategy_not_running_reason(row)
+        row["environments"] = sorted(
+            [item for item in row.get("runtime") or [] if isinstance(item, dict)],
+            key=lambda item: str(item.get("environment") or ""),
+        )
         row["series"] = sorted(row.get("series") or [], key=lambda item: str(item.get("ts") or ""))
+        row["comfort_zone_status"] = _strategy_comfort_zone_status(row)
+        row["comfort_zone_active"] = row["comfort_zone_status"].get("active")
         rows.append(row)
     rows.sort(key=lambda item: (not bool(item.get("running")), -float(item.get("pnl") or 0.0), str(item.get("strategy_id") or "")))
     running_paper = sum(
@@ -1198,7 +1496,280 @@ def strategy_performance_status() -> dict[str, Any]:
         for row in rows
         if row.get("running") and any(source in {"paper_competition", "research_competition", "legacy_paper", "monster_paper"} for source in row.get("sources") or [])
     )
-    return {"ok": True, "updated_at": datetime.now(timezone.utc).isoformat(), "running_paper_strategies": running_paper, "strategies": rows}
+    result = {
+        "ok": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "running_paper_strategies": running_paper,
+        "running_strategies": sum(1 for row in rows if row.get("running")),
+        "blocked_strategies": sum(1 for row in rows if row.get("runtime_status") == "blocked"),
+        "degraded_strategies": sum(1 for row in rows if row.get("runtime_status") == "degraded"),
+        "stopped_strategies": sum(1 for row in rows if not row.get("running")),
+        "strategies": rows,
+    }
+    STRATEGY_PERFORMANCE_CACHE["ts"] = now
+    STRATEGY_PERFORMANCE_CACHE["data"] = result
+    try:
+        STRATEGY_PERFORMANCE_STATUS_PATH.write_text(json.dumps(result, ensure_ascii=False, default=str, allow_nan=False), encoding="utf-8")
+    except Exception:
+        pass
+    return result
+
+
+def _merge_runtime_environment_status(strategies: dict[str, dict[str, Any]]) -> None:
+    for environment in ("personal", "competition"):
+        try:
+            status = EnvironmentRunner(root=ROOT_DIR).status(environment)
+        except Exception:
+            status = read_json(LOGS_DIR / "environment_runner" / f"{environment}_status.json") or {}
+        if not status:
+            continue
+        for item in status.get("strategies") or []:
+            if not isinstance(item, dict):
+                continue
+            strategy_id = str(item.get("strategy_id") or "")
+            if not strategy_id:
+                continue
+            row = _strategy_row(strategies, strategy_id)
+            source = f"runtime_{environment}"
+            if source not in row["sources"]:
+                row["sources"].append(source)
+            runtime = {
+                "environment": environment,
+                "runner": item.get("runner"),
+                "state_id": item.get("state_id"),
+                "okx_profile": item.get("okx_profile"),
+                "running": bool(item.get("running")),
+                "readiness_ok": bool((item.get("readiness") or {}).get("ok")),
+                "readiness_errors": list((item.get("readiness") or {}).get("errors") or []),
+                "scheduler_status": str((item.get("scheduler") or {}).get("status") or (item.get("scheduler") or {}).get("scheduler_status") or ""),
+                "scheduler_error": (item.get("scheduler") or {}).get("last_error"),
+                "updated_at": (item.get("scheduler") or {}).get("updated_at") or (item.get("accounting") or {}).get("updated_at"),
+                "candidate_count": (item.get("committee") or {}).get("candidate_count"),
+                "open_positions": (item.get("position") or {}).get("open_positions"),
+                "nav": (item.get("position") or {}).get("nav"),
+                "process_count": len(item.get("processes") or []),
+                "pids": [proc.get("pid") for proc in item.get("processes") or [] if isinstance(proc, dict) and proc.get("pid")],
+                "started_at": _runtime_started_at(item),
+            }
+            row.setdefault("runtime", []).append(runtime)
+            running_source_list = row.setdefault("running_sources", [])
+            if runtime["running"] and source not in running_source_list:
+                running_source_list.append(source)
+            if runtime["running"]:
+                row["running"] = True
+            row["runtime_open_positions"] = int(row.get("runtime_open_positions") or 0) + int(runtime.get("open_positions") or 0)
+            if runtime.get("candidate_count") is not None:
+                row["candidate_count"] = int(row.get("candidate_count") or 0) + int(runtime.get("candidate_count") or 0)
+
+
+def _runtime_started_at(item: dict[str, Any]) -> str | None:
+    for proc in item.get("processes") or []:
+        if not isinstance(proc, dict):
+            continue
+        lock_path = proc.get("lock_path")
+        if not lock_path:
+            continue
+        try:
+            ts = Path(str(lock_path)).stat().st_mtime
+        except Exception:
+            continue
+        return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+    return None
+
+
+def _strategy_runtime_status(row: dict[str, Any]) -> str:
+    runtimes = [item for item in row.get("runtime") or [] if isinstance(item, dict)]
+    if any(item.get("running") and str(item.get("scheduler_status") or "").lower() in {"running", "completed", ""} for item in runtimes):
+        return "running"
+    if any(item.get("running") for item in runtimes):
+        return "degraded"
+    if any(not item.get("readiness_ok", True) for item in runtimes):
+        return "blocked"
+    return "stopped"
+
+
+def _strategy_comfort_zone_status(row: dict[str, Any]) -> dict[str, Any]:
+    strategy_id = str(row.get("strategy_id") or "")
+    comfort = row.get("comfort_zone") if isinstance(row.get("comfort_zone"), dict) else {}
+    if not comfort:
+        return {
+            "active": None,
+            "status": "unknown",
+            "label": "comfort unknown",
+            "reason": "no comfort-zone rule is documented for this strategy",
+            "performance_health": _comfort_performance_health(row),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    if not row.get("running"):
+        return {
+            "active": None,
+            "status": "inactive",
+            "label": "not running",
+            "reason": "strategy is not running, so current comfort-zone state is not evaluated",
+            "performance_health": _comfort_performance_health(row),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    runtimes = [item for item in row.get("runtime") or [] if isinstance(item, dict)]
+    readiness_errors = [
+        str(err)
+        for item in runtimes
+        for err in item.get("readiness_errors") or []
+        if err
+    ]
+    scheduler_errors = [str(item.get("scheduler_error")) for item in runtimes if item.get("scheduler_error")]
+    if readiness_errors or scheduler_errors:
+        return {
+            "active": False,
+            "status": "blocked",
+            "label": "not comfort",
+            "reason": "; ".join((readiness_errors + scheduler_errors)[:3]),
+            "performance_health": _comfort_performance_health(row),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    candidate_count = int(row.get("candidate_count") or 0)
+    allowed_sides = {str(item).lower() for item in comfort.get("allowed_sides") or [] if item}
+    positions = _strategy_runtime_positions(row)
+    open_positions = max(int(row.get("runtime_open_positions") or 0), len(positions))
+    side_mismatches = []
+    if allowed_sides:
+        for pos in positions:
+            side = str(pos.get("side") or "").lower()
+            if side and side not in allowed_sides:
+                side_mismatches.append(f"{pos.get('symbol') or '?'}:{side}")
+    if side_mismatches:
+        return {
+            "active": False,
+            "status": "violated",
+            "label": "comfort breach",
+            "reason": "open position side outside comfort zone: " + ", ".join(side_mismatches[:3]),
+            "performance_health": _comfort_performance_health(row),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if candidate_count > 0 or open_positions > 0:
+        reason_parts = []
+        if candidate_count > 0:
+            reason_parts.append(f"{candidate_count} live candidate(s)")
+        if open_positions > 0:
+            reason_parts.append(f"{open_positions} open position(s)")
+        return {
+            "active": True,
+            "status": "active",
+            "label": "in comfort",
+            "reason": "; ".join(reason_parts),
+            "performance_health": _comfort_performance_health(row),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if strategy_id.startswith("trend_pullback_reversal_"):
+        reason = "no current short-side pullback candidate passed the strategy scan"
+    elif strategy_id.startswith("btc_"):
+        reason = "no current BTC breakout candidate passed the strategy scan"
+    elif strategy_id.startswith("us_equity_token_"):
+        reason = "no current US equity-token candidate passed the strategy scan"
+    elif strategy_id == "xau_supertrend_ema_4h_v1":
+        reason = "no current XAU trend candidate passed the strategy scan"
+    elif strategy_id == C_AUTO_V2_STRATEGY_ID:
+        reason = "no current high-confidence cross-sectional candidate passed the scan"
+    else:
+        reason = "no current candidate or open position is inside the documented comfort zone"
+    return {
+        "active": False,
+        "status": "inactive",
+        "label": "not comfort",
+        "reason": reason,
+        "performance_health": _comfort_performance_health(row),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _strategy_runtime_positions(row: dict[str, Any]) -> list[dict[str, Any]]:
+    positions: list[dict[str, Any]] = []
+    for item in row.get("runtime") or []:
+        if not isinstance(item, dict):
+            continue
+        state_id = str(item.get("state_id") or row.get("strategy_id") or "")
+        environment = str(item.get("environment") or "")
+        if not state_id or not environment:
+            continue
+        state = read_json(RESEARCH_SLEEVES_DIR / f"{state_id}_{environment}.json")
+        if not isinstance(state, dict):
+            continue
+        raw_positions = state.get("positions") or {}
+        if not isinstance(raw_positions, dict):
+            continue
+        for pos in raw_positions.values():
+            if isinstance(pos, dict):
+                positions.append(pos)
+    return positions
+
+
+def _comfort_performance_health(row: dict[str, Any]) -> dict[str, Any]:
+    closed = int(row.get("closed_trades") or 0)
+    pnl = float(row.get("pnl") or 0.0)
+    win_rate = row.get("win_rate")
+    if closed < 5:
+        status = "insufficient"
+        reason = "fewer than 5 closed trades"
+    elif pnl < 0:
+        status = "review"
+        reason = "cumulative PnL is negative"
+    elif win_rate is not None and float(win_rate) < 0.45:
+        status = "review"
+        reason = "realized win rate is below 45%"
+    else:
+        status = "ok"
+        reason = "realized performance is consistent enough for monitoring"
+    return {
+        "status": status,
+        "reason": reason,
+        "closed_trades": closed,
+        "win_rate": win_rate,
+        "pnl": pnl,
+    }
+
+
+def _strategy_runtime_days(row: dict[str, Any]) -> float | None:
+    starts: list[datetime] = []
+    for item in row.get("runtime") or []:
+        if not isinstance(item, dict) or not item.get("running"):
+            continue
+        try:
+            starts.append(datetime.fromisoformat(str(item.get("started_at")).replace("Z", "+00:00")))
+        except Exception:
+            continue
+    if not starts:
+        return None
+    age = datetime.now(timezone.utc) - min(starts)
+    return max(0.0, age.total_seconds() / 86400.0)
+
+
+def _strategy_not_running_reason(row: dict[str, Any]) -> str:
+    if row.get("running"):
+        return ""
+    runtimes = [item for item in row.get("runtime") or [] if isinstance(item, dict)]
+    errors = []
+    for item in runtimes:
+        errors.extend(str(err) for err in item.get("readiness_errors") or [] if err)
+        if item.get("scheduler_error"):
+            errors.append(str(item.get("scheduler_error")))
+    if errors:
+        return "; ".join(errors[:3])
+    if runtimes:
+        return "runtime stopped"
+    kind = str(row.get("registration_kind") or "")
+    if kind == "registered_variants":
+        variants = row.get("registered_variants") or []
+        if variants:
+            return "registered as variants: " + ", ".join(str(item) for item in variants[:3])
+        return "registered as variants"
+    if kind == "committee_signal_family":
+        return "committee signal family; no standalone runner"
+    if kind == "runtime_strategy":
+        return "registered, but not selected for active runtime"
+    return "not registered for active environment"
 
 
 def _merge_ownership_performance(strategies: dict[str, dict[str, Any]], environment: str) -> None:
@@ -1253,18 +1824,72 @@ def _running_strategy_sources() -> set[str]:
 
 
 def _merge_known_strategy_sleeves(strategies: dict[str, dict[str, Any]], running_sources: set[str]) -> None:
+    registry = _strategy_registry_index()
     for meta in KNOWN_STRATEGY_SLEEVES:
         strategy_id = str(meta["strategy_id"])
         row = _strategy_row(strategies, strategy_id)
         row.setdefault("display_name", meta.get("display_name") or strategy_id)
         row.setdefault("paper_role", meta.get("paper_role") or "")
         row.setdefault("runtime_rule", meta.get("runtime_rule") or "")
+        if strategy_id in STRATEGY_COMFORT_ZONES:
+            row.setdefault("comfort_zone", STRATEGY_COMFORT_ZONES[strategy_id])
+        _apply_strategy_registration_metadata(row, meta, registry)
         row["paper_supported"] = True
         paper_source = str(meta.get("paper_source") or "")
         if paper_source:
             row["paper_source"] = paper_source
             if _is_strategy_source_running(strategy_id, paper_source, running_sources) and paper_source not in row["sources"]:
                 row["sources"].append(paper_source)
+
+
+def _strategy_registry_index() -> dict[str, dict[str, Any]]:
+    try:
+        return {
+            record.strategy_id: {
+                "strategy_id": record.strategy_id,
+                "name": record.name,
+                "status": record.status,
+                "live_enabled": record.live_enabled,
+                "runtime_enabled": record.runtime.enabled,
+                "runtime_environments": list(record.runtime.allowed_environments),
+                "runner": record.runtime.runner,
+                "default_parameter_set_id": record.default_parameter_set_id,
+            }
+            for record in StrategyRegistry().list_strategies()
+        }
+    except Exception:
+        return {}
+
+
+def _apply_strategy_registration_metadata(
+    row: dict[str, Any],
+    meta: dict[str, Any],
+    registry: dict[str, dict[str, Any]],
+) -> None:
+    strategy_id = str(row.get("strategy_id") or "")
+    if strategy_id in registry:
+        row["registration_kind"] = "runtime_strategy"
+        row["registration_status"] = registry[strategy_id]
+        return
+    kind = str(meta.get("registration_kind") or "")
+    if kind == "registered_variants":
+        variants = [item for item in meta.get("registered_variants") or [] if item in registry]
+        row["registration_kind"] = "registered_variants"
+        row["registered_variants"] = variants
+        row["registration_status"] = {
+            "variant_count": len(variants),
+            "variants": [registry[item] for item in variants],
+        }
+        return
+    if kind == "committee_signal_family":
+        row["registration_kind"] = "committee_signal_family"
+        row["registration_status"] = {
+            "status": "committee_signal_family",
+            "standalone_runner": False,
+        }
+        return
+    row["registration_kind"] = "unregistered"
+    row["registration_status"] = {"status": "unregistered"}
 
 
 def _is_strategy_source_running(strategy_id: str, source: str, running_sources: set[str]) -> bool:
@@ -1295,6 +1920,7 @@ def _strategy_row(strategies: dict[str, dict[str, Any]], strategy_id: str) -> di
             "open_positions": 0,
             "sources": [],
             "series": [],
+            "comfort_zone": STRATEGY_COMFORT_ZONES.get(strategy_id, {}),
         }
     return strategies[strategy_id]
 
@@ -1370,7 +1996,7 @@ def _merge_strategy_positions(strategies: dict[str, dict[str, Any]], source_id: 
 
 
 def _merge_strategy_equity(strategies: dict[str, dict[str, Any]], source_id: str, equity: list[dict[str, Any]], state: dict[str, Any], strategy_ids: set[str]) -> None:
-    points = equity[-240:]
+    points = equity[-80:]
     if not points and state.get("nav") is not None:
         points = [{"ts": state.get("updated_at") or datetime.now(timezone.utc).isoformat(), "nav": state.get("nav")}]
     if not points:
@@ -1597,9 +2223,25 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("instId or symbol is required")
 
     profile = okx_profile_for_environment(environment)
+    append_operation(
+        "account_close_symbol",
+        environment,
+        "started",
+        {"profile": profile, "instId": inst_id},
+    )
     positions_resp = _run_okx_json(["okx", "--profile", profile, "--json", "account", "positions", "--instType", "SWAP"])
     if positions_resp["returncode"] != 0:
-        raise RuntimeError(positions_resp["message"] or "unable to list positions")
+        result = {
+            "ok": False,
+            "closed": False,
+            "environment": environment,
+            "profile": profile,
+            "instId": inst_id,
+            "message": positions_resp["message"] or "unable to list positions",
+            "positions_response": positions_resp,
+        }
+        append_operation("account_close_symbol", environment, "error", result)
+        return result
     positions = _as_order_list(positions_resp["data"])
     position = next(
         (
@@ -1622,7 +2264,7 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
                 reason="launcher_account_symbol_already_flat",
                 metadata={"verification": verification, "closed": False},
             )
-        return {
+        result = {
             "ok": bool(verification.get("flat")) and bool(verification.get("orders_clean")),
             "closed": False,
             "environment": environment,
@@ -1633,6 +2275,8 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
             "cancel_algo_orders": cancel_algos,
             "verification": verification,
         }
+        append_operation("account_close_symbol", environment, "already_flat" if result["ok"] else "partial_error", result)
+        return result
 
     cancel_orders = _cancel_profile_symbol_open_orders(profile, inst_id)
     cancel_algos = _cancel_profile_symbol_algo_orders(profile, inst_id)
@@ -1672,7 +2316,7 @@ def close_account_symbol(payload: dict[str, Any]) -> dict[str, Any]:
     }
     append_operation("account_close_symbol", environment, "accepted" if result["ok"] else "partial_error", result)
     if not ok:
-        raise RuntimeError(close_result["message"] or f"close failed for {inst_id}")
+        return result
     if result["ok"]:
         _append_account_close_ownership_exit(
             environment,
@@ -1692,9 +2336,21 @@ def close_account_positions(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("live close requires confirm_live_close=true")
 
     profile = okx_profile_for_environment(environment)
+    append_operation("account_close_all", environment, "started", {"profile": profile})
     positions_resp = _run_okx_json(["okx", "--profile", profile, "--json", "account", "positions", "--instType", "SWAP"])
     if positions_resp["returncode"] != 0:
-        raise RuntimeError(positions_resp["message"] or "unable to list positions")
+        result = {
+            "ok": False,
+            "environment": environment,
+            "profile": profile,
+            "positions_found": 0,
+            "positions_closed": 0,
+            "results": [],
+            "errors": [positions_resp["message"] or "unable to list positions"],
+            "positions_response": positions_resp,
+        }
+        append_operation("account_close_all", environment, "error", result)
+        return result
     positions = [
         pos
         for pos in _as_order_list(positions_resp["data"])
@@ -2323,7 +2979,7 @@ def iter_jsonl(path: Path) -> list[dict[str, Any]]:
         return []
     records: list[dict[str, Any]] = []
     try:
-        for line in path.read_text().splitlines():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
                 continue
             try:
@@ -2358,6 +3014,7 @@ def operation_log_status(limit: int = 80) -> dict[str, Any]:
 def refresh_ownership_reconciliation(environment: str, max_age_sec: float = 300.0) -> dict[str, Any]:
     if environment not in {"personal", "competition"}:
         return {}
+    profile = "live" if environment == "competition" else environment
     status_path = OWNERSHIP_DIR / environment / "reconciliation_status.json"
     if max_age_sec > 0 and status_path.exists():
         try:
@@ -2374,7 +3031,9 @@ def refresh_ownership_reconciliation(environment: str, max_age_sec: float = 300.
         "--json",
     ]
     try:
-        proc = subprocess.run(cmd, cwd=ROOT_DIR, capture_output=True, text=True, timeout=75)
+        env = okx_command_env(profile)
+        env["OKX_CLI_BIN"] = okx_binary()
+        proc = subprocess.run(cmd, cwd=ROOT_DIR, env=env, capture_output=True, text=True, timeout=75)
     except Exception as exc:
         append_operation("ownership_reconcile", environment, "error", {"error": str(exc)})
         return read_json(status_path) or {"ok": False, "errors": ["reconcile_process_failed"], "exchange_error": str(exc)}
@@ -2473,6 +3132,48 @@ def find_download_processes(run_id: str | None = None) -> list[dict[str, Any]]:
 
 
 def find_data_refresh_processes() -> list[dict[str, Any]]:
+    if os.name == "nt":
+        script = (
+            "$rows = Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine -match 'engine[/\\\\]data[/\\\\]refresh_scheduler\\.py' }; "
+            "$rows | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", script],
+                cwd=str(ROOT_DIR),
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+        except Exception:
+            return []
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return []
+        try:
+            payload = json.loads(proc.stdout)
+        except Exception:
+            return []
+        rows = payload if isinstance(payload, list) else [payload]
+        matches: list[dict[str, Any]] = []
+        self_pid = os.getpid()
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            try:
+                pid = int(item.get("ProcessId"))
+            except Exception:
+                continue
+            command = str(item.get("CommandLine") or "")
+            command_norm = command.replace("\\", "/")
+            if "Get-CimInstance Win32_Process" in command or "Where-Object" in command:
+                continue
+            if pid == self_pid or "engine/data/refresh_scheduler.py" not in command_norm:
+                continue
+            matches.append({"pid": pid, "command": command})
+        return matches
+
     try:
         proc = subprocess.run(
             ["ps", "-axo", "pid=,command="],
@@ -2503,6 +3204,35 @@ def find_data_refresh_processes() -> list[dict[str, Any]]:
 
 
 def find_ownership_reconcile_processes() -> list[dict[str, Any]]:
+    if os.name == "nt":
+        script = (
+            "$rows = Get-CimInstance Win32_Process -Filter \"name = 'python.exe'\" | "
+            "Where-Object { $_.CommandLine -like '*scripts/run_ownership_reconcile_scheduler.py*' }; "
+            "$rows | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", script],
+                cwd=str(ROOT_DIR),
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+        except Exception:
+            return []
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return []
+        try:
+            payload = json.loads(proc.stdout)
+        except Exception:
+            return []
+        if isinstance(payload, dict):
+            payload = [payload]
+        return [
+            {"pid": int(item.get("ProcessId")), "command": str(item.get("CommandLine") or "")}
+            for item in payload if isinstance(item, dict) and int(item.get("ProcessId") or 0) != os.getpid()
+        ]
     try:
         proc = subprocess.run(
             ["ps", "-axo", "pid=,command="],
@@ -2597,6 +3327,8 @@ def data_refresh_status() -> dict[str, Any]:
     progress_path = DATA_REFRESH_DIR / "progress.jsonl"
     status = read_json(status_path) or {}
     processes = find_data_refresh_processes()
+    required_symbols = registry_required_ohlcv_symbols()
+    missing_required_symbols = data_refresh_missing_symbols_from_status(status, required_symbols)
     heartbeat_age_sec = utc_age_seconds(status.get("heartbeat_at") or status.get("updated_at") or status.get("cycle_started_at"))
     status_running = str(status.get("scheduler_status") or "").lower() == "running" and heartbeat_age_sec is not None and heartbeat_age_sec <= 20 * 60
     us_equity_status_path = DATA_REFRESH_DIR / "us_equities_yfinance_status.json"
@@ -2619,6 +3351,9 @@ def data_refresh_status() -> dict[str, Any]:
         "running": bool(processes) or status_running,
         "running_source": "process" if processes else ("fresh_status_heartbeat" if status_running else "none"),
         "heartbeat_age_sec": heartbeat_age_sec,
+        "required_symbols": required_symbols,
+        "missing_required_symbols": missing_required_symbols,
+        "required_symbols_covered": not missing_required_symbols,
         "processes": processes,
         "status": status,
         "progress_tail": iter_jsonl(progress_path)[-20:],
@@ -2880,6 +3615,9 @@ def position_strategy_attribution(environment: str) -> dict[str, dict[str, Any]]
                 ("research_competition", RESEARCH_SLEEVES_DIR / "us_equity_token_okx_momentum_competition_ledger.jsonl"),
                 ("research_competition", RESEARCH_SLEEVES_DIR / "btc_weekly_swing_3x_competition_ledger.jsonl"),
                 ("research_competition", RESEARCH_SLEEVES_DIR / "btc_daily_breakout_swing_competition_ledger.jsonl"),
+                ("research_competition", RESEARCH_SLEEVES_DIR / "trend_pullback_reversal_cluster_elite_quality60_v1_competition_ledger.jsonl"),
+                ("research_competition", RESEARCH_SLEEVES_DIR / "trend_pullback_reversal_quality_top20_v1_competition_ledger.jsonl"),
+                ("research_competition", RESEARCH_SLEEVES_DIR / "trend_pullback_reversal_rank_top1_v1_competition_ledger.jsonl"),
             ]
         )
     elif environment == "personal":
@@ -2887,6 +3625,9 @@ def position_strategy_attribution(environment: str) -> dict[str, dict[str, Any]]
             [
                 ("micro_live_personal", C_AUTO_V2_MICRO_LIVE_DIR / "micro_live_personal_personal_ledger.jsonl"),
                 ("legacy_paper", C_AUTO_V2_PAPER_DIR / "fixed1000_conservative_personal_ledger.jsonl"),
+                ("research_personal", RESEARCH_SLEEVES_DIR / "us_equity_token_equity_momentum_personal_ledger.jsonl"),
+                ("research_personal", RESEARCH_SLEEVES_DIR / "us_equity_token_dislocation_reversion_personal_ledger.jsonl"),
+                ("research_personal", RESEARCH_SLEEVES_DIR / "us_equity_token_okx_momentum_personal_ledger.jsonl"),
             ]
         )
 
@@ -2915,8 +3656,59 @@ def position_strategy_attribution(environment: str) -> dict[str, dict[str, Any]]
             elif event_type in close_events:
                 for key in keys:
                     by_key.pop(key, None)
+    _merge_ownership_journal_fallback(by_key, environment)
     by_key.update(ownership_by_key)
     return by_key
+
+
+def _merge_ownership_journal_fallback(by_key: dict[str, dict[str, Any]], environment: str) -> None:
+    fallback: dict[str, dict[str, Any]] = {}
+    for event in iter_jsonl(OWNERSHIP_DIR / environment / "ownership.jsonl")[-2500:]:
+        event_type = str(event.get("event") or "")
+        plan = event.get("plan") if isinstance(event.get("plan"), dict) else {}
+        candidate = event.get("candidate") if isinstance(event.get("candidate"), dict) else {}
+        if not candidate and isinstance(plan.get("candidate"), dict):
+            candidate = plan.get("candidate") or {}
+        receipt = event.get("receipt") if isinstance(event.get("receipt"), dict) else {}
+        metadata = {}
+        if isinstance(plan.get("metadata"), dict):
+            metadata.update(plan.get("metadata") or {})
+        if isinstance(candidate.get("metadata"), dict):
+            metadata.update(candidate.get("metadata") or {})
+        order_intent = (event.get("metadata") or {}).get("order_intent") if isinstance(event.get("metadata"), dict) else {}
+        if isinstance(order_intent, dict) and isinstance(order_intent.get("metadata"), dict):
+            metadata.update(order_intent.get("metadata") or {})
+        symbol = receipt.get("inst_id") or receipt.get("instId") or candidate.get("symbol") or event.get("symbol")
+        if not symbol:
+            continue
+        keys = _symbol_aliases(str(symbol))
+        if event_type in {"exit", "forced_exit", "manual_exit", "external_exit", "close", "closed"}:
+            for key in keys:
+                fallback.pop(key, None)
+            continue
+        if event_type not in {"candidate", "approved_plan", "execution"}:
+            continue
+        strategy_id = (
+            candidate.get("strategy_id")
+            or plan.get("strategy_id")
+            or metadata.get("strategy_id")
+            or ((receipt.get("raw") or {}).get("strategy_id") if isinstance(receipt.get("raw"), dict) else "")
+            or "unknown"
+        )
+        record = {
+            "strategy_id": str(strategy_id),
+            "strategy_display_name": _strategy_display_name(str(strategy_id)),
+            "source": "ownership_journal_fallback",
+            "signal_family": metadata.get("signal_family") or candidate.get("signal_family") or "",
+            "entry_ts": receipt.get("filled_at") or event.get("ts") or candidate.get("timestamp"),
+            "entry_price": receipt.get("fill_price") or candidate.get("entry_reference"),
+            "side": receipt.get("side") or candidate.get("side"),
+            "attribution_warning": "ownership_mismatch",
+        }
+        for key in keys:
+            fallback[key] = record
+    for key, record in fallback.items():
+        by_key[key] = record
 
 
 def _strategy_display_name(strategy_id: str) -> str:
@@ -2970,6 +3762,7 @@ def _position_view(pos: dict[str, Any], attribution: dict[str, dict[str, Any]] |
         "strategy_id": strategy.get("strategy_id") or "unknown",
         "strategy_display_name": strategy.get("strategy_display_name") or "未归因持仓",
         "strategy_source": strategy.get("source") or "",
+        "attribution_warning": strategy.get("attribution_warning") or "",
         "signal_family": strategy.get("signal_family") or "",
         "entry_ts": strategy.get("entry_ts"),
         "entry_price": strategy.get("entry_price"),
@@ -3037,27 +3830,70 @@ def stop_c_auto_daily_review(environment_filter: str | None = None) -> dict[str,
 
 
 def start_data_refresh() -> dict[str, Any]:
+    required_symbols = registry_required_ohlcv_symbols()
     existing = find_data_refresh_processes()
     if existing:
-        us_equity = start_us_equity_data_refresh()
-        result = {"ok": True, "already_running": True, "processes": existing, "status": data_refresh_status(), "us_equities": us_equity}
-        append_operation("start_data_refresh", None, "already_running", {"processes": existing})
-        return result
+        covered_existing = [proc for proc in existing if not data_refresh_missing_symbols_from_processes([proc], required_symbols)]
+        stale_existing = [proc for proc in existing if data_refresh_missing_symbols_from_processes([proc], required_symbols)]
+        stale_terminations = []
+        for proc in stale_existing:
+            stale_terminations.append(terminate_process(proc.get("pid")))
+        if covered_existing:
+            us_equity = start_us_equity_data_refresh()
+            result = {
+                "ok": True,
+                "already_running": True,
+                "processes": covered_existing,
+                "stale_processes_stopped": stale_existing,
+                "stale_terminations": stale_terminations,
+                "required_symbols": required_symbols,
+                "status": data_refresh_status(),
+                "us_equities": us_equity,
+            }
+            append_operation(
+                "start_data_refresh",
+                None,
+                "already_running",
+                {"processes": covered_existing, "stale_processes_stopped": stale_existing, "required_symbols": required_symbols},
+            )
+            return result
+        missing = sorted({symbol for proc in existing for symbol in data_refresh_missing_symbols_from_processes([proc], required_symbols)})
+        terminations = []
+        for proc in existing:
+            if proc not in stale_existing:
+                terminations.append(terminate_process(proc.get("pid")))
+        terminations = [*stale_terminations, *terminations]
+        append_operation(
+            "start_data_refresh",
+            None,
+            "restart_required",
+            {"missing_required_symbols": missing, "processes": existing, "terminations": terminations},
+        )
     status = read_json(DATA_REFRESH_DIR / "status.json") or {}
     heartbeat_age_sec = utc_age_seconds(status.get("heartbeat_at") or status.get("updated_at") or status.get("cycle_started_at"))
-    if str(status.get("scheduler_status") or "").lower() == "running" and heartbeat_age_sec is not None and heartbeat_age_sec <= 20 * 60:
+    status_missing = data_refresh_missing_symbols_from_status(status, required_symbols)
+    if (
+        str(status.get("scheduler_status") or "").lower() == "running"
+        and heartbeat_age_sec is not None
+        and heartbeat_age_sec <= 20 * 60
+        and not status_missing
+    ):
         result = {
             "ok": True,
             "already_running": True,
             "processes": [],
             "running_source": "fresh_status_heartbeat",
             "heartbeat_age_sec": heartbeat_age_sec,
+            "required_symbols": required_symbols,
             "status": data_refresh_status(),
             "us_equities": {"ok": True, "skipped": True, "reason": "main_data_refresh_already_running"},
         }
-        append_operation("start_data_refresh", None, "already_running", {"running_source": "fresh_status_heartbeat", "heartbeat_age_sec": heartbeat_age_sec})
+        append_operation("start_data_refresh", None, "already_running", {"running_source": "fresh_status_heartbeat", "heartbeat_age_sec": heartbeat_age_sec, "required_symbols": required_symbols})
         return result
+    if status_missing:
+        append_operation("start_data_refresh", None, "stale_status_missing_required_symbols", {"missing_required_symbols": status_missing})
     us_equity = start_us_equity_data_refresh()
+    extra_symbols = ",".join(required_symbols)
     result = run_script(
         [
             "python3",
@@ -3066,6 +3902,8 @@ def start_data_refresh() -> dict[str, Any]:
             "900",
             "--max-symbols",
             "150",
+            "--extra-symbols",
+            extra_symbols,
             "--timeframes",
             "5m,15m,1h,4h,1d",
             "--lookback-days",
@@ -3085,8 +3923,8 @@ def start_data_refresh() -> dict[str, Any]:
         ],
         "data_refresh",
     )
-    result.update({"ok": True, "service": "data_refresh", "us_equities": us_equity})
-    append_operation("start_data_refresh", None, "accepted", {"pid": result.get("pid"), "log_path": result.get("log_path")})
+    result.update({"ok": True, "service": "data_refresh", "required_symbols": required_symbols, "us_equities": us_equity})
+    append_operation("start_data_refresh", None, "accepted", {"pid": result.get("pid"), "log_path": result.get("log_path"), "required_symbols": required_symbols})
     return result
 
 
@@ -3168,6 +4006,12 @@ def stop_data_refresh() -> dict[str, Any]:
         terminations.append(termination)
         if termination.get("terminated"):
             stopped.append(int(proc["pid"]))
+    status = read_json(DATA_REFRESH_DIR / "status.json") or {}
+    status.update({"scheduler_status": "stopped", "heartbeat_at": datetime.now(timezone.utc).isoformat(), "stopped_by": "launcher"})
+    try:
+        (DATA_REFRESH_DIR / "status.json").write_text(json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    except Exception:
+        pass
     return {"ok": True, "stopped_pids": stopped, "terminations": terminations}
 
 
@@ -3526,6 +4370,10 @@ def _symbol_to_swap_inst_id(symbol: str) -> str:
 
 
 def _run_okx_json(cmd: list[str]) -> dict[str, Any]:
+    cmd = normalize_okx_command(cmd)
+    run_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        run_kwargs["creationflags"] = WINDOWS_NO_WINDOW
     try:
         proc = subprocess.run(
             cmd,
@@ -3534,6 +4382,7 @@ def _run_okx_json(cmd: list[str]) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=20,
+            **run_kwargs,
         )
     except Exception as exc:
         return {"returncode": 1, "data": None, "message": f"{cmd[:4]} failed: {exc}"}
@@ -4202,21 +5051,34 @@ def run_script(args: list[str], prefix: str) -> dict[str, Any]:
         pythonpath_parts.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(pythonpath_parts))
     env["OKX_TRADING_SYSTEM_PYTHON"] = PYTHON_BIN
+    env["OKX_CLI_BIN"] = okx_binary()
     env["OKX_ENVIRONMENT_RUNNER"] = "1"
+    if os.name == "nt":
+        path_parts: list[str] = []
+        appdata = env.get("APPDATA")
+        if appdata:
+            path_parts.append(str(Path(appdata) / "npm"))
+        path_parts.append(r"C:\Program Files\nodejs")
+        if env.get("PATH"):
+            path_parts.append(env["PATH"])
+        env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
     profile = command_profile(cmd)
     if profile == "live":
         env["LIVE_TRADING"] = "true"
     if profile and profile != "live":
         for key in OKX_ENV_CREDENTIAL_KEYS:
             env.pop(key, None)
+    popen_kwargs: dict[str, Any] = {"start_new_session": True}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | WINDOWS_NO_WINDOW
     proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT_DIR),
         env=env,
         stdout=log,
         stderr=subprocess.STDOUT,
-        start_new_session=True,
         text=True,
+        **popen_kwargs,
     )
     return {
         "pid": proc.pid,
@@ -4229,6 +5091,14 @@ class LauncherHandler(BaseHTTPRequestHandler):
 
     def send_json(self, status: int, payload: Any) -> None:
         body = json.dumps(with_display_times(json_safe(payload)), ensure_ascii=False, default=str, allow_nan=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_json_raw(self, status: int, payload: Any) -> None:
+        body = json.dumps(json_safe(payload), ensure_ascii=False, default=str, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -4298,7 +5168,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
                 self.send_json(200, payload)
                 return
             if path == "/api/strategy-performance":
-                self.send_json(200, strategy_performance_status())
+                self.send_json_raw(200, strategy_performance_status())
                 return
             if path == "/api/committee-decisions":
                 self.send_json(200, committee_decisions_status())
@@ -4568,6 +5438,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
         if environment:
             result = {"ok": True, "mode": "environment_stop", "environment": environment}
             kill_switch = {"active": False, "environment": environment, "reason": "not set for environment-scoped stop"}
+            environment_runner_stop = EnvironmentRunner(root=ROOT_DIR).stop(environment)
             pro = stop_pro_paper(environment)
             research_sleeves = stop_research_sleeves(environment)
             c_auto_v2 = stop_c_auto_v2_paper(environment)
@@ -4591,6 +5462,7 @@ class LauncherHandler(BaseHTTPRequestHandler):
             {
                 "ok": True,
                 "kill_switch": kill_switch,
+                "environment_runner": environment_runner_stop if environment else {"ok": True, "skipped": True},
                 "order_cancel": order_cancel,
                 "pro_paper": pro,
                 "research_sleeves": research_sleeves,
@@ -4699,6 +5571,10 @@ def main() -> None:
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     (CONTROL_DIR / "launcher.pid").write_text(str(os.getpid()))
+    if os.name == "nt":
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        if hasattr(signal, "SIGBREAK"):
+            signal.signal(signal.SIGBREAK, signal.SIG_IGN)
     if hasattr(signal, "SIGCHLD"):
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 

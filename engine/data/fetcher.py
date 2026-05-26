@@ -31,6 +31,7 @@ from config.settings import (
     TRADING_MODE,
 )
 from execution.broker import create_exchange
+from data.frame_store import read_frame
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +172,16 @@ def _make_exchange(mode: str = "spot", sandbox: bool = False) -> ccxt.Exchange:
             ex = create_exchange(mode=mode, sandbox=True)
         else:
             ex = ccxt.okx({"enableRateLimit": True, "timeout": 20_000, "options": options})
+        _enable_requests_environment_network(ex)
         ex.load_markets()
         _EXCHANGE_CACHE[cache_key] = ex
         return ex
+
+
+def _enable_requests_environment_network(ex: ccxt.Exchange) -> None:
+    session = getattr(ex, "session", None)
+    if session is not None and hasattr(session, "trust_env"):
+        session.trust_env = True
 
 
 def _resolve_symbol_alias(symbol: str, mode: str) -> str:
@@ -197,7 +205,7 @@ def _load_cache(symbol: str, mode: str, timeframe: str) -> Optional[pd.DataFrame
 
     if parquet_path.exists():
         try:
-            df = pd.read_parquet(parquet_path)
+            df = read_frame(parquet_path)
             logger.debug("Cache hit: %s", parquet_path)
             return df
         except Exception as e:

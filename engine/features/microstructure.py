@@ -8,6 +8,8 @@ from typing import List, Optional
 import numpy as np
 import pandas as pd
 
+from data.frame_store import read_frame
+
 
 def build_microstructure_feature_panel(dataset_dir: Path, trade_freq: str = "1min") -> pd.DataFrame:
     """Build a feature panel from a dataset written by scripts/fetch_microstructure.py."""
@@ -92,7 +94,7 @@ def _read(symbol_dir: Path, kind: str) -> Optional[pd.DataFrame]:
     parquet = symbol_dir / f"{kind}.parquet"
     pickle = symbol_dir / f"{kind}.pkl"
     if parquet.exists():
-        return pd.read_parquet(parquet)
+        return read_frame(parquet)
     if pickle.exists():
         return pd.read_pickle(pickle)
     return None

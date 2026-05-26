@@ -36,6 +36,17 @@
     "order_margin_usdt": 10,
     "max_concurrent_positions_per_strategy": 3,
     "same_symbol_policy": "winner_takes_symbol_across_all_three_strategies",
+    "strategy_side_gates": {
+      "trend_pullback_reversal_cluster_elite_quality60_v1": [
+        "short"
+      ],
+      "trend_pullback_reversal_quality_top20_v1": [
+        "short"
+      ],
+      "trend_pullback_reversal_rank_top1_v1": [
+        "short"
+      ]
+    },
     "simultaneous_request_priority": [
       "trend_pullback_reversal_cluster_elite_quality60_v1",
       "trend_pullback_reversal_quality_top20_v1",

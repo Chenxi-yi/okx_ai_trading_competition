@@ -203,7 +203,7 @@ class LiveOwnershipJournal:
                     continue
                 plan = plan_by_decision.get(decision_id, {})
                 candidate = plan.get("candidate") if isinstance(plan.get("candidate"), dict) else {}
-                open_by_inst[inst_id] = {
+                self._merge_open_position(open_by_inst, {
                     "inst_id": inst_id,
                     "decision_id": decision_id,
                     "strategy_id": str(candidate.get("strategy_id") or ""),
@@ -214,7 +214,7 @@ class LiveOwnershipJournal:
                     "fee_usdt": _float(receipt.get("fee_usdt")),
                     "order_ids": receipt.get("order_ids") if isinstance(receipt.get("order_ids"), dict) else {},
                     "plan": plan,
-                }
+                })
                 continue
             if event_type == "adoption":
                 self._apply_repair_open(open_by_inst, event)
@@ -238,7 +238,7 @@ class LiveOwnershipJournal:
         if not inst_id:
             return
         metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
-        open_by_inst[inst_id] = {
+        self._merge_open_position(open_by_inst, {
             "inst_id": inst_id,
             "decision_id": str(event.get("decision_id") or ""),
             "strategy_id": str(event.get("strategy_id") or ""),
@@ -249,7 +249,50 @@ class LiveOwnershipJournal:
             "fee_usdt": _float(metadata.get("fee_usdt")),
             "order_ids": metadata.get("order_ids") if isinstance(metadata.get("order_ids"), dict) else {},
             "repair_event": dict(event),
-        }
+        })
+
+    def _merge_open_position(self, open_by_inst: dict[str, dict[str, Any]], record: Mapping[str, Any]) -> None:
+        inst_id = str(record.get("inst_id") or "")
+        if not inst_id:
+            return
+        existing = open_by_inst.get(inst_id)
+        owner = dict(record)
+        owner.pop("owners", None)
+        owner.pop("filled_contracts_total", None)
+        owner["filled_contracts"] = _float(record.get("filled_contracts"))
+        if existing is None:
+            row = dict(record)
+            row["owners"] = [owner]
+            row["filled_contracts_total"] = _float(record.get("filled_contracts"))
+            open_by_inst[inst_id] = row
+            return
+
+        owners = existing.get("owners")
+        if not isinstance(owners, list):
+            owners = [dict(existing)]
+        owners.append(owner)
+        old_size = _float(existing.get("filled_contracts_total") or existing.get("filled_contracts"))
+        add_size = _float(record.get("filled_contracts"))
+        new_size = old_size + add_size
+        old_price = _float(existing.get("fill_price"))
+        add_price = _float(record.get("fill_price"))
+        if new_size > 0 and old_price > 0 and add_price > 0:
+            fill_price = ((old_price * old_size) + (add_price * add_size)) / new_size
+        else:
+            fill_price = add_price or old_price
+        strategies = [str(item.get("strategy_id") or "") for item in owners if isinstance(item, Mapping)]
+        decisions = [str(item.get("decision_id") or "") for item in owners if isinstance(item, Mapping)]
+        existing.update(
+            {
+                "filled_contracts": new_size,
+                "filled_contracts_total": new_size,
+                "fill_price": fill_price,
+                "fee_usdt": _float(existing.get("fee_usdt")) + _float(record.get("fee_usdt")),
+                "strategy_id": ",".join(dict.fromkeys(item for item in strategies if item)),
+                "decision_id": ",".join(dict.fromkeys(item for item in decisions if item)),
+                "owners": owners,
+            }
+        )
 
     def _validate_receipt(self, receipt: ExecutionReceipt) -> None:
         if receipt.environment != self.environment:

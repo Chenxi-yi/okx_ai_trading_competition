@@ -53,7 +53,10 @@ function fmtPrice(value) {
 }
 
 function shortTime(value) {
-  return value ? String(value).replace(' 北京时间', '') : '--';
+  if (!value) return '--';
+  const text = String(value);
+  const match = text.match(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/);
+  return match ? match[0].replace('T', ' ') : text;
 }
 
 function accountTruthLabel(verification = {}) {
@@ -350,27 +353,153 @@ async function refreshStrategies() {
 
 function renderStrategies(data) {
   const rows = data.strategies || [];
-  $('strategySummary').textContent = `运行中 paper 策略 ${data.running_paper_strategies ?? 0} 个 · 总策略 ${rows.length} 个`;
+  $('strategySummary').textContent = `运行 ${data.running_strategies ?? 0} · 异常 ${data.degraded_strategies ?? 0} · 阻塞 ${data.blocked_strategies ?? 0} · 未运行 ${data.stopped_strategies ?? 0} · 总策略 ${rows.length}`;
   $('strategyList').innerHTML = rows.map((row) => {
     const accounting = row.accounting || null;
     const accountingLabel = accounting
       ? `accounting ${accounting.environment} · fills ${accounting.exchange_fills ?? 0} · bills ${accounting.exchange_bills ?? 0}`
       : '';
+    const status = strategyStatusLabel(row);
+    const envs = renderStrategyEnvironments(row);
+    const days = formatRuntimeDays(row.runtime_days);
+    const openPositions = row.runtime_open_positions ?? row.open_positions ?? 0;
+    const candidates = row.candidate_count ?? 0;
+    const registration = strategyRegistrationLabel(row);
+    const comfort = comfortZoneStatus(row);
     return `
-      <div class="strategy-row">
-        <div>
+      <div class="strategy-row ${row.running ? 'is-running' : ''}">
+        <div class="strategy-main">
           <strong>${escapeHtml(row.display_name || row.strategy_id)}</strong>
-          <span>${escapeHtml((row.sources || []).join(', ') || row.paper_role || '--')}</span>
+          <span class="strategy-id">${escapeHtml(row.strategy_id || '--')}</span>
+          ${registration ? `<span class="strategy-registration">${escapeHtml(registration)}</span>` : ''}
           ${accountingLabel ? `<span>${escapeHtml(accountingLabel)}</span>` : ''}
           ${row.runtime_rule ? `<span class="strategy-rule">${escapeHtml(row.runtime_rule)}</span>` : ''}
+          ${!row.running && row.why_not_running ? `<span class="strategy-reason">${escapeHtml(row.why_not_running)}</span>` : ''}
         </div>
-        <div>胜率 ${row.win_rate == null ? '--' : fmtPct(row.win_rate)}</div>
-        <div class="${Number(row.pnl) >= 0 ? 'pos' : 'neg'}">${fmtMoney(row.pnl)}</div>
-        <button data-stop-strategy="${escapeHtml(row.strategy_id)}" data-sources="${escapeHtml(JSON.stringify(row.sources || []))}" type="button">停止</button>
+        <div class="strategy-envs">${envs || '<span class="muted">未接入 runner</span>'}</div>
+        <div class="strategy-status-stack">
+          <span class="comfort-badge comfort-${escapeHtml(comfort.className)}">${escapeHtml(comfort.label)}</span>
+          <span class="status-badge status-${escapeHtml(row.runtime_status || 'stopped')}">${escapeHtml(status)}</span>
+        </div>
+        <div class="strategy-metrics">
+          <strong class="${Number(row.pnl) >= 0 ? 'pos' : 'neg'}">${fmtMoney(row.pnl)}</strong>
+          <span>胜率 ${row.win_rate == null ? '--' : fmtPct(row.win_rate)} · ${days}</span>
+          <span>持仓 ${openPositions} · 候选 ${candidates}</span>
+        </div>
+        <button data-stop-strategy="${escapeHtml(row.strategy_id)}" data-sources="${escapeHtml(JSON.stringify(row.sources || []))}" type="button" ${row.running ? '' : 'disabled'}>停止</button>
       </div>
     `;
   }).join('') || '<div class="empty">暂无策略数据</div>';
+  hydrateStrategyRows(rows);
   drawStrategyChart(rows);
+}
+
+function hydrateStrategyRows(rows) {
+  document.querySelectorAll('#strategyList .strategy-row').forEach((el, idx) => {
+    const row = rows[idx] || {};
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-expanded', 'false');
+    const details = document.createElement('div');
+    details.className = 'strategy-details';
+    details.hidden = true;
+    details.innerHTML = renderStrategyDetails(row);
+    el.appendChild(details);
+    const toggle = () => {
+      const open = details.hidden;
+      details.hidden = !open;
+      el.classList.toggle('is-expanded', open);
+      el.setAttribute('aria-expanded', String(open));
+    };
+    el.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      toggle();
+    });
+    el.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggle();
+    });
+  });
+}
+
+function renderStrategyDetails(row) {
+  const comfort = row.comfort_zone || {};
+  const comfortStatus = row.comfort_zone_status || {};
+  const health = comfortStatus.performance_health || {};
+  const conditions = Array.isArray(comfort.conditions) ? comfort.conditions : [];
+  const allowed = Array.isArray(comfort.allowed_sides) ? comfort.allowed_sides.join(' / ') : '';
+  return `
+    <div class="strategy-detail-grid">
+      <div>
+        <h3>Strategy</h3>
+        <p>${escapeHtml(row.paper_role || row.description || row.runtime_rule || 'No strategy description available.')}</p>
+      </div>
+      <div>
+        <h3>Comfort Zone</h3>
+        <p>${escapeHtml(comfort.summary || 'Comfort zone is not documented yet.')}</p>
+        <p><strong>Current:</strong> ${escapeHtml(comfortStatus.label || 'comfort unknown')} · ${escapeHtml(comfortStatus.reason || '--')}</p>
+        <p><strong>Validation:</strong> ${escapeHtml(health.status || 'unknown')} · ${escapeHtml(health.reason || '--')}</p>
+        ${allowed ? `<p><strong>Allowed side:</strong> ${escapeHtml(allowed)}</p>` : ''}
+        ${conditions.length ? `<ul>${conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+        ${comfort.history ? `<p class="strategy-history">${escapeHtml(comfort.history)}</p>` : ''}
+        ${comfort.committee_gate ? `<p class="strategy-gate">Committee gate: ${escapeHtml(comfort.committee_gate)}</p>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function comfortZoneStatus(row) {
+  const status = row.comfort_zone_status || {};
+  const value = String(status.status || 'unknown');
+  if (value === 'active') return { label: '舒适区', className: 'active' };
+  if (value === 'violated') return { label: '舒适区违背', className: 'breach' };
+  if (value === 'blocked') return { label: '非舒适区', className: 'blocked' };
+  if (value === 'inactive') return { label: row.running ? '非舒适区' : '未评估', className: row.running ? 'inactive' : 'unknown' };
+  return { label: '舒适区未知', className: 'unknown' };
+}
+
+function strategyRegistrationLabel(row) {
+  const kind = String(row.registration_kind || '');
+  if (kind === 'runtime_strategy') {
+    const status = row.registration_status || {};
+    const envs = status.runtime_environments || [];
+    const envLabel = envs.length ? envs.join('/') : 'no runtime env';
+    return `registry ${status.status || '--'} · ${envLabel}`;
+  }
+  if (kind === 'registered_variants') {
+    const count = row.registration_status?.variant_count ?? (row.registered_variants || []).length;
+    return `registered variants · ${count}`;
+  }
+  if (kind === 'committee_signal_family') return 'committee signal family';
+  if (kind === 'unregistered') return 'not registered';
+  return '';
+}
+
+function strategyStatusLabel(row) {
+  const status = String(row.runtime_status || (row.running ? 'running' : 'stopped'));
+  if (status === 'running') return '运行中';
+  if (status === 'degraded') return '异常';
+  if (status === 'blocked') return '阻塞';
+  return '未运行';
+}
+
+function formatRuntimeDays(days) {
+  const n = Number(days);
+  if (!Number.isFinite(n)) return '未启动';
+  if (n < 0.1) return '<0.1天';
+  return `${n.toFixed(1)}天`;
+}
+
+function renderStrategyEnvironments(row) {
+  return (row.environments || []).map((env) => {
+    const name = env.environment === 'competition' ? '比赛' : env.environment === 'personal' ? '个人' : (env.environment || '--');
+    const scheduler = env.scheduler_status || (env.running ? 'running' : 'stopped');
+    const cls = env.running ? (env.scheduler_error ? 'warn' : 'run') : 'stop';
+    const days = env.started_at && env.running ? formatRuntimeDays((Date.now() - Date.parse(env.started_at)) / 86400000) : '未启动';
+    const detail = `${scheduler}${env.open_positions != null ? ` · 持仓${env.open_positions}` : ''}${env.candidate_count != null ? ` · 候选${env.candidate_count}` : ''}`;
+    return `<span class="env-badge ${cls}"><strong>${escapeHtml(name)}</strong><em>${escapeHtml(detail)}</em><small>${escapeHtml(days)}</small></span>`;
+  }).join('');
 }
 
 function drawStrategyChart(rows) {
@@ -382,6 +511,8 @@ function drawStrategyChart(rows) {
   const sourceLabel = {
     micro_live_personal: '个人',
     paper_competition: '比赛',
+    research_personal: '个人研究',
+    research_competition: '比赛研究',
     legacy_paper: '旧paper',
     monster_paper: 'monster',
   };
@@ -413,17 +544,59 @@ function drawStrategyChart(rows) {
     return;
   }
   const pointValue = (point) => Number(point.value ?? point.nav ?? point.pnl ?? 0);
+  const pointTime = (point) => {
+    const ts = Date.parse(point.ts || point.timestamp || point.updated_at || '');
+    return Number.isFinite(ts) ? ts : NaN;
+  };
   const values = visibleSeries.flatMap((row) => row.points.map(pointValue).filter(Number.isFinite));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const times = visibleSeries.flatMap((row) => row.points.map(pointTime).filter(Number.isFinite));
+  let min = Math.min(...values, 0);
+  let max = Math.max(...values, 0);
+  const pad = Math.max(0.5, (max - min) * 0.12);
+  min -= pad;
+  max += pad;
   const span = Math.max(1e-9, max - min);
+  const minTime = times.length ? Math.min(...times) : 0;
+  const maxTime = times.length ? Math.max(...times) : 1;
+  const timeSpan = Math.max(1, maxTime - minTime);
+  const left = 72;
+  const right = 24;
+  const top = 26;
+  const bottom = 42;
+  const plotW = canvas.width - left - right;
+  const plotH = canvas.height - top - bottom;
   const colors = {
     micro_live_personal: '#0f766e',
     paper_competition: '#2563eb',
+    research_personal: '#0f766e',
+    research_competition: '#2563eb',
     legacy_paper: '#6b7280',
     monster_paper: '#b45309',
     unknown: '#374151',
   };
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '12px system-ui, sans-serif';
+  for (let i = 0; i <= 4; i += 1) {
+    const y = top + plotH * (i / 4);
+    const value = max - span * (i / 4);
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(canvas.width - right, y);
+    ctx.stroke();
+    ctx.fillText(value.toFixed(2), 12, y + 4);
+  }
+  const zeroY = top + plotH * ((max - 0) / span);
+  if (zeroY >= top && zeroY <= top + plotH) {
+    ctx.strokeStyle = '#9ca3af';
+    ctx.beginPath();
+    ctx.moveTo(left, zeroY);
+    ctx.lineTo(canvas.width - right, zeroY);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#6b7280';
+  ctx.fillText(times.length ? shortTime(new Date(minTime).toISOString()) : '--', left, canvas.height - 14);
+  ctx.fillText(times.length ? shortTime(new Date(maxTime).toISOString()) : '--', canvas.width - 110, canvas.height - 14);
   visibleSeries.forEach((row, idx) => {
     const points = row.points || [];
     const color = colors[row.source] || colors.unknown;
@@ -431,10 +604,13 @@ function drawStrategyChart(rows) {
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     points.forEach((point, i) => {
-      const x = 30 + (canvas.width - 60) * (i / Math.max(1, points.length - 1));
+      const ts = pointTime(point);
+      const x = Number.isFinite(ts)
+        ? left + plotW * ((ts - minTime) / timeSpan)
+        : left + plotW * (i / Math.max(1, points.length - 1));
       const value = pointValue(point);
       if (!Number.isFinite(value)) return;
-      const y = canvas.height - 28 - (canvas.height - 56) * ((value - min) / span);
+      const y = top + plotH * ((max - value) / span);
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
@@ -442,8 +618,9 @@ function drawStrategyChart(rows) {
     const last = points[points.length - 1];
     const lastValue = last ? pointValue(last) : NaN;
     if (Number.isFinite(lastValue)) {
-      const x = canvas.width - 24;
-      const y = canvas.height - 28 - (canvas.height - 56) * ((lastValue - min) / span);
+      const lastTs = pointTime(last);
+      const x = Number.isFinite(lastTs) ? left + plotW * ((lastTs - minTime) / timeSpan) : canvas.width - right;
+      const y = top + plotH * ((max - lastValue) / span);
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(x, y, 4, 0, Math.PI * 2);
@@ -549,25 +726,45 @@ async function stopEnv(env) {
   }
 }
 
-async function closePosition(env, instId) {
+async function closePosition(env, instId, button = null) {
   const ok = window.confirm(`确认${env === 'competition' ? '比赛' : '个人'}账户一键平仓 ${instId}？`);
   if (!ok) return;
+  const key = `close-symbol:${env}:${instId}`;
+  if (state.inFlight.has(key)) return;
+  state.inFlight.add(key);
+  const originalText = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '平仓中...';
+  }
   $(`${env}Feedback`).textContent = `平仓 ${instId}...`;
-  const result = await api('/api/account/close-symbol', {
-    method: 'POST',
-    body: JSON.stringify({
-      instId,
-      environment: env,
-      confirm_live_close: true,
-    }),
-    allowNotOk: true,
-  });
-  const truth = accountTruthLabel(result.verification || {});
-  $(`${env}Feedback`).textContent = result.ok
-    ? `已平仓 ${instId} · ${truth}`
-    : `平仓需复查 ${instId} · ${truth}`;
-  await refreshAccounts();
-  await refreshRuntime(env);
+  try {
+    const result = await api('/api/account/close-symbol', {
+      method: 'POST',
+      body: JSON.stringify({
+        instId,
+        environment: env,
+        confirm_live_close: true,
+      }),
+      allowNotOk: true,
+    });
+    const truth = accountTruthLabel(result.verification || {});
+    const detail = result.error || result.message || (Array.isArray(result.errors) ? result.errors.join('；') : '');
+    $(`${env}Feedback`).textContent = result.ok
+      ? `已平仓 ${instId} · ${truth}`
+      : `平仓需复查 ${instId} · ${truth}${detail ? ` · ${detail}` : ''}`;
+    await refreshAccounts();
+    await refreshRuntime(env);
+    await refreshOperations();
+  } catch (err) {
+    $(`${env}Feedback`).textContent = `平仓失败 ${instId} · ${err.message}`;
+  } finally {
+    state.inFlight.delete(key);
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText || '一键平仓';
+    }
+  }
 }
 
 async function closeAllPositions(env) {
@@ -579,6 +776,7 @@ async function closeAllPositions(env) {
   if (state.inFlight.has(key)) return;
   state.inFlight.add(key);
   setButtonBusy($(`${env}CloseAllBtn`), true, '清仓中...');
+  $(`${env}Feedback`).textContent = `一键清仓中，请等待交易所确认...`;
   try {
     const result = await api('/api/account/close-all', {
       method: 'POST',
@@ -592,9 +790,10 @@ async function closeAllPositions(env) {
     const failed = Array.isArray(result.errors) ? result.errors.length : 0;
     const found = result.positions_found ?? positions.length;
     const truth = accountTruthLabel(result.verification || {});
+    const detail = Array.isArray(result.errors) && result.errors.length ? ` · ${result.errors.join('；')}` : '';
     $(`${env}Feedback`).textContent = result.ok
       ? `一键清仓完成 · 已处理 ${closed}/${found} · ${truth}`
-      : `一键清仓未完成 · 已处理 ${closed}/${found} · 失败 ${failed} · ${truth}`;
+      : `一键清仓未完成 · 已处理 ${closed}/${found} · 失败 ${failed} · ${truth}${detail}`;
     await refreshAccounts();
     await refreshRuntime(env);
     await refreshStrategies();
@@ -646,7 +845,7 @@ $('competitionCloseAllBtn').addEventListener('click', () => closeAllPositions('c
 document.addEventListener('click', (event) => {
   const closeTarget = event.target.closest('[data-close-symbol]');
   if (closeTarget) {
-    closePosition(closeTarget.dataset.env, closeTarget.dataset.closeSymbol).catch((err) => {
+    closePosition(closeTarget.dataset.env, closeTarget.dataset.closeSymbol, closeTarget).catch((err) => {
       $(`${closeTarget.dataset.env}Feedback`).textContent = err.message;
     });
     return;

@@ -288,7 +288,156 @@ p,
 }
 
 .strategy-row {
-  grid-template-columns: minmax(260px, 1.4fr) 120px 120px 90px;
+  grid-template-columns: minmax(300px, 1.35fr) minmax(240px, 1fr) 92px minmax(170px, 0.75fr) 78px;
+  align-items: start;
+  cursor: pointer;
+}
+
+.strategy-row.is-running {
+  border-left: 4px solid var(--good);
+}
+
+.strategy-row.is-expanded {
+  border-color: #cbd5e1;
+}
+
+.strategy-details {
+  grid-column: 1 / -1;
+  cursor: default;
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.strategy-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 18px;
+}
+
+.strategy-detail-grid h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.strategy-detail-grid p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.strategy-detail-grid ul {
+  margin: 0 0 8px 18px;
+  padding: 0;
+  color: var(--muted);
+}
+
+.strategy-detail-grid li {
+  margin-bottom: 4px;
+}
+
+.strategy-gate {
+  color: #166534 !important;
+}
+
+.strategy-main strong,
+.strategy-metrics strong {
+  display: block;
+}
+
+.strategy-id,
+.strategy-registration,
+.strategy-reason {
+  overflow-wrap: anywhere;
+}
+
+.strategy-registration {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.strategy-row .strategy-rule {
+  margin-top: 4px;
+}
+
+.strategy-reason {
+  margin-top: 4px;
+  color: var(--bad) !important;
+}
+
+.strategy-envs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.env-badge,
+.status-badge,
+.comfort-badge {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: #fff;
+}
+
+.strategy-status-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.env-badge {
+  min-width: 108px;
+}
+
+.env-badge strong,
+.env-badge em,
+.env-badge small {
+  display: block;
+  font-style: normal;
+  line-height: 1.25;
+}
+
+.env-badge em,
+.env-badge small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.env-badge.run,
+.status-running,
+.comfort-active {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.env-badge.warn,
+.status-degraded,
+.status-blocked,
+.comfort-blocked {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.env-badge.stop,
+.status-stopped,
+.comfort-inactive,
+.comfort-unknown {
+  border-color: var(--line);
+  background: #f8fafc;
+  color: var(--muted);
+}
+
+.comfort-breach {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: var(--bad);
+}
+
+.strategy-metrics span {
+  display: block;
+  margin-top: 3px;
 }
 
 .decision-row {

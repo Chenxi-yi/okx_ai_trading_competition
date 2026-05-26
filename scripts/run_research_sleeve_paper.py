@@ -9,11 +9,12 @@ import errno
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,13 @@ DEFAULT_FEE_BPS_PER_SIDE = 5.0
 DEFAULT_SLIPPAGE_BPS_PER_SIDE = 2.0
 MIN_TARGET_NET_PROFIT_BPS = 10.0
 MAX_TREND_FEATURE_AGE_SEC = 2 * 3600
+XAU_SUPERTREND_STRATEGY_ID = "xau_supertrend_ema_4h_v1"
+TREND_PULLBACK_GROUP_IDS = (
+    "trend_pullback_reversal_cluster_elite_quality60_v1",
+    "trend_pullback_reversal_quality_top20_v1",
+    "trend_pullback_reversal_rank_top1_v1",
+)
+WINDOWS_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 sys.path.insert(0, str(ENGINE_DIR))
 sys.path.insert(0, str(ROOT / "scripts"))
 
@@ -43,6 +51,7 @@ from arbitration.signal_committee import candidate_trade_from_signal  # noqa: E4
 from contracts import ApprovedTradePlan, Decision, ExecutionReceipt, InstrumentSpec, Signal  # noqa: E402
 from execution.position_close import close_position_via_kit  # noqa: E402
 from execution.router import ExecutionConfig, LiveExecutionRouter  # noqa: E402
+from data.frame_store import read_frame  # noqa: E402
 from position import LivePositionLifecycleService  # noqa: E402
 from run_c_auto_v2_paper import _build_latest_features as _build_c_auto_latest_features  # noqa: E402
 from strategies.research_sleeve_signal import (  # noqa: E402
@@ -215,6 +224,50 @@ def _claim_exclusive_strategy_lock(strategy_id: str, environment: str) -> None:
         return
 
 
+def _claim_transient_lock(name: str, *, timeout_sec: float = 20.0, stale_sec: float = 120.0) -> Path:
+    safe_name = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in name)
+    lock_path = CONTROL_DIR / f"{safe_name}.lock"
+    payload = {"pid": os.getpid(), "name": name, "ts": datetime.now(timezone.utc).isoformat()}
+    deadline = time.time() + max(0.0, timeout_sec)
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            existing = _read_lock(lock_path)
+            existing_pid = int(existing.get("pid") or 0) if isinstance(existing, dict) else 0
+            existing_ts = str(existing.get("ts") or "") if isinstance(existing, dict) else ""
+            stale = True
+            if existing_ts:
+                try:
+                    stale = (datetime.now(timezone.utc) - datetime.fromisoformat(existing_ts.replace("Z", "+00:00"))).total_seconds() > stale_sec
+                except Exception:
+                    stale = True
+            if existing_pid and _pid_alive(existing_pid) and not stale:
+                if time.time() >= deadline:
+                    raise TimeoutError(f"timed out waiting for lock {name}")
+                time.sleep(0.5)
+                continue
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            continue
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh, sort_keys=True)
+        return lock_path
+
+
+def _release_transient_lock(lock_path: Path | None) -> None:
+    if not lock_path:
+        return
+    current = _read_lock(lock_path)
+    if isinstance(current, dict) and int(current.get("pid") or 0) == os.getpid():
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _read_lock(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text())
@@ -285,6 +338,8 @@ def _run_cycle(args: argparse.Namespace, state_id: str) -> dict[str, Any]:
         candidates, marks = _btc_daily_breakout_swing_signals(args)
     elif args.strategy_id.startswith("us_equity_token_"):
         candidates, marks = _stock_token_signals(args)
+    elif args.strategy_id == XAU_SUPERTREND_STRATEGY_ID:
+        candidates, marks = _xau_supertrend_ema_signals(args, params)
     elif args.strategy_id.startswith("trend_pullback_reversal_"):
         candidates, marks = _trend_pullback_signals(args, params)
     else:
@@ -407,66 +462,120 @@ def _run_cycle(args: argparse.Namespace, state_id: str) -> dict[str, Any]:
         candidates = []
 
     if not positions:
-        if args.strategy_id.startswith("trend_pullback_reversal_"):
-            candidates, committee_events = _submit_trend_candidates_to_committee(args, candidates, positions, realized_nav, now)
-            ledger.extend(committee_events)
-        for cand in candidates:
-            symbol = str(cand["symbol"])
-            if symbol in positions:
-                continue
-            if symbol in live_open_symbols:
-                continue
-            if symbol in cooldown_symbols:
-                ledger.append(_candidate_skip_event(now, args.strategy_id, symbol, str(cand["signal_family"]), f"post_exit_cooldown_{cooldown_hours:g}h"))
-                continue
-            notional = min(float(cand["budget"]), max(0.0, realized_nav)) * float(cand["leverage"])
-            if notional <= 0:
-                continue
-            pos = Position(
-                symbol=symbol,
-                side=str(cand["side"]),
-                entry_ts=now,
-                entry_price=float(cand["entry_price"]),
-                notional=notional,
-                leverage=float(cand["leverage"]),
-                stop=float(cand["stop"]),
-                target=cand.get("target"),
-                source_strategy_id=args.strategy_id,
-                signal_family=str(cand["signal_family"]),
-                thesis_contract=dict(cand["thesis_contract"]),
+        group_lock: Path | None = None
+        try:
+            is_trend_pullback = args.strategy_id in TREND_PULLBACK_GROUP_IDS
+            if is_trend_pullback:
+                group_lock = _claim_transient_lock(f"trend_pullback_entry_{args.environment}")
+            committee_positions: dict[str, Any] = dict(positions)
+            if is_trend_pullback:
+                committee_positions.update(_trend_pullback_group_positions(args.environment, exclude_state_id=state_id))
+            if args.strategy_id.startswith("trend_pullback_reversal_") or args.strategy_id == XAU_SUPERTREND_STRATEGY_ID:
+                candidates, committee_events = _submit_trend_candidates_to_committee(args, candidates, committee_positions, realized_nav, now)
+                ledger.extend(committee_events)
+            if is_trend_pullback:
+                sibling_symbols = set(_trend_pullback_group_positions(args.environment, exclude_state_id=state_id))
+                blocked_symbols = sorted({str(cand["symbol"]) for cand in candidates if str(cand["symbol"]) in sibling_symbols})
+                if blocked_symbols:
+                    candidates = [cand for cand in candidates if str(cand["symbol"]) not in blocked_symbols]
+                    ledger.append(
+                        {
+                            "ts": now,
+                            "event": "entry_blocked",
+                            "strategy_id": args.strategy_id,
+                            "source_strategy_id": args.strategy_id,
+                            "reason": "trend_pullback_same_symbol_group_exposure",
+                            "symbols": blocked_symbols,
+                        }
+                    )
+            if args.execution == "live" and candidates:
+                refreshed_live_symbols = _live_open_symbols(args)
+                refreshed_foreign = sorted(symbol for symbol in refreshed_live_symbols if symbol not in positions)
+                blocked_symbols = sorted({str(cand["symbol"]) for cand in candidates if str(cand["symbol"]) in refreshed_foreign})
+                if blocked_symbols:
+                    candidates = [cand for cand in candidates if str(cand["symbol"]) not in blocked_symbols]
+                    ledger.append(
+                        {
+                            "ts": now,
+                            "event": "entry_blocked",
+                            "strategy_id": args.strategy_id,
+                            "source_strategy_id": args.strategy_id,
+                            "reason": "symbol_has_foreign_or_unknown_exchange_position_after_group_lock",
+                            "symbols": blocked_symbols,
+                            "foreign_live_symbols": refreshed_foreign,
+                        }
+                    )
+            for cand in candidates:
+                symbol = str(cand["symbol"])
+                if symbol in positions:
+                    continue
+                if symbol in live_open_symbols:
+                    continue
+                if symbol in cooldown_symbols:
+                    ledger.append(_candidate_skip_event(now, args.strategy_id, symbol, str(cand["signal_family"]), f"post_exit_cooldown_{cooldown_hours:g}h"))
+                    continue
+                approved_budget = float(cand.get("committee_size_usdt") or cand["budget"])
+                notional = min(approved_budget, max(0.0, realized_nav)) * float(cand["leverage"])
+                if notional <= 0:
+                    continue
+                pos = Position(
+                    symbol=symbol,
+                    side=str(cand["side"]),
+                    entry_ts=now,
+                    entry_price=float(cand["entry_price"]),
+                    notional=notional,
+                    leverage=float(cand["leverage"]),
+                    stop=float(cand["stop"]),
+                    target=cand.get("target"),
+                    source_strategy_id=args.strategy_id,
+                    signal_family=str(cand["signal_family"]),
+                    thesis_contract=dict(cand["thesis_contract"]),
+                )
+                if args.execution == "live":
+                    pos = _refresh_live_entry(args, pos)
+                fee_guard = _fee_guard(pos)
+                if pos.target is not None and not fee_guard["target_net_profitable"]:
+                    ledger.append(
+                        _candidate_skip_event(
+                            now,
+                            args.strategy_id,
+                            symbol,
+                            str(cand["signal_family"]),
+                            "target_not_net_profitable_after_fees",
+                        )
+                        | fee_guard
+                    )
+                    continue
+                live_order = _place_live_entry(args, pos) if args.execution == "live" else None
+                if args.execution == "live" and not _live_entry_filled(live_order):
+                    ledger.append(
+                        _event(
+                            now,
+                            "entry_failed",
+                            pos,
+                            pos.entry_price,
+                            reason=str(cand["signal_family"]),
+                            live_order=live_order,
+                        )
+                        | fee_guard
+                    )
+                    continue
+                positions[symbol] = pos
+                ledger.append(_event(now, "entry", pos, pos.entry_price, reason=str(cand["signal_family"]), live_order=live_order) | fee_guard)
+                break
+        except TimeoutError as exc:
+            ledger.append(
+                {
+                    "ts": now,
+                    "event": "entry_blocked",
+                    "strategy_id": args.strategy_id,
+                    "source_strategy_id": args.strategy_id,
+                    "reason": "entry_group_lock_timeout",
+                    "error": str(exc),
+                }
             )
-            if args.execution == "live":
-                pos = _refresh_live_entry(args, pos)
-            fee_guard = _fee_guard(pos)
-            if pos.target is not None and not fee_guard["target_net_profitable"]:
-                ledger.append(
-                    _candidate_skip_event(
-                        now,
-                        args.strategy_id,
-                        symbol,
-                        str(cand["signal_family"]),
-                        "target_not_net_profitable_after_fees",
-                    )
-                    | fee_guard
-                )
-                continue
-            live_order = _place_live_entry(args, pos) if args.execution == "live" else None
-            if args.execution == "live" and not _live_entry_filled(live_order):
-                ledger.append(
-                    _event(
-                        now,
-                        "entry_failed",
-                        pos,
-                        pos.entry_price,
-                        reason=str(cand["signal_family"]),
-                        live_order=live_order,
-                    )
-                    | fee_guard
-                )
-                continue
-            positions[symbol] = pos
-            ledger.append(_event(now, "entry", pos, pos.entry_price, reason=str(cand["signal_family"]), live_order=live_order) | fee_guard)
-            break
+        finally:
+            _release_transient_lock(group_lock)
 
     unrealized = sum(_pnl(pos, marks.get(pos.symbol, pos.entry_price)) for pos in positions.values())
     return {
@@ -509,6 +618,21 @@ def _research_lifecycle_exits(
     if now_dt.tzinfo is None:
         now_dt = now_dt.replace(tzinfo=timezone.utc)
     return LivePositionLifecycleService().exit_plans(raw_positions, marks, now=now_dt)
+
+
+def _trend_pullback_group_positions(environment: str, *, exclude_state_id: str = "") -> dict[str, dict[str, Any]]:
+    positions: dict[str, dict[str, Any]] = {}
+    for state_id in TREND_PULLBACK_GROUP_IDS:
+        if state_id == exclude_state_id:
+            continue
+        state = _load_state(state_id, environment)
+        raw_positions = state.get("positions") if isinstance(state, dict) else {}
+        if not isinstance(raw_positions, dict):
+            continue
+        for symbol, pos in raw_positions.items():
+            if isinstance(pos, dict):
+                positions[str(symbol)] = dict(pos)
+    return positions
 
 
 def _research_exit_reason(reason: str) -> str:
@@ -577,11 +701,14 @@ def _trend_pullback_signals(args: argparse.Namespace, params: dict[str, Any]) ->
     path = FEATURE_DIR / dataset_id / "features.parquet"
     if not path.exists():
         return [], {}
-    historical = pd.read_parquet(path).sort_index()
-    if historical.empty:
-        return [], {}
     latest = _trend_live_latest_features(args, params)
-    df = pd.concat([historical, latest]).sort_index()
+    needs_history = str(args.strategy_id).endswith("cluster_elite_quality60_v1")
+    historical = pd.DataFrame()
+    if needs_history:
+        historical = read_frame(path).sort_index()
+        if historical.empty:
+            return [], {}
+    df = pd.concat([historical, latest]).sort_index() if needs_history else latest.sort_index()
     required = {
         "close",
         "volume_usd",
@@ -775,13 +902,21 @@ def _select_trend_pullback_variant(strategy_id: str, candidates: pd.DataFrame, d
         return candidates
     ranked = candidates.sort_values("quality_score", ascending=False).copy()
     if strategy_id.endswith("quality_top20_v1"):
-        frac = float(params.get("quality_top_frac") or 0.2)
+        floor = float(params.get("quality_min_score") or 0.63)
+        ranked = ranked[ranked["quality_score"] >= floor]
+        if ranked.empty:
+            return ranked
+        frac = float(params.get("quality_top_frac") or 0.05)
         count = max(1, math.ceil(len(ranked) * frac))
         return ranked.head(count)
     if strategy_id.endswith("rank_top1_v1"):
+        floor = float(params.get("quality_min_score") or 0.61)
+        ranked = ranked[ranked["quality_score"] >= floor]
+        if ranked.empty:
+            return ranked
         return ranked.head(int(params.get("rank_top_n") or 1))
     if strategy_id.endswith("cluster_elite_quality60_v1"):
-        floor = float(params.get("quality_min_score") or 0.6)
+        floor = float(params.get("quality_min_score") or 0.68)
         current_ts = pd.to_datetime(ranked["entry_ts"], utc=True).max()
         historical = _trend_pullback_candidate_frame(df, params, require_forward=True)
         if historical.empty:
@@ -811,6 +946,164 @@ def _select_trend_pullback_variant(strategy_id: str, candidates: pd.DataFrame, d
         selected = current[(current["quality_score"] >= floor) & current["cluster"].isin(model.eligible_clusters)]
         return selected.head(int(params.get("rank_top_n") or params.get("max_concurrent_positions") or 3))
     return ranked
+
+
+def _xau_supertrend_ema_signals(args: argparse.Namespace, params: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, float]]:
+    symbol = str(params.get("symbol") or "XAU_USDT").replace("-", "_").replace("/", "_")
+    timeframe = str(params.get("timeframe") or "4h")
+    df = _load_ohlcv(symbol, timeframe)
+    if len(df) < int(params.get("min_bars") or 140):
+        return [], {}
+    frame = _xau_supertrend_features(
+        df,
+        atr_window=int(params.get("atr_window") or 10),
+        supertrend_mult=float(params.get("supertrend_mult") or 1.5),
+        ema_fast=int(params.get("ema_fast") or 9),
+        ema_slow=int(params.get("ema_slow") or 21),
+        ema_filter=int(params.get("ema_filter") or 101),
+    )
+    latest = frame.iloc[-1]
+    prev = frame.iloc[-2]
+    mark = float(latest["close"])
+    marks = {symbol: mark}
+    if not bool(latest.get("ready", False)):
+        return [], marks
+    fast_now = float(latest["ema_fast"])
+    slow_now = float(latest["ema_slow"])
+    fast_prev = float(prev["ema_fast"])
+    slow_prev = float(prev["ema_slow"])
+    st_now = int(latest["supertrend_dir"])
+    st_prev = int(prev["supertrend_dir"])
+    ema_filter_value = float(latest["ema_filter"])
+    long_trigger = (fast_prev <= slow_prev and fast_now > slow_now) or (st_prev <= 0 and st_now > 0)
+    short_trigger = (fast_prev >= slow_prev and fast_now < slow_now) or (st_prev >= 0 and st_now < 0)
+    side = ""
+    if st_now > 0 and mark > ema_filter_value and fast_now > slow_now and long_trigger:
+        side = "long"
+    elif st_now < 0 and mark < ema_filter_value and fast_now < slow_now and short_trigger:
+        side = "short"
+    if not side:
+        return [], marks
+    atr = max(1e-9, float(latest["atr"]))
+    stop_mult = float(params.get("atr_stop_mult") or 2.5)
+    target_mult = float(params.get("atr_target_mult") or 3.0)
+    if side == "long":
+        stop = mark - stop_mult * atr
+        target = mark + target_mult * atr
+    else:
+        stop = mark + stop_mult * atr
+        target = mark - target_mult * atr
+    quality = _xau_signal_quality(latest, side)
+    requested_budget = min(
+        float(params.get("max_order_margin_usdt") or params.get("order_margin_usdt") or args.initial_capital),
+        float(args.initial_capital),
+    )
+    return [
+        {
+            "symbol": symbol,
+            "side": side,
+            "entry_price": mark,
+            "budget": requested_budget,
+            "leverage": float(params.get("leverage") or 1.0),
+            "stop": float(stop),
+            "target": float(target),
+            "signal_strength": quality,
+            "signal_family": "supertrend_10_1p5_ema101_ema9_21",
+            "thesis_contract": {
+                "contract_id": XAU_SUPERTREND_STRATEGY_ID,
+                "entry_reason": (
+                    f"XAU 4h {side}: Supertrend(10,1.5) dir={st_now}, "
+                    f"EMA9={fast_now:.4f}, EMA21={slow_now:.4f}, EMA101={ema_filter_value:.4f}"
+                ),
+                "quality_score": quality,
+                "source_strategy_id": args.strategy_id,
+                "runtime_budget_usdt": float(params.get("runtime_budget_usdt") or args.initial_capital),
+                "risk_budget_usdt": requested_budget,
+                "order_margin_usdt": float(params.get("order_margin_usdt") or 20.0),
+                "max_order_margin_usdt": requested_budget,
+                "committee_size_tiers_usdt": list(params.get("committee_size_tiers_usdt") or [10, 20, 30]),
+                "feature_refs": [f"{symbol}_futures_{timeframe}"],
+                "feature_timeframe": timeframe,
+                "atr": atr,
+                "atr_stop_mult": stop_mult,
+                "atr_target_mult": target_mult,
+                "max_hold_hours": float(params.get("max_hold_hours") or 72),
+                "p_target": float(params.get("p_target") or 0.58),
+                "confidence": max(0.54, min(0.70, quality)),
+            },
+        }
+    ], marks
+
+
+def _xau_supertrend_features(
+    df: pd.DataFrame,
+    *,
+    atr_window: int,
+    supertrend_mult: float,
+    ema_fast: int,
+    ema_slow: int,
+    ema_filter: int,
+) -> pd.DataFrame:
+    frame = df.copy().sort_index()
+    for col in ("open", "high", "low", "close"):
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    prev_close = frame["close"].shift(1)
+    tr = pd.concat(
+        [
+            frame["high"] - frame["low"],
+            (frame["high"] - prev_close).abs(),
+            (frame["low"] - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    frame["atr"] = tr.ewm(alpha=1.0 / max(1, atr_window), adjust=False, min_periods=atr_window).mean()
+    hl2 = (frame["high"] + frame["low"]) / 2.0
+    upper_basic = hl2 + supertrend_mult * frame["atr"]
+    lower_basic = hl2 - supertrend_mult * frame["atr"]
+    upper = upper_basic.copy()
+    lower = lower_basic.copy()
+    direction = pd.Series(0, index=frame.index, dtype="int64")
+    for i in range(1, len(frame)):
+        if pd.isna(frame["atr"].iloc[i]):
+            continue
+        prev_i = i - 1
+        upper.iloc[i] = (
+            upper_basic.iloc[i]
+            if upper_basic.iloc[i] < upper.iloc[prev_i] or frame["close"].iloc[prev_i] > upper.iloc[prev_i]
+            else upper.iloc[prev_i]
+        )
+        lower.iloc[i] = (
+            lower_basic.iloc[i]
+            if lower_basic.iloc[i] > lower.iloc[prev_i] or frame["close"].iloc[prev_i] < lower.iloc[prev_i]
+            else lower.iloc[prev_i]
+        )
+        if direction.iloc[prev_i] <= 0 and frame["close"].iloc[i] > upper.iloc[prev_i]:
+            direction.iloc[i] = 1
+        elif direction.iloc[prev_i] >= 0 and frame["close"].iloc[i] < lower.iloc[prev_i]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[prev_i] if direction.iloc[prev_i] != 0 else 1
+    frame["supertrend_dir"] = direction
+    frame["ema_fast"] = frame["close"].ewm(span=ema_fast, adjust=False, min_periods=ema_fast).mean()
+    frame["ema_slow"] = frame["close"].ewm(span=ema_slow, adjust=False, min_periods=ema_slow).mean()
+    frame["ema_filter"] = frame["close"].ewm(span=ema_filter, adjust=False, min_periods=ema_filter).mean()
+    frame["ready"] = frame[["atr", "ema_fast", "ema_slow", "ema_filter"]].notna().all(axis=1)
+    return frame
+
+
+def _xau_signal_quality(row: pd.Series, side: str) -> float:
+    close = float(row.get("close") or 0.0)
+    atr = max(1e-9, float(row.get("atr") or 0.0))
+    fast = float(row.get("ema_fast") or close)
+    slow = float(row.get("ema_slow") or close)
+    filt = float(row.get("ema_filter") or close)
+    ema_spread = abs(fast / max(1e-9, slow) - 1.0)
+    filter_distance = abs(close / max(1e-9, filt) - 1.0)
+    atr_pct = atr / max(1e-9, close)
+    directional_ok = (side == "long" and close > filt and fast > slow) or (side == "short" and close < filt and fast < slow)
+    score = (0.56 if directional_ok else 0.52) + min(0.06, ema_spread * 8.0) + min(0.05, filter_distance * 3.0)
+    score -= min(0.04, max(0.0, atr_pct - 0.018) * 2.0)
+    return max(0.52, min(0.72, score))
 
 
 def _latest_marks(df: pd.DataFrame) -> dict[str, float]:
@@ -881,7 +1174,7 @@ def _btc_weekly_swing_signals(args: argparse.Namespace) -> tuple[list[dict[str, 
             "symbol": "BTC_USDT",
             "side": "long",
             "entry_price": mark,
-            "budget": min(100.0, float(args.initial_capital)),
+            "budget": min(50.0, float(args.initial_capital)),
             "leverage": 3.0,
             "stop": stop,
             "target": None,
@@ -890,7 +1183,8 @@ def _btc_weekly_swing_signals(args: argparse.Namespace) -> tuple[list[dict[str, 
                 "entry_reason": f"weekly close {mark:.2f} broke prior 13w high as of {ts.date()}",
                 "monitor": "weekly close remains above 20w SMA buffer and 24pct trailing stop",
                 "hard_invalidation": "mark <= stop",
-                "risk_budget_usdt": min(100.0, float(args.initial_capital)),
+                "risk_budget_usdt": min(50.0, float(args.initial_capital)),
+                "committee_size_tiers_usdt": [10, 20, 30],
                 "max_effective_leverage": 3.0,
             },
         }
@@ -913,7 +1207,7 @@ def _btc_daily_breakout_swing_signals(args: argparse.Namespace) -> tuple[list[di
     stop = max(atr_stop, trail_stop)
     risk = max(1e-9, entry - stop)
     target = entry + risk * 2.0
-    budget = min(100.0, float(args.initial_capital))
+    budget = min(50.0, float(args.initial_capital))
     return [
         {
             "symbol": "BTC_USDT",
@@ -938,6 +1232,7 @@ def _btc_daily_breakout_swing_signals(args: argparse.Namespace) -> tuple[list[di
                 ],
                 "hard_invalidation": "daily thesis exit or mark <= trailing/ATR stop",
                 "risk_budget_usdt": budget,
+                "committee_size_tiers_usdt": [10, 20, 30],
                 "max_effective_leverage": 2.0,
                 "lookback_days": 80,
                 "weekly_sma": 20,
@@ -1039,6 +1334,7 @@ def _stock_token_signals(args: argparse.Namespace) -> tuple[list[dict[str, Any]]
     threshold = float(getattr(args, "threshold", 0.01) or 0.01)
     if args.strategy_id in {"us_equity_token_okx_momentum", "us_equity_token_equity_momentum"}:
         threshold = max(threshold, 0.02)
+    runtime_params = _stock_token_runtime_params(args)
     candidates: list[dict[str, Any]] = []
     marks: dict[str, float] = {}
     for ticker in tickers:
@@ -1085,7 +1381,7 @@ def _stock_token_signals(args: argparse.Namespace) -> tuple[list[dict[str, Any]]
                 signal_family = "quality_equity_prevday_momentum"
         if not side:
             continue
-        lev = 1.0
+        lev = float(runtime_params["leverage"])
         stop_pct, target_pct = _stock_token_risk_params(str(args.strategy_id), ticker)
         stop = mark * (1.0 - stop_pct) if side == "long" else mark * (1.0 + stop_pct)
         target = mark * (1.0 + target_pct) if side == "long" else mark * (1.0 - target_pct)
@@ -1109,6 +1405,9 @@ def _stock_token_signals(args: argparse.Namespace) -> tuple[list[dict[str, Any]]
                     "hard_invalidation": "mark reaches stop",
                     "risk_budget_usdt": min(10.0, float(args.initial_capital)),
                     "max_effective_leverage": lev,
+                    "max_hold_hours": runtime_params["max_hold_hours"],
+                    "hard_max_hold_hours": runtime_params["hard_max_hold_hours"],
+                    "min_time_stop_net_return": runtime_params["min_time_stop_net_return"],
                     "trade_universe": tickers,
                     "entry_threshold_abs_ret": threshold,
                     "overheat_filter_abs_okx_ret": 0.06 if args.strategy_id == "us_equity_token_okx_momentum" else None,
@@ -1117,6 +1416,41 @@ def _stock_token_signals(args: argparse.Namespace) -> tuple[list[dict[str, Any]]
         )
     candidates.sort(key=lambda row: float(row.get("signal_strength") or 0.0), reverse=True)
     return candidates, marks
+
+
+def _stock_token_runtime_params(args: argparse.Namespace) -> dict[str, float]:
+    strategy_id = str(args.strategy_id)
+    overrides = _parameter_params(args)
+    defaults = {
+        "us_equity_token_dislocation_reversion": {
+            "leverage": 1.2,
+            "max_hold_hours": 36.0,
+            "hard_max_hold_hours": 72.0,
+            "min_time_stop_net_return": 0.006,
+        },
+        "us_equity_token_equity_momentum": {
+            "leverage": 1.5,
+            "max_hold_hours": 72.0,
+            "hard_max_hold_hours": 120.0,
+            "min_time_stop_net_return": 0.006,
+        },
+        "us_equity_token_okx_momentum": {
+            "leverage": 1.5,
+            "max_hold_hours": 48.0,
+            "hard_max_hold_hours": 96.0,
+            "min_time_stop_net_return": 0.006,
+        },
+    }.get(strategy_id, {
+        "leverage": 1.0,
+        "max_hold_hours": 24.0,
+        "hard_max_hold_hours": 72.0,
+        "min_time_stop_net_return": 0.006,
+    })
+    out = dict(defaults)
+    for key in ("leverage", "max_hold_hours", "hard_max_hold_hours", "min_time_stop_net_return"):
+        if overrides.get(key) is not None:
+            out[key] = float(overrides[key])
+    return out
 
 
 def _stock_token_risk_params(strategy_id: str, ticker: str) -> tuple[float, float]:
@@ -1188,7 +1522,10 @@ def _load_ohlcv(symbol: str, timeframe: str) -> pd.DataFrame:
     path = CACHE_DIR / f"{symbol}_futures_{timeframe}.parquet"
     if not path.exists():
         return pd.DataFrame()
-    df = pd.read_parquet(path).copy()
+    try:
+        df = read_frame(path).copy()
+    except Exception:
+        return pd.DataFrame()
     df.index = pd.to_datetime(df.index, utc=True)
     return df.sort_index().dropna(subset=["open", "high", "low", "close"])
 
@@ -1733,13 +2070,20 @@ def _px(value: float) -> str:
 def _call_okx(args: list[str], profile: str, json_output: bool = False, retries: int = 1) -> dict[str, Any]:
     if _is_okx_trade_command(args):
         raise RuntimeError("research sleeve adapter may not issue OKX trade commands directly; use execution layer")
-    cmd = ["okx", "--profile", profile]
+    cmd = [_okx_cli_bin(), "--profile", profile]
     if json_output:
         cmd.append("--json")
     cmd.extend(args)
     last_error = ""
     for attempt in range(max(1, int(retries))):
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=_okx_cli_env(profile))
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=_okx_cli_env(profile),
+            **_cli_run_kwargs(),
+        )
         if result.returncode == 0:
             output = result.stdout.strip()
             if json_output and output:
@@ -1762,15 +2106,46 @@ def _is_okx_trade_command(args: list[str]) -> bool:
 
 
 def _dry_run_okx(args: list[str], profile: str, json_output: bool = False) -> dict[str, Any]:
-    cmd = ["okx", "--profile", profile]
+    cmd = [_okx_cli_bin(), "--profile", profile]
     if json_output:
         cmd.append("--json")
     cmd.extend(args)
     return {"dry_run": True, "cmd": cmd}
 
 
+def _okx_cli_bin() -> str:
+    configured = os.environ.get("OKX_CLI_BIN")
+    if configured:
+        return configured
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidate = Path(appdata) / "npm" / "okx.cmd"
+            if candidate.exists():
+                return str(candidate)
+        found = shutil.which("okx.cmd")
+        if found:
+            return found
+    return shutil.which("okx") or "okx"
+
+
+def _cli_run_kwargs() -> dict[str, int]:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": WINDOWS_NO_WINDOW}
+
+
 def _okx_cli_env(profile: str) -> dict[str, str]:
     env = os.environ.copy()
+    if os.name == "nt":
+        path_parts: list[str] = []
+        appdata = env.get("APPDATA")
+        if appdata:
+            path_parts.append(str(Path(appdata) / "npm"))
+        path_parts.append(r"C:\Program Files\nodejs")
+        if env.get("PATH"):
+            path_parts.append(env["PATH"])
+        env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
     # OKX CLI gives environment credentials precedence over named profiles.
     # Keep live able to use the ambient competition credentials, but isolate
     # personal/demo so --profile cannot accidentally resolve to live keys.
@@ -1801,6 +2176,7 @@ def _load_state(state_id: str, environment: str) -> dict[str, Any]:
 
 
 def _write_scheduler(args: argparse.Namespace, state_id: str, status: str, cycles: int, extra: dict[str, Any] | None = None) -> None:
+    interval_sec = float(getattr(args, "interval_sec", 0.0) or 0.0)
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "strategy_id": args.strategy_id,
@@ -1810,7 +2186,10 @@ def _write_scheduler(args: argparse.Namespace, state_id: str, status: str, cycle
         "okx_profile": args.okx_profile if args.execution == "live" else None,
         "status": status,
         "cycles": cycles,
+        "interval_sec": interval_sec,
     }
+    if status == "running" and bool(getattr(args, "loop", False)) and interval_sec > 0:
+        payload["next_run_at"] = (datetime.now(timezone.utc) + timedelta(seconds=interval_sec)).isoformat()
     if extra:
         payload.update(extra)
     (LOG_DIR / f"{state_id}_{args.environment}_scheduler.json").write_text(json.dumps(payload, indent=2, sort_keys=True))
