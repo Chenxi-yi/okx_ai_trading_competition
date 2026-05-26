@@ -247,6 +247,20 @@ def ensure_launcher(args: argparse.Namespace, actions: list[dict[str, Any]], err
 
 
 def find_launcher_processes() -> list[dict[str, Any]]:
+    try:
+        import psutil  # type: ignore
+
+        rows: list[dict[str, Any]] = []
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            pid = int(proc.info.get("pid") or 0)
+            if pid == os.getpid():
+                continue
+            command = " ".join(str(part) for part in (proc.info.get("cmdline") or []))
+            if "launcher/launcher_server.py" in command or "launcher\\launcher_server.py" in command:
+                rows.append({"pid": pid, "command": command, "source": "psutil"})
+        return rows
+    except Exception:
+        pass
     if os.name == "nt":
         script = (
             "$rows = Get-CimInstance Win32_Process | "
@@ -331,10 +345,52 @@ def terminate_process(pid: int, actions: list[dict[str, Any]], errors: list[str]
         if runner is not None:
             result = runner._terminate_process(pid)  # EnvironmentRunner owns cross-platform process termination.
         else:
-            result = launcher.terminate_process(pid) if launcher is not None else {"pid": pid, "terminated": False}
+            result = terminate_process_tree(pid)
         actions.append({"ts": utc_now(), "action": "terminate_process", "reason": reason, "pid": pid, "result": result})
     except Exception as exc:
         errors.append(f"terminate_process:{pid}: {type(exc).__name__}: {exc}")
+
+
+def terminate_process_tree(pid: int, *, grace_sec: float = 3.0) -> dict[str, Any]:
+    result: dict[str, Any] = {"pid": pid, "terminated": False, "method": "psutil"}
+    try:
+        import psutil  # type: ignore
+
+        proc = psutil.Process(int(pid))
+        children = proc.children(recursive=True)
+        for child in children:
+            child.terminate()
+        proc.terminate()
+        gone, alive = psutil.wait_procs([*children, proc], timeout=max(0.1, grace_sec))
+        for item in alive:
+            item.kill()
+        if alive:
+            psutil.wait_procs(alive, timeout=1)
+        result["terminated"] = not psutil.pid_exists(int(pid))
+        result["children"] = len(children)
+        return result
+    except Exception as exc:
+        result["method"] = "taskkill" if os.name == "nt" else "os.kill"
+        result["psutil_error"] = str(exc)
+    if os.name == "nt":
+        proc = subprocess.run(
+            ["taskkill.exe", "/PID", str(int(pid)), "/T", "/F"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=WINDOWS_NO_WINDOW,
+        )
+        result["returncode"] = proc.returncode
+        result["terminated"] = not pid_alive(pid)
+        return result
+    try:
+        os.kill(int(pid), 15)
+        time.sleep(max(0.1, grace_sec))
+        result["terminated"] = not pid_alive(pid)
+    except OSError as exc:
+        result["error"] = str(exc)
+    return result
 
 
 def process_rss_mb(pid: int) -> float | None:
@@ -377,6 +433,12 @@ def read_pid(path: Path) -> int:
 def pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    try:
+        import psutil  # type: ignore
+
+        return psutil.pid_exists(int(pid))
+    except Exception:
+        pass
     if os.name == "nt":
         script = f"if (Get-Process -Id {int(pid)} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"
         try:
