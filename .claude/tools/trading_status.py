@@ -20,6 +20,7 @@ sys.path.insert(0, str(ENGINE_ROOT))
 SUMMARY_FILE = PROJECT_ROOT / "engine" / "logs" / "summary.json"
 MICRO_LIVE_DIR = PROJECT_ROOT / "engine" / "logs" / "c_auto_v2_micro_live"
 RESEARCH_SLEEVES_DIR = PROJECT_ROOT / "engine" / "logs" / "research_sleeves"
+WATCHDOG_STATUS_FILE = PROJECT_ROOT / "engine" / "logs" / "system_watchdog" / "status.json"
 
 try:
     from runtime import EnvironmentRunner
@@ -384,6 +385,27 @@ def print_runner_status(status: dict) -> None:
     print(f"\n{'='*72}\n")
 
 
+def print_watchdog_status(status: dict | None) -> None:
+    if not isinstance(status, dict):
+        print("  System watchdog: not started\n")
+        return
+    age_sec = age_seconds(status.get("updated_at"))
+    age = f"{age_sec / 60.0:.1f}m old" if age_sec is not None else "unknown age"
+    errors = status.get("errors") or []
+    print(
+        "  System watchdog: {state} pid={pid} cycles={cycles} updated={updated} ({age})".format(
+            state="ok" if status.get("ok") else "attention",
+            pid=status.get("pid") or "?",
+            cycles=status.get("cycles") if status.get("cycles") is not None else "?",
+            updated=status.get("updated_at") or "?",
+            age=age,
+        )
+    )
+    for err in errors[:3]:
+        print(f"    watchdog_error: {err}")
+    print("")
+
+
 def main():
     p = argparse.ArgumentParser(description="Show current trading status")
     p.add_argument("--json", action="store_true", help="Output raw JSON")
@@ -391,6 +413,7 @@ def main():
 
     runner_status = collect_runner_status()
     summary = read_json(SUMMARY_FILE)
+    watchdog = read_json(WATCHDOG_STATUS_FILE)
     runner_has_truth = bool(runner_status.get("runner_plans") or runner_status.get("processes") or runner_status.get("schedulers"))
 
     if args.json:
@@ -399,6 +422,7 @@ def main():
                 {
                     "mode": "strategy_runners",
                     "runner": runner_status,
+                    "system_watchdog": watchdog,
                     "legacy_summary": summary,
                     "legacy_summary_path": str(SUMMARY_FILE.relative_to(PROJECT_ROOT)),
                 },
@@ -410,6 +434,7 @@ def main():
 
     if runner_has_truth:
         print_runner_status(runner_status)
+        print_watchdog_status(watchdog)
         if summary:
             updated_at = summary.get("updated_at")
             age_sec = age_seconds(updated_at)

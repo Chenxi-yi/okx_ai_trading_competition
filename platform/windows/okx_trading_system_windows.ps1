@@ -68,6 +68,7 @@ function Start-HiddenPython {
 
 Stop-PidFile -Path (Join-Path $ControlDir "launcher.pid") -Label "launcher"
 Stop-PidFile -Path (Join-Path $ControlDir "data_refresh.pid") -Label "data refresh"
+Stop-PidFile -Path (Join-Path $ControlDir "system_watchdog.pid") -Label "system watchdog"
 
 Write-Host "Starting OKX trading launcher on $Url"
 $Launcher = Start-HiddenPython `
@@ -94,6 +95,18 @@ $Refresh = Start-HiddenPython `
         "--derivatives-lookback-days", "3"
     )
 
+Write-Host "Starting system watchdog."
+$Watchdog = Start-HiddenPython `
+    -Name "system_watchdog_windows" `
+    -PidPath (Join-Path $ControlDir "system_watchdog.pid") `
+    -ArgList @(
+        "scripts\run_system_watchdog.py",
+        "--loop",
+        "--interval-sec", "60",
+        "--max-runner-rss-mb", "1400",
+        "--max-service-rss-mb", "900"
+    )
+
 Start-Sleep -Seconds 2
 Start-Process $Url
 
@@ -105,3 +118,5 @@ Write-Host "Launcher pid: $($Launcher.pid)"
 Write-Host "Launcher logs: $($Launcher.out_log) / $($Launcher.err_log)"
 Write-Host "Data refresh pid: $($Refresh.pid)"
 Write-Host "Data refresh logs: $($Refresh.out_log) / $($Refresh.err_log)"
+Write-Host "Watchdog pid: $($Watchdog.pid)"
+Write-Host "Watchdog logs: $($Watchdog.out_log) / $($Watchdog.err_log)"

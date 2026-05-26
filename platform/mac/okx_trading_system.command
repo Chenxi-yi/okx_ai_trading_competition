@@ -74,6 +74,28 @@ nohup "$PYTHON_BIN" engine/data/refresh_scheduler.py \
   > "$log_path" 2>&1 < /dev/null &
 echo "$!" > "$CONTROL_DIR/data_refresh.pid"
 
+watchdog_pid=""
+if [[ -f "$CONTROL_DIR/system_watchdog.pid" ]]; then
+  watchdog_pid="$(tr -d '[:space:]' < "$CONTROL_DIR/system_watchdog.pid" || true)"
+fi
+
+if is_running "$watchdog_pid"; then
+  echo "Restarting system watchdog: old pid=$watchdog_pid"
+  kill "$watchdog_pid" 2>/dev/null || true
+  sleep 1
+fi
+
+stamp="$(date +%Y%m%d_%H%M%S)"
+log_path="$LOG_DIR/system_watchdog_double_click_${stamp}.log"
+echo "Starting system watchdog"
+nohup "$PYTHON_BIN" scripts/run_system_watchdog.py \
+  --loop \
+  --interval-sec 60 \
+  --max-runner-rss-mb 1400 \
+  --max-service-rss-mb 900 \
+  > "$log_path" 2>&1 < /dev/null &
+echo "$!" > "$CONTROL_DIR/system_watchdog.pid"
+
 echo "Opening ${URL}"
 open "$URL"
 echo ""
@@ -82,6 +104,7 @@ echo "Frontend: ${URL}"
 echo "Python: ${PYTHON_BIN}"
 echo "Launcher pid: ${launcher_pid:-unknown}"
 echo "Data refresh pid: $(tr -d '[:space:]' < "$CONTROL_DIR/data_refresh.pid" 2>/dev/null || echo unknown)"
+echo "Watchdog pid: $(tr -d '[:space:]' < "$CONTROL_DIR/system_watchdog.pid" 2>/dev/null || echo unknown)"
 echo ""
 echo "Recent logs:"
-tail -n 40 "$LOG_DIR"/launcher*.log "$LOG_DIR"/data_refresh*.log 2>/dev/null || true
+tail -n 40 "$LOG_DIR"/launcher*.log "$LOG_DIR"/data_refresh*.log "$LOG_DIR"/system_watchdog*.log 2>/dev/null || true
