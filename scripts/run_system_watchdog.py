@@ -46,6 +46,19 @@ def main() -> int:
     args = parse_args()
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     CONTROL_DIR.mkdir(parents=True, exist_ok=True)
+    existing_pid = read_pid(PID_PATH)
+    if existing_pid and existing_pid != os.getpid() and pid_alive(existing_pid):
+        write_json(
+            STATUS_PATH,
+            {
+                "ok": True,
+                "status": "already_running",
+                "pid": existing_pid,
+                "attempted_pid": os.getpid(),
+                "updated_at": utc_now(),
+            },
+        )
+        return 0
     PID_PATH.write_text(str(os.getpid()), encoding="utf-8")
     if STOP_PATH.exists():
         STOP_PATH.unlink()
@@ -248,6 +261,37 @@ def process_rss_mb(pid: int) -> float | None:
         return float(text) / 1024.0 if text else None
     except Exception:
         return None
+
+
+def read_pid(path: Path) -> int:
+    try:
+        return int(path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return 0
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        script = f"if (Get-Process -Id {int(pid)} -ErrorAction SilentlyContinue) {{ exit 0 }} else {{ exit 1 }}"
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", script],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def cleanup_old_logs(keep_days: float, actions: list[dict[str, Any]], errors: list[str]) -> None:
