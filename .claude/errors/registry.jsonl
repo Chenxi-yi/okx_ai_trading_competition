@@ -325,3 +325,4 @@
 {"ts": "2026-05-26T01:42:50.583318+00:00", "code": "FIX_TREND_PULLBACK_DUP_SYMBOL_RACE", "msg": "trend_pullback_group_entry_lock_and_reconcile", "context": {"raw": "{resolved:true}"}, "resolved": false}
 {"ts": "2026-05-26T03:05:08.636941+00:00", "code": "FIX_US_EQUITY_TIME_STOP_TREND_GATES", "msg": "fixed", "context": {"raw": "{resolved:true}"}, "resolved": false}
 {"ts": "2026-05-26T03:50:43.597915+00:00", "code": "FIX_LONG_RUN_WATCHDOG", "msg": "fixed", "context": {"raw": "{resolved:true,watchdog:scripts/run_system_watchdog.py,interval_sec:60}"}, "resolved": false}
+{"ts": "2026-05-26T04:28:40.375739+00:00", "code": "FIX_LAUNCHER_JSONL_MEMORY_GROWTH", "msg": "fixed", "context": {"raw": "{resolved:true,cause:launcher status APIs read full jsonl files,fix:bounded iter_jsonl tail reader}"}, "resolved": false}

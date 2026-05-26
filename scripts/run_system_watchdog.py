@@ -81,6 +81,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--environments", default="personal,competition")
     p.add_argument("--max-runner-rss-mb", type=float, default=1400.0)
     p.add_argument("--max-service-rss-mb", type=float, default=900.0)
+    p.add_argument("--max-launcher-rss-mb", type=float, default=1200.0)
+    p.add_argument("--launcher-port", default=os.environ.get("OKX_TRADING_SYSTEM_PORT", "8788"))
+    p.add_argument("--keep-launcher-alive", action="store_true")
     p.add_argument("--stale-grace-sec", type=float, default=300.0)
     p.add_argument("--log-keep-days", type=float, default=21.0)
     return p.parse_args()
@@ -95,6 +98,7 @@ def run_cycle(args: argparse.Namespace, cycles: int) -> dict[str, Any]:
         return base_status(args, cycles, started_at, actions, errors)
 
     cleanup_old_logs(float(args.log_keep_days), actions, errors)
+    launcher_status = ensure_launcher(args, actions, errors) if args.keep_launcher_alive else {"ok": True, "managed": False}
     data_refresh = call("start_data_refresh", launcher.start_data_refresh, actions, errors)
     ownership = call("start_ownership_reconcile", launcher.start_ownership_reconcile_scheduler, actions, errors)
 
@@ -133,6 +137,7 @@ def run_cycle(args: argparse.Namespace, cycles: int) -> dict[str, Any]:
     return {
         **base_status(args, cycles, started_at, actions, errors),
         "data_refresh": summarize_result(data_refresh),
+        "launcher": launcher_status,
         "ownership_reconcile": summarize_result(ownership),
         "environments": environment_rows,
     }
@@ -220,6 +225,105 @@ def restart_huge_service_processes(
         rss_mb = process_rss_mb(pid)
         if rss_mb is not None and rss_mb > max_rss_mb:
             terminate_process(pid, actions, errors, reason=f"{label}_rss_mb>{max_rss_mb:g}", runner=None)
+
+
+def ensure_launcher(args: argparse.Namespace, actions: list[dict[str, Any]], errors: list[str]) -> dict[str, Any]:
+    processes = find_launcher_processes()
+    max_rss_mb = float(args.max_launcher_rss_mb)
+    port = str(args.launcher_port or "8788")
+    for proc in list(processes):
+        pid = safe_int(proc.get("pid"))
+        rss_mb = process_rss_mb(pid) if pid > 0 else None
+        proc["rss_mb"] = round(rss_mb, 2) if rss_mb is not None else None
+        if max_rss_mb > 0 and rss_mb is not None and rss_mb > max_rss_mb:
+            terminate_process(pid, actions, errors, reason=f"launcher_rss_mb>{max_rss_mb:g}", runner=None)
+            processes = [item for item in processes if safe_int(item.get("pid")) != pid]
+    alive = [item for item in processes if pid_alive(safe_int(item.get("pid")))]
+    if alive:
+        return {"ok": True, "already_running": True, "processes": alive}
+    result = start_launcher(port)
+    actions.append({"ts": utc_now(), "action": "start_launcher", "ok": bool(result.get("ok")), "summary": result})
+    return result
+
+
+def find_launcher_processes() -> list[dict[str, Any]]:
+    if os.name == "nt":
+        script = (
+            "$rows = Get-CimInstance Win32_Process | "
+            "Where-Object { $_.CommandLine -match 'launcher[/\\\\]launcher_server\\.py' }; "
+            "$rows | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"
+        )
+        try:
+            proc = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", script],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                timeout=8,
+                creationflags=WINDOWS_NO_WINDOW,
+            )
+            payload = json.loads(proc.stdout.strip() or "[]")
+        except Exception:
+            return []
+        if isinstance(payload, dict):
+            payload = [payload]
+        return [
+            {"pid": int(item.get("ProcessId")), "command": str(item.get("CommandLine") or "")}
+            for item in payload if isinstance(item, dict) and int(item.get("ProcessId") or 0) != os.getpid()
+        ]
+    try:
+        proc = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5)
+    except Exception:
+        return []
+    rows = []
+    for line in proc.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped or "launcher/launcher_server.py" not in stripped:
+            continue
+        try:
+            pid_raw, command = stripped.split(None, 1)
+            pid = int(pid_raw)
+        except Exception:
+            continue
+        if pid != os.getpid():
+            rows.append({"pid": pid, "command": command})
+    return rows
+
+
+def start_launcher(port: str) -> dict[str, Any]:
+    python_bin = os.environ.get("OKX_TRADING_SYSTEM_PYTHON") or sys.executable or "python"
+    log_dir = ENGINE_DIR / "logs"
+    control_dir = ENGINE_DIR / "control"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    control_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_log = log_dir / f"launcher_watchdog_{stamp}.out.log"
+    err_log = log_dir / f"launcher_watchdog_{stamp}.err.log"
+    env = os.environ.copy()
+    env["OKX_TRADING_SYSTEM_PYTHON"] = python_bin
+    if os.name == "nt":
+        appdata = env.get("APPDATA")
+        path_parts = []
+        if appdata:
+            path_parts.append(str(Path(appdata) / "npm"))
+        path_parts.append(r"C:\Program Files\nodejs")
+        if env.get("PATH"):
+            path_parts.append(env["PATH"])
+        env["PATH"] = os.pathsep.join(dict.fromkeys(path_parts))
+    popen_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | WINDOWS_NO_WINDOW
+    with out_log.open("ab") as out_fh, err_log.open("ab") as err_fh:
+        proc = subprocess.Popen(
+            [python_bin, "launcher/launcher_server.py", "--port", str(port)],
+            cwd=str(ROOT),
+            stdout=out_fh,
+            stderr=err_fh,
+            env=env,
+            **popen_kwargs,
+        )
+    (control_dir / "launcher.pid").write_text(str(proc.pid), encoding="utf-8")
+    return {"ok": True, "pid": proc.pid, "out_log": str(out_log.relative_to(ROOT)), "err_log": str(err_log.relative_to(ROOT))}
 
 
 def terminate_process(pid: int, actions: list[dict[str, Any]], errors: list[str], *, reason: str, runner: Any | None) -> None:

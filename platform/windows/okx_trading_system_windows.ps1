@@ -104,7 +104,9 @@ $Watchdog = Start-HiddenPython `
         "--loop",
         "--interval-sec", "60",
         "--max-runner-rss-mb", "1400",
-        "--max-service-rss-mb", "900"
+        "--max-service-rss-mb", "900",
+        "--max-launcher-rss-mb", "1200",
+        "--launcher-port", $Port
     )
 
 Start-Sleep -Seconds 2

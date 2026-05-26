@@ -18,6 +18,7 @@ import site
 import subprocess
 import sys
 import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -2974,21 +2975,30 @@ def flatten_c_auto_v2_paper_state(state_id: str, environment: str, reason: str) 
     return str(state_path.relative_to(ROOT_DIR))
 
 
-def iter_jsonl(path: Path) -> list[dict[str, Any]]:
+def iter_jsonl(path: Path, *, limit: int | None = 5000) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    records: list[dict[str, Any]] = []
+    records: Any = deque(maxlen=max(1, int(limit))) if limit is not None else []
     try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if not line.strip():
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
     except OSError:
         return []
-    return records
+    return list(records)
+
+
+def iter_jsonl_tail(path: Path, limit: int) -> list[dict[str, Any]]:
+    return iter_jsonl(path, limit=max(1, int(limit)))
+
+
+def iter_jsonl_all(path: Path) -> list[dict[str, Any]]:
+    return iter_jsonl(path, limit=None)
 
 
 def append_operation(action: str, environment: str | None, result: str, detail: dict[str, Any] | None = None) -> dict[str, Any]:

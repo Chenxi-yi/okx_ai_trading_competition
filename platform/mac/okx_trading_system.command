@@ -93,6 +93,8 @@ nohup "$PYTHON_BIN" scripts/run_system_watchdog.py \
   --interval-sec 60 \
   --max-runner-rss-mb 1400 \
   --max-service-rss-mb 900 \
+  --max-launcher-rss-mb 1200 \
+  --launcher-port "$PORT" \
   > "$log_path" 2>&1 < /dev/null &
 echo "$!" > "$CONTROL_DIR/system_watchdog.pid"
 
